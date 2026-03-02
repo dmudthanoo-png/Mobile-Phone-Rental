@@ -222,7 +222,7 @@ export default function PhoneRentalApp() {
         <div style={{ padding: '24px 20px 12px', position: 'sticky', top: 0, background: '#FFF5F9', zIndex: 10 }}>
           <div style={{ textAlign: 'center', marginBottom: 4 }}>
             <div style={{ fontSize: 28, fontWeight: 900, color: '#1a1a1a' }}>
-              <span style={{ color: '#FF85B3' }}>📱</span> เช่ามือถือ
+              <span style={{ color: '#FF85B3' }}></span> ระบบเช่ามือถือ
             </div>
             <div style={{ fontSize: 13, color: '#888', fontWeight: 600 }}>ถ่ายคอนเสิร์ตให้ปัง! ✨</div>
           </div>
@@ -267,7 +267,7 @@ export default function PhoneRentalApp() {
           {step === 1 && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                <span style={{ fontSize: 20 }}>🎯</span>
+                
                 <span style={{ fontWeight: 900, fontSize: 18, color: "#1a1a1a" }}>เลือกแพ็กเกจ</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

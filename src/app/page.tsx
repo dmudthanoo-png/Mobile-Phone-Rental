@@ -11,15 +11,6 @@ const PACKAGES = [
   { id: 'premium', name: 'Premium', model: 'Samsung S24 Ultra', price: 1200, emoji: '🌟', features: ['ซูม 100x', 'ถ่ายคอนเสิร์ตชัดสุด'], popular: false },
 ];
 
-const MOCK_BOOKINGS: Record<string, Record<string, number>> = {
-  '2026-03-05': { basic: 0, pro: 3, premium: 1 },
-  '2026-03-06': { basic: 1, pro: 2, premium: 3 },
-  '2026-03-07': { basic: 0, pro: 3, premium: 0 },
-  '2026-03-10': { basic: 3, pro: 3, premium: 3 },
-  '2026-03-14': { basic: 2, pro: 3, premium: 2 },
-  '2026-03-20': { basic: 1, pro: 2, premium: 3 },
-};
-
 const VENUES = [
   { id: 'impact', name: 'IMPACT เมืองทองธานี', short: 'IMPACT', area: 'นนทบุรี', emoji: '🎪' },
   { id: 'rajamangala', name: 'ราชมังคลากีฬาสถาน', short: 'ราชมังฯ', area: 'กรุงเทพฯ', emoji: '🏟️' },
@@ -56,6 +47,7 @@ export default function PhoneRentalApp() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [realBookings, setRealBookings] = useState<Record<string, Record<string, number>>>({});
 
   const [step, setStep] = useState(1);
   const [selectedPkg, setSelectedPkg] = useState<string | null>(null);
@@ -68,17 +60,13 @@ export default function PhoneRentalApp() {
   const [slipFile, setSlipFile] = useState<File | null>(null);
   const [refNumber, setRefNumber] = useState('');
 
-  // ── Auth Check ──
+  // ── Auth Check + Load Bookings ──
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) {
         router.push('/login');
         return;
       }
- // เพิ่มตรงนี้
-  console.log('user email:', session.user.email);
-  console.log('env emails:', process.env.NEXT_PUBLIC_ADMIN_EMAILS);
-  console.log('adminEmails array:', process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',').map(e => e.trim()));
 
       // ถ้าเป็น admin ให้ redirect ไปหน้า admin เลย
       const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',').map(e => e.trim()) ?? [];
@@ -90,7 +78,23 @@ export default function PhoneRentalApp() {
       setUser(session.user);
       const fullName = session.user.user_metadata?.full_name || '';
       if (fullName) setRenterName(fullName);
-      setLoading(false);
+
+      // ดึงข้อมูลการจองจริงจาก Supabase
+      supabase
+        .from('bookings')
+        .select('rental_date, package_id')
+        .in('status', ['pending', 'confirmed'])
+        .then(({ data }) => {
+          if (data) {
+            const counts: Record<string, Record<string, number>> = {};
+            data.forEach(({ rental_date, package_id }) => {
+              if (!counts[rental_date]) counts[rental_date] = {};
+              counts[rental_date][package_id] = (counts[rental_date][package_id] || 0) + 1;
+            });
+            setRealBookings(counts);
+          }
+          setLoading(false);
+        });
     });
   }, [router]);
 
@@ -108,9 +112,11 @@ export default function PhoneRentalApp() {
     );
   }
 
-  const today = new Date(2026, 2, 2);
-  const daysInMonth = new Date(2026, 3, 0).getDate();
-  const firstDayOfMonth = new Date(2026, 2, 1).getDay();
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth();
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
 
   const formatThaiDate = (dateStr: string) => {
     const [y, m, d] = dateStr.split('-');
@@ -118,7 +124,7 @@ export default function PhoneRentalApp() {
   };
 
   const getAvailability = (dateStr: string) => {
-    const slotsUsed = MOCK_BOOKINGS[dateStr]?.[selectedPkg || 'basic'] || 0;
+    const slotsUsed = realBookings[dateStr]?.[selectedPkg || 'basic'] || 0;
     if (slotsUsed >= TOTAL_UNITS) return 'red';
     if (slotsUsed === TOTAL_UNITS - 1) return 'amber';
     return 'green';
@@ -134,7 +140,6 @@ export default function PhoneRentalApp() {
     if (step === 4) {
       setSubmitting(true);
       try {
-        // 1. อัปโหลดสลิป
         let slipUrl = '';
         if (slipFile) {
           const ext = slipFile.type === 'image/png' ? 'png' : 'jpg';
@@ -147,11 +152,9 @@ export default function PhoneRentalApp() {
           slipUrl = data.publicUrl;
         }
 
-        // 2. สร้าง ref number
         const ref = `RT-${Math.floor(100000 + Math.random() * 900000)}`;
         setRefNumber(ref);
 
-        // 3. บันทึกการจองลง Supabase
         const { error: insertError } = await supabase.from('bookings').insert({
           user_id: user!.id,
           renter_name: renterName,
@@ -196,6 +199,8 @@ export default function PhoneRentalApp() {
   const selectedVenueData = VENUES.find(v => v.id === selectedVenue);
   const totalAmount = selectedPkgData ? selectedPkgData.price + DEPOSIT_FEE : 0;
   const stepLabels = ['แพ็กเกจ','วันรับ','ข้อมูล','ชำระเงิน','เสร็จ!'];
+
+  const monthLabel = `${THAI_MONTHS[currentMonth]} ${currentYear + 543}`;
 
   return (
     <div style={{ minHeight: '100vh', background: '#FFF5F9', fontFamily: "'Mitr', 'Kanit', 'Segoe UI', sans-serif", display: 'flex', justifyContent: 'center', paddingBottom: 100 }}>
@@ -289,7 +294,7 @@ export default function PhoneRentalApp() {
                 <span style={{ fontWeight: 900, fontSize: 18 }}>เลือกวันรับ</span>
               </div>
               <div style={{ ...doodle.card, padding: 16, marginBottom: 14 }}>
-                <div style={{ textAlign: 'center', fontWeight: 900, marginBottom: 12, fontSize: 15 }}>{THAI_MONTHS[2]} 2569 🌸</div>
+                <div style={{ textAlign: 'center', fontWeight: 900, marginBottom: 12, fontSize: 15 }}>{monthLabel} 🌸</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, marginBottom: 8 }}>
                   {DAYS_OF_WEEK.map(d => <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#999', padding: '4px 0' }}>{d}</div>)}
                 </div>
@@ -297,7 +302,7 @@ export default function PhoneRentalApp() {
                   {Array.from({ length: firstDayOfMonth }).map((_, i) => <div key={`e${i}`} />)}
                   {Array.from({ length: daysInMonth }).map((_, i) => {
                     const dateNum = i + 1;
-                    const dateStr = `2026-03-${String(dateNum).padStart(2, '0')}`;
+                    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dateNum).padStart(2, '0')}`;
                     const isPast = dateNum < today.getDate();
                     const status = getAvailability(dateStr);
                     const isFull = status === 'red';

@@ -52,14 +52,11 @@ export default function AdminPage() {
     });
   }, []);
 
-  async function loadBookings() {
-    const { data } = await supabase
-      .from("bookings")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (data) setBookings(data as Booking[]);
-  }
-
+async function loadBookings() {
+  const res = await fetch('/api/admin/get-bookings');
+  const data = await res.json();
+  if (Array.isArray(data)) setBookings(data as Booking[]);
+}
   async function updateStatus(bookingId: string, status: string) {
     setUpdating(bookingId);
     await fetch("/api/admin/update-booking", {

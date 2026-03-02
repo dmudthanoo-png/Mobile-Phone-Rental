@@ -216,19 +216,27 @@ export default function PhoneRentalApp() {
           </div>
 
           {user && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFE8F0', border: '2px solid #1a1a1a', borderRadius: 50, padding: '5px 14px 5px 5px', marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#FF85B3', border: '2px solid #1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
-                  {(user.user_metadata?.full_name || user.email || 'U')[0].toUpperCase()}
-                </div>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a' }}>
-                  {user.user_metadata?.full_name || user.email}
-                </span>
-              </div>
-              <button onClick={handleSignOut} style={{ fontSize: 11, fontWeight: 700, color: '#888', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                ออกจากระบบ
-              </button>
-            </div>
+        
+//  user info + sign out
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFE8F0', border: '2px solid #1a1a1a', borderRadius: 50, padding: '5px 14px 5px 5px', marginBottom: 10 }}>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#FF85B3', border: '2px solid #1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
+      {(user.user_metadata?.full_name || user.email || 'U')[0].toUpperCase()}
+    </div>
+    <span style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a' }}>
+      {user.user_metadata?.full_name || user.email}
+    </span>
+  </div>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <button onClick={() => router.push('/bookings')} style={{ fontSize: 11, fontWeight: 700, color: '#FF85B3', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+      📋 ประวัติ
+    </button>
+    <span style={{ color: '#ddd', fontSize: 12 }}>|</span>
+    <button onClick={handleSignOut} style={{ fontSize: 11, fontWeight: 700, color: '#888', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+      ออกจากระบบ
+    </button>
+  </div>
+</div>
           )}
 
           <WiggleLine />

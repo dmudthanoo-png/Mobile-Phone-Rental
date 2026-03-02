@@ -60,6 +60,28 @@ export default function PhoneRentalApp() {
   const [slipFile, setSlipFile] = useState<File | null>(null);
   const [refNumber, setRefNumber] = useState('');
 
+  // ── Calendar navigation state ──
+  const today = new Date();
+  const [calYear, setCalYear] = useState(today.getFullYear());
+  const [calMonth, setCalMonth] = useState(today.getMonth());
+
+  // ── Calendar computed values ──
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const firstDayOfMonth = new Date(calYear, calMonth, 1).getDay();
+  const monthLabel = `${THAI_MONTHS[calMonth]} ${calYear + 543}`;
+  const isCurrentMonth = calYear === today.getFullYear() && calMonth === today.getMonth();
+
+  const handlePrevMonth = () => {
+    if (isCurrentMonth) return;
+    if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); }
+    else setCalMonth(m => m - 1);
+  };
+
+  const handleNextMonth = () => {
+    if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); }
+    else setCalMonth(m => m + 1);
+  };
+
   // ── Auth Check + Load Bookings ──
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -68,7 +90,6 @@ export default function PhoneRentalApp() {
         return;
       }
 
-      // ถ้าเป็น admin ให้ redirect ไปหน้า admin เลย
       const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',').map(e => e.trim()) ?? [];
       if (adminEmails.includes(session.user.email ?? '')) {
         router.replace('/admin');
@@ -79,7 +100,6 @@ export default function PhoneRentalApp() {
       const fullName = session.user.user_metadata?.full_name || '';
       if (fullName) setRenterName(fullName);
 
-      // ดึงข้อมูลการจองจริงจาก Supabase
       supabase
         .from('bookings')
         .select('rental_date, package_id')
@@ -111,12 +131,6 @@ export default function PhoneRentalApp() {
       </div>
     );
   }
-
-  const today = new Date();
-  const currentYear = today.getFullYear();
-  const currentMonth = today.getMonth();
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
 
   const formatThaiDate = (dateStr: string) => {
     const [y, m, d] = dateStr.split('-');
@@ -200,8 +214,6 @@ export default function PhoneRentalApp() {
   const totalAmount = selectedPkgData ? selectedPkgData.price + DEPOSIT_FEE : 0;
   const stepLabels = ['แพ็กเกจ','วันรับ','ข้อมูล','ชำระเงิน','เสร็จ!'];
 
-  const monthLabel = `${THAI_MONTHS[currentMonth]} ${currentYear + 543}`;
-
   return (
     <div style={{ minHeight: '100vh', background: '#FFF5F9', fontFamily: "'Mitr', 'Kanit', 'Segoe UI', sans-serif", display: 'flex', justifyContent: 'center', paddingBottom: 100 }}>
       <div style={{ width: '100%', maxWidth: 420 }}>
@@ -216,27 +228,25 @@ export default function PhoneRentalApp() {
           </div>
 
           {user && (
-        
-//  user info + sign out
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFE8F0', border: '2px solid #1a1a1a', borderRadius: 50, padding: '5px 14px 5px 5px', marginBottom: 10 }}>
-  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#FF85B3', border: '2px solid #1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
-      {(user.user_metadata?.full_name || user.email || 'U')[0].toUpperCase()}
-    </div>
-    <span style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a' }}>
-      {user.user_metadata?.full_name || user.email}
-    </span>
-  </div>
-  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-    <button onClick={() => router.push('/bookings')} style={{ fontSize: 11, fontWeight: 700, color: '#FF85B3', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-      📋 ประวัติ
-    </button>
-    <span style={{ color: '#ddd', fontSize: 12 }}>|</span>
-    <button onClick={handleSignOut} style={{ fontSize: 11, fontWeight: 700, color: '#888', background: 'transparent', border: 'none', cursor: 'pointer' }}>
-      ออกจากระบบ
-    </button>
-  </div>
-</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFE8F0', border: '2px solid #1a1a1a', borderRadius: 50, padding: '5px 14px 5px 5px', marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#FF85B3', border: '2px solid #1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
+                  {(user.user_metadata?.full_name || user.email || 'U')[0].toUpperCase()}
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a' }}>
+                  {user.user_metadata?.full_name || user.email}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button onClick={() => router.push('/bookings')} style={{ fontSize: 11, fontWeight: 700, color: '#FF85B3', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                  📋 ประวัติ
+                </button>
+                <span style={{ color: '#ddd', fontSize: 12 }}>|</span>
+                <button onClick={handleSignOut} style={{ fontSize: 11, fontWeight: 700, color: '#888', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                  ออกจากระบบ
+                </button>
+              </div>
+            </div>
           )}
 
           <WiggleLine />
@@ -302,7 +312,20 @@ export default function PhoneRentalApp() {
                 <span style={{ fontWeight: 900, fontSize: 18 }}>เลือกวันรับ</span>
               </div>
               <div style={{ ...doodle.card, padding: 16, marginBottom: 14 }}>
-                <div style={{ textAlign: 'center', fontWeight: 900, marginBottom: 12, fontSize: 15 }}>{monthLabel} 🌸</div>
+
+                {/* ── Month navigation header ── */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <button onClick={handlePrevMonth}
+                    style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #1a1a1a', background: isCurrentMonth ? '#eee' : '#fff', cursor: isCurrentMonth ? 'not-allowed' : 'pointer', fontWeight: 900, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    ‹
+                  </button>
+                  <span style={{ fontWeight: 900, fontSize: 15 }}>{monthLabel} 🌸</span>
+                  <button onClick={handleNextMonth}
+                    style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #1a1a1a', background: '#fff', cursor: 'pointer', fontWeight: 900, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    ›
+                  </button>
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2, marginBottom: 8 }}>
                   {DAYS_OF_WEEK.map(d => <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#999', padding: '4px 0' }}>{d}</div>)}
                 </div>
@@ -310,13 +333,13 @@ export default function PhoneRentalApp() {
                   {Array.from({ length: firstDayOfMonth }).map((_, i) => <div key={`e${i}`} />)}
                   {Array.from({ length: daysInMonth }).map((_, i) => {
                     const dateNum = i + 1;
-                    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dateNum).padStart(2, '0')}`;
-                    const isPast = dateNum < today.getDate();
+                    const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(dateNum).padStart(2, '0')}`;
+                    const isPast = new Date(calYear, calMonth, dateNum) < new Date(today.getFullYear(), today.getMonth(), today.getDate());
                     const status = getAvailability(dateStr);
                     const isFull = status === 'red';
                     const disabled = isPast || isFull;
                     const sel = selectedDate === dateStr;
-                    const isToday = dateNum === today.getDate();
+                    const isToday = calYear === today.getFullYear() && calMonth === today.getMonth() && dateNum === today.getDate();
                     return (
                       <div key={dateNum} onClick={() => !disabled && setSelectedDate(dateStr)}
                         style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '6px 2px', borderRadius: 12, cursor: disabled ? 'not-allowed' : 'pointer', background: sel ? '#FF85B3' : isToday ? '#FFF9E6' : 'transparent', border: sel ? '2.5px solid #1a1a1a' : isToday ? '2px dashed #FFB3D1' : '2px solid transparent', opacity: disabled ? 0.3 : 1, transition: 'all .15s' }}>

@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import type { User } from '@supabase/supabase-js';
 
 const PACKAGES = [
   { id: 'basic', name: 'Basic', model: 'iPhone 13 Pro Max', price: 800, emoji: '📱', features: ['ซูม 3x', 'วิดีโอ 4K'], popular: false },
@@ -49,6 +52,10 @@ function WiggleLine() {
 }
 
 export default function PhoneRentalApp() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
   const [step, setStep] = useState(1);
   const [selectedPkg, setSelectedPkg] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -58,6 +65,36 @@ export default function PhoneRentalApp() {
   const [copiedType, setCopiedType] = useState<string | null>(null);
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
   const [refNumber, setRefNumber] = useState('');
+
+  // ── Auth Check ──
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        router.push('/login');
+      } else {
+        setUser(session.user);
+        // Pre-fill ชื่อจาก Google
+        const fullName = session.user.user_metadata?.full_name || '';
+        if (fullName) setRenterName(fullName);
+      }
+      setLoading(false);
+    });
+  }, [router]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  // ── Loading Screen ──
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#FFF5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: 'inherit' }}>
+        <div style={{ fontSize: 48 }}>📱</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#888' }}>กำลังโหลด...</div>
+      </div>
+    );
+  }
 
   const today = new Date(2026, 2, 2);
   const daysInMonth = new Date(2026, 3, 0).getDate();
@@ -106,14 +143,34 @@ export default function PhoneRentalApp() {
 
         {/* Header */}
         <div style={{ padding: '24px 20px 12px', position: 'sticky', top: 0, background: '#FFF5F9', zIndex: 10 }}>
-          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+          <div style={{ textAlign: 'center', marginBottom: 4 }}>
             <div style={{ fontSize: 28, fontWeight: 900, color: '#1a1a1a' }}>
               <span style={{ color: '#FF85B3' }}>📱</span> เช่ามือถือ
             </div>
             <div style={{ fontSize: 13, color: '#888', fontWeight: 600 }}>ถ่ายคอนเสิร์ตให้ปัง! ✨</div>
-            <WiggleLine />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center' }}>
+
+          {/* User info bar */}
+          {user && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFE8F0', border: '2px solid #1a1a1a', borderRadius: 50, padding: '5px 14px 5px 5px', marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#FF85B3', border: '2px solid #1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
+                  {(user.user_metadata?.full_name || user.email || 'U')[0].toUpperCase()}
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a' }}>
+                  {user.user_metadata?.full_name || user.email}
+                </span>
+              </div>
+              <button onClick={handleSignOut}
+                style={{ fontSize: 11, fontWeight: 700, color: '#888', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                ออกจากระบบ
+              </button>
+            </div>
+          )}
+
+          <WiggleLine />
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, alignItems: 'center', marginTop: 8 }}>
             {stepLabels.map((l, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                 <div style={{ width: step === i + 1 ? 32 : 10, height: 10, borderRadius: 10, background: step > i ? '#FF85B3' : '#E0E0E0', border: '2px solid #1a1a1a', transition: 'all .3s' }} />

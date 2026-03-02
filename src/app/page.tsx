@@ -55,6 +55,7 @@ export default function PhoneRentalApp() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   const [step, setStep] = useState(1);
   const [selectedPkg, setSelectedPkg] = useState<string | null>(null);
@@ -64,6 +65,7 @@ export default function PhoneRentalApp() {
   const [renterPhone, setRenterPhone] = useState('');
   const [copiedType, setCopiedType] = useState<string | null>(null);
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
+  const [slipFile, setSlipFile] = useState<File | null>(null);
   const [refNumber, setRefNumber] = useState('');
 
   // ── Auth Check ──
@@ -73,7 +75,6 @@ export default function PhoneRentalApp() {
         router.push('/login');
       } else {
         setUser(session.user);
-        // Pre-fill ชื่อจาก Google
         const fullName = session.user.user_metadata?.full_name || '';
         if (fullName) setRenterName(fullName);
       }
@@ -86,7 +87,6 @@ export default function PhoneRentalApp() {
     router.push('/login');
   };
 
-  // ── Loading Screen ──
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', background: '#FFF5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: 'inherit' }}>
@@ -118,13 +118,61 @@ export default function PhoneRentalApp() {
     setTimeout(() => setCopiedType(null), 2000);
   };
 
-  const handleNext = () => {
-    if (step === 4) setRefNumber(`RT-${Math.floor(100000 + Math.random() * 900000)}`);
-    setStep(s => Math.min(5, s + 1));
+  const handleNext = async () => {
+    if (step === 4) {
+      setSubmitting(true);
+      try {
+        // 1. อัปโหลดสลิป
+        let slipUrl = '';
+        if (slipFile) {
+          const ext = slipFile.type === 'image/png' ? 'png' : 'jpg';
+          const fileName = `${user!.id}_${Date.now()}.${ext}`;
+          const { error: uploadError } = await supabase.storage
+            .from('slips')
+            .upload(fileName, slipFile, { contentType: slipFile.type });
+          if (uploadError) throw uploadError;
+          const { data } = supabase.storage.from('slips').getPublicUrl(fileName);
+          slipUrl = data.publicUrl;
+        }
+
+        // 2. สร้าง ref number
+        const ref = `RT-${Math.floor(100000 + Math.random() * 900000)}`;
+        setRefNumber(ref);
+
+        // 3. บันทึกการจองลง Supabase
+        const { error: insertError } = await supabase.from('bookings').insert({
+          user_id: user!.id,
+          renter_name: renterName,
+          renter_phone: renterPhone,
+          renter_email: user!.email,
+          package_id: selectedPkg,
+          package_name: selectedPkgData?.name,
+          rental_date: selectedDate,
+          venue_id: selectedVenue,
+          venue_name: selectedVenueData?.name,
+          total_amount: totalAmount,
+          slip_url: slipUrl,
+          ref_number: ref,
+          status: 'pending',
+        });
+        if (insertError) throw insertError;
+
+        setStep(5);
+      } catch (err) {
+        console.error(err);
+        alert('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
+      } finally {
+        setSubmitting(false);
+      }
+    } else {
+      setStep(s => Math.min(5, s + 1));
+    }
   };
+
   const handleBack = () => setStep(s => Math.max(1, s - 1));
 
   const isNextDisabled = () => {
+    if (submitting) return true;
     if (step === 1) return !selectedPkg;
     if (step === 2) return !selectedDate || !selectedVenue;
     if (step === 3) return !renterName.trim() || !renterPhone.trim() || renterPhone.length < 9;
@@ -150,7 +198,6 @@ export default function PhoneRentalApp() {
             <div style={{ fontSize: 13, color: '#888', fontWeight: 600 }}>ถ่ายคอนเสิร์ตให้ปัง! ✨</div>
           </div>
 
-          {/* User info bar */}
           {user && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFE8F0', border: '2px solid #1a1a1a', borderRadius: 50, padding: '5px 14px 5px 5px', marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -161,8 +208,7 @@ export default function PhoneRentalApp() {
                   {user.user_metadata?.full_name || user.email}
                 </span>
               </div>
-              <button onClick={handleSignOut}
-                style={{ fontSize: 11, fontWeight: 700, color: '#888', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+              <button onClick={handleSignOut} style={{ fontSize: 11, fontWeight: 700, color: '#888', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                 ออกจากระบบ
               </button>
             </div>
@@ -196,15 +242,11 @@ export default function PhoneRentalApp() {
                     <div key={pkg.id} onClick={() => setSelectedPkg(pkg.id)}
                       style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 16, cursor: 'pointer', position: 'relative', transform: sel ? 'translate(-2px,-2px)' : '', boxShadow: sel ? '6px 6px 0px #1a1a1a' : '4px 4px 0px #1a1a1a', transition: 'all .15s' }}>
                       {pkg.popular && (
-                        <div style={{ position: 'absolute', top: -12, right: 16, background: '#FFD600', border: '2.5px solid #1a1a1a', borderRadius: 50, padding: '2px 12px', fontSize: 11, fontWeight: 900 }}>
-                          ⭐ ยอดนิยม
-                        </div>
+                        <div style={{ position: 'absolute', top: -12, right: 16, background: '#FFD600', border: '2.5px solid #1a1a1a', borderRadius: 50, padding: '2px 12px', fontSize: 11, fontWeight: 900 }}>⭐ ยอดนิยม</div>
                       )}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                          <div style={{ width: 44, height: 44, background: sel ? '#FF85B3' : '#f5f5f5', borderRadius: 12, border: '2.5px solid #1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
-                            {pkg.emoji}
-                          </div>
+                          <div style={{ width: 44, height: 44, background: sel ? '#FF85B3' : '#f5f5f5', borderRadius: 12, border: '2.5px solid #1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{pkg.emoji}</div>
                           <div>
                             <div style={{ fontWeight: 900, fontSize: 16 }}>{pkg.name}</div>
                             <div style={{ fontSize: 12, color: '#888', fontWeight: 600 }}>{pkg.model}</div>
@@ -380,7 +422,10 @@ export default function PhoneRentalApp() {
                 </div>
                 <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
                   const f = e.target.files?.[0];
-                  if (f) setSlipPreview(URL.createObjectURL(f));
+                  if (f) {
+                    setSlipFile(f);
+                    setSlipPreview(URL.createObjectURL(f));
+                  }
                 }} />
               </label>
             </div>
@@ -433,7 +478,7 @@ export default function PhoneRentalApp() {
               )}
               <button onClick={handleNext} disabled={isNextDisabled()}
                 style={{ ...(isNextDisabled() ? doodle.btnGray : step === 4 ? doodle.btnGreen : doodle.btnPrimary), flex: 1, padding: '13px 0', fontSize: 15 }}>
-                {step === 4 ? '✓ ฉันโอนแล้ว!' : 'ต่อไป →'}
+                {step === 4 ? (submitting ? '⏳ กำลังบันทึก...' : '✓ ฉันโอนแล้ว!') : 'ต่อไป →'}
               </button>
             </div>
           </div>

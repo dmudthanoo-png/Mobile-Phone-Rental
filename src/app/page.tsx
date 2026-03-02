@@ -73,11 +73,23 @@ export default function PhoneRentalApp() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) {
         router.push('/login');
-      } else {
-        setUser(session.user);
-        const fullName = session.user.user_metadata?.full_name || '';
-        if (fullName) setRenterName(fullName);
+        return;
       }
+ // เพิ่มตรงนี้
+  console.log('user email:', session.user.email);
+  console.log('env emails:', process.env.NEXT_PUBLIC_ADMIN_EMAILS);
+  console.log('adminEmails array:', process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',').map(e => e.trim()));
+
+      // ถ้าเป็น admin ให้ redirect ไปหน้า admin เลย
+      const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS?.split(',').map(e => e.trim()) ?? [];
+      if (adminEmails.includes(session.user.email ?? '')) {
+        router.replace('/admin');
+        return;
+      }
+
+      setUser(session.user);
+      const fullName = session.user.user_metadata?.full_name || '';
+      if (fullName) setRenterName(fullName);
       setLoading(false);
     });
   }, [router]);

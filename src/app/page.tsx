@@ -238,11 +238,11 @@ export default function PhoneRentalApp() {
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button onClick={() => router.push('/bookings')} style={{ fontSize: 11, fontWeight: 700, color: '#FF85B3', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                <button onClick={() => router.push('/bookings')} style={{ fontSize: 13, fontWeight: 700, color: '#FF85B3', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                   📋 ประวัติ
                 </button>
                 <span style={{ color: '#ddd', fontSize: 12 }}>|</span>
-                <button onClick={handleSignOut} style={{ fontSize: 11, fontWeight: 700, color: '#888', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                <button onClick={handleSignOut} style={{ fontSize: 12, fontWeight: 700, color: '#000000', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                   ออกจากระบบ
                 </button>
               </div>
@@ -268,7 +268,7 @@ export default function PhoneRentalApp() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
                 <span style={{ fontSize: 20 }}>🎯</span>
-                <span style={{ fontWeight: 900, fontSize: 18 }}>เลือกแพ็กเกจ</span>
+                <span style={{ fontWeight: 900, fontSize: 18, color: "#1a1a1a" }}>เลือกแพ็กเกจ</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {PACKAGES.map(pkg => {
@@ -277,9 +277,9 @@ export default function PhoneRentalApp() {
                     <div key={pkg.id} onClick={() => setSelectedPkg(pkg.id)}
                       style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 16, cursor: 'pointer', position: 'relative', transform: sel ? 'translate(-2px,-2px)' : '', boxShadow: sel ? '6px 6px 0px #1a1a1a' : '4px 4px 0px #1a1a1a', transition: 'all .15s' }}>
                       {pkg.popular && (
-                        <div style={{ position: 'absolute', top: -12, right: 16, background: '#FFD600', border: '2.5px solid #1a1a1a', borderRadius: 50, padding: '2px 12px', fontSize: 11, fontWeight: 900 }}>⭐ ยอดนิยม</div>
+                        <div style={{ position: 'absolute', top: -12, right: 16, background: '#FFD600', border: '2.5px solid #1a1a1a', borderRadius: 50, padding: '2px 12px', fontSize: 11, fontWeight: 900 , color: "#1a1a1a" }}>⭐ ยอดนิยม</div>
                       )}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, color: "#1a1a1a" }}>
                         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                           <div style={{ width: 44, height: 44, background: sel ? '#FF85B3' : '#f5f5f5', borderRadius: 12, border: '2.5px solid #1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{pkg.emoji}</div>
                           <div>
@@ -309,7 +309,7 @@ export default function PhoneRentalApp() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
                 <span style={{ fontSize: 20 }}>📅</span>
-                <span style={{ fontWeight: 900, fontSize: 18 }}>เลือกวันรับ</span>
+                <span style={{ fontWeight: 900, fontSize: 18, color: "#1a1a1a" }}>เลือกวันรับ</span>
               </div>
               <div style={{ ...doodle.card, padding: 16, marginBottom: 14 }}>
 
@@ -319,7 +319,7 @@ export default function PhoneRentalApp() {
                     style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #1a1a1a', background: isCurrentMonth ? '#eee' : '#fff', cursor: isCurrentMonth ? 'not-allowed' : 'pointer', fontWeight: 900, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     ‹
                   </button>
-                  <span style={{ fontWeight: 900, fontSize: 15 }}>{monthLabel} 🌸</span>
+                  <span style={{ fontWeight: 900, fontSize: 15 , color: "#1a1a1a"}}>{monthLabel} 🌸</span>
                   <button onClick={handleNextMonth}
                     style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #1a1a1a', background: '#fff', cursor: 'pointer', fontWeight: 900, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     ›
@@ -352,7 +352,7 @@ export default function PhoneRentalApp() {
                 <WiggleLine />
                 <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 4 }}>
                   {[['#5FD16A','ว่าง'],['#FFD600','เหลือน้อย'],['#FF5A5A','เต็ม']].map(([c,l]) => (
-                    <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700 }}>
+                    <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: "#1a1a1a" }}>
                       <div style={{ width: 8, height: 8, borderRadius: '50%', background: c, border: '1.5px solid #1a1a1a' }} />{l}
                     </div>
                   ))}
@@ -361,12 +361,12 @@ export default function PhoneRentalApp() {
               {selectedDate && (
                 <div style={{ ...doodle.cardYellow, padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 18 }}>🗓️</span>
-                  <span style={{ fontWeight: 800, fontSize: 14 }}>วันที่เลือก: {formatThaiDate(selectedDate)}</span>
+                  <span style={{ fontWeight: 800, fontSize: 14 , color: "#1a1a1a"}}>วันที่เลือก: {formatThaiDate(selectedDate)}</span>
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <span style={{ fontSize: 18 }}>📍</span>
-                <span style={{ fontWeight: 900, fontSize: 15 }}>สถานที่จัดงาน</span>
+                <span style={{ fontWeight: 900, fontSize: 15 , color: "#1a1a1a"}}>สถานที่จัดงาน</span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {VENUES.map(v => {
@@ -375,8 +375,8 @@ export default function PhoneRentalApp() {
                     <div key={v.id} onClick={() => setSelectedVenue(v.id)}
                       style={{ ...(sel ? doodle.cardPink : doodle.card), padding: '14px 10px', cursor: 'pointer', textAlign: 'center', transform: sel ? 'translate(-2px,-2px)' : '', boxShadow: sel ? '6px 6px 0px #1a1a1a' : '4px 4px 0px #1a1a1a', transition: 'all .15s' }}>
                       <div style={{ fontSize: 26, marginBottom: 6 }}>{v.emoji}</div>
-                      <div style={{ fontWeight: 900, fontSize: 13, lineHeight: 1.3 }}>{v.short}</div>
-                      <div style={{ fontSize: 11, color: '#888', fontWeight: 600, marginTop: 2 }}>{v.area}</div>
+                      <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.3 , color: "#1a1a1a"}}>{v.short}</div>
+                      <div style={{ fontSize: 11, color: '#3d3d3d', fontWeight: 600, marginTop: 2 }}>{v.area}</div>
                       {sel && <div style={{ marginTop: 6, fontSize: 16 }}>✅</div>}
                     </div>
                   );
@@ -390,20 +390,20 @@ export default function PhoneRentalApp() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
                 <span style={{ fontSize: 20 }}>👤</span>
-                <span style={{ fontWeight: 900, fontSize: 18 }}>ข้อมูลผู้เช่า</span>
+                <span style={{ fontWeight: 900, fontSize: 18 , color: "#1a1a1a"}}>ข้อมูลผู้เช่า</span>
               </div>
               <div style={{ ...doodle.card, padding: 16, marginBottom: 16 }}>
                 <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 800, marginBottom: 6 }}>ชื่อ-นามสกุล</label>
-                  <input style={doodle.input} type="text" placeholder="ระบุชื่อตามบัตรประชาชน" value={renterName} onChange={e => setRenterName(e.target.value)} />
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 800, marginBottom: 6 , color: "#1a1a1a"}}>ชื่อ-นามสกุล</label>
+                  <input style={{ ...doodle.input, color: "#1a1a1a" }} type="text" placeholder="ระบุชื่อตามบัตรประชาชน" value={renterName} onChange={e => setRenterName(e.target.value)} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 800, marginBottom: 6 }}>เบอร์โทรศัพท์</label>
-                  <input style={doodle.input} type="tel" placeholder="08X-XXX-XXXX" maxLength={10} value={renterPhone} onChange={e => setRenterPhone(e.target.value)} />
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 800, marginBottom: 6 , color: "#1a1a1a"}}>เบอร์โทรศัพท์</label>
+                  <input style={{ ...doodle.input, color: "#1a1a1a" }} type="tel" placeholder="08X-XXX-XXXX" maxLength={10} value={renterPhone} onChange={e => setRenterPhone(e.target.value)} />
                 </div>
               </div>
-              <div style={{ ...doodle.cardYellow, padding: 16 }}>
-                <div style={{ fontWeight: 900, fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>🧾 สรุปการจอง</div>
+              <div style={{ ...doodle.cardYellow, padding: 16 , color: "#1a1a1a" }}>
+                <div style={{ fontWeight: 900, fontSize: 13, color: '#2c2c2c', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>🧾 สรุปการจอง</div>
                 {[
                   ['📱 แพ็กเกจ', `${selectedPkgData?.name} (${selectedPkgData?.model})`],
                   ['🗓️ วันรับ', formatThaiDate(selectedDate!)],
@@ -411,11 +411,11 @@ export default function PhoneRentalApp() {
                   ['💵 ค่าเช่า', `฿${selectedPkgData?.price}`],
                   ['🔒 มัดจำ', `฿${DEPOSIT_FEE}`],
                 ].map(([k, v]) => (
-                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700, marginBottom: 8, paddingBottom: 8, borderBottom: '1.5px dashed #E0D0B0' }}>
-                    <span style={{ color: '#666' }}>{k}</span><span>{v}</span>
+                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700, marginBottom: 8, paddingBottom: 8, borderBottom: '1.5px dashed #000000' }}>
+                    <span style={{ color: '#000000' }}>{k}</span><span>{v}</span>
                   </div>
                 ))}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: 16, marginTop: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: 16, marginTop: 4, color: "#1a1a1a" }}>
                   <span>💰 รวมทั้งหมด</span>
                   <span style={{ color: '#FF85B3', fontSize: 20 }}>฿{totalAmount}</span>
                 </div>
@@ -428,14 +428,14 @@ export default function PhoneRentalApp() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
                 <span style={{ fontSize: 20 }}>💸</span>
-                <span style={{ fontWeight: 900, fontSize: 18 }}>ชำระเงิน</span>
+                <span style={{ fontWeight: 900, fontSize: 18 , color: "#1a1a1a"}}>ชำระเงิน</span>
               </div>
               <div style={{ ...doodle.cardPink, padding: '20px 16px', textAlign: 'center', marginBottom: 16 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#888', marginBottom: 4 }}>ยอดที่ต้องโอน</div>
                 <div style={{ fontSize: 42, fontWeight: 900, color: '#1a1a1a', lineHeight: 1 }}>฿{totalAmount}</div>
                 <div style={{ fontSize: 12, color: '#888', marginTop: 6, fontWeight: 600 }}>รวมมัดจำ ฿{DEPOSIT_FEE} (คืนวันส่งเครื่อง)</div>
               </div>
-              <div style={{ ...doodle.card, overflow: 'hidden', marginBottom: 16 }}>
+              <div style={{ ...doodle.card, overflow: 'hidden', marginBottom: 16 , color: "#1a1a1a"}}>
                 {[
                   { bg: '#003D6B', label: 'พร้อมเพย์', num: '081-234-5678', name: 'บจก. คอนเสิร์ต เรนทัล', val: '0812345678', key: 'pp' },
                   { bg: '#138F2D', label: 'KBank', num: '123-4-56789-0', name: 'บจก. คอนเสิร์ต เรนทัล', val: '1234567890', key: 'bk' },
@@ -483,12 +483,12 @@ export default function PhoneRentalApp() {
           {step === 5 && (
             <div style={{ textAlign: 'center', paddingTop: 16 }}>
               <div style={{ fontSize: 64, marginBottom: 8 }}>🎉</div>
-              <div style={{ fontWeight: 900, fontSize: 24, marginBottom: 4 }}>รอการยืนยัน!</div>
+              <div style={{ fontWeight: 900, fontSize: 24, marginBottom: 4 , color: "#1a1a1a"}}>รอการยืนยัน!</div>
               <div style={{ fontSize: 32, marginBottom: 4 }}>⏳</div>
-              <p style={{ fontSize: 13, color: '#888', fontWeight: 600, marginBottom: 20, lineHeight: 1.6 }}>เราได้รับข้อมูลแล้ว~<br/>กรุณาแอดไลน์เพื่อรับการยืนยัน ✨</p>
-              <div style={{ ...doodle.cardYellow, padding: 16, marginBottom: 16, textAlign: 'left' }}>
+              <p style={{ fontSize: 20, color: '#888', fontWeight: 600, marginBottom: 20, lineHeight: 1.6 }}>เราได้รับข้อมูลแล้ว~<br/>กรุณาแอดไลน์เพื่อรับการยืนยัน ✨</p>
+              <div style={{ ...doodle.cardYellow, padding: 16, marginBottom: 16, textAlign: 'left' , color: "#1a1a1a"}}>
                 <div style={{ textAlign: 'center', marginBottom: 12, paddingBottom: 12, borderBottom: '2px dashed #E0D0B0' }}>
-                  <div style={{ fontSize: 12, color: '#888', fontWeight: 700 }}>หมายเลขการจอง</div>
+                  <div style={{ fontSize: 12, color: '#000000', fontWeight: 700 }}>หมายเลขการจอง</div>
                   <div style={{ fontSize: 20, fontWeight: 900, color: '#FF85B3', letterSpacing: 2, marginTop: 4 }}>{refNumber}</div>
                 </div>
                 {[

@@ -105,13 +105,13 @@ export default function BookingsPage() {
 
         {/* Header */}
         <div style={{ padding: '24px 20px 16px', position: 'sticky', top: 0, background: '#FFF5F9', zIndex: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 , color: "#1a1a1a"}}>
             <button onClick={() => router.push('/')}
               style={{ background: '#fff', border: '2.5px solid #1a1a1a', borderRadius: 50, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '2px 2px 0 #1a1a1a', fontSize: 16, flexShrink: 0 }}>
               ←
             </button>
             <div>
-              <div style={{ fontSize: 22, fontWeight: 900 }}>📋 ประวัติการจอง</div>
+              <div style={{ fontSize: 22, fontWeight: 900 , color: "#1a1a1a"}}>📋 ประวัติการจอง</div>
               <div style={{ fontSize: 12, color: '#888', fontWeight: 600 }}>รายการจองทั้งหมดของคุณ</div>
             </div>
           </div>
@@ -133,7 +133,7 @@ export default function BookingsPage() {
           )}
 
           {/* Booking Cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 4 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 4 , color: "#1a1a1a"}}>
             {bookings.map(b => {
               const st = STATUS_CONFIG[b.status];
               return (

@@ -46,7 +46,7 @@ export default function LoginPage() {
           }}
         >
           <div style={{ fontSize: 20, marginBottom: 8 }}>👋</div>
-          <h2 style={{ fontWeight: 900, fontSize: 20, margin: "0 0 8px" }}>
+          <h2 style={{ fontWeight: 900, fontSize: 20, margin: "0 0 8px", color: "#1a1a1a" }}>
             เข้าสู่ระบบก่อนนะ~
           </h2>
           <p style={{ fontSize: 13, color: "#888", fontWeight: 600, marginBottom: 28, lineHeight: 1.6 }}>
@@ -61,6 +61,7 @@ export default function LoginPage() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              color: "#1a1a1a",
               gap: 12,
               padding: "14px 20px",
               background: "#fff",

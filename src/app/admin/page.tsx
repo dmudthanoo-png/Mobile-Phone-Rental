@@ -155,9 +155,10 @@ export default function AdminPage() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 6 }}>
             <div>
               <div style={{ fontSize: 26, fontWeight: 900 }}>
-                <span style={{ color: "#FF85B3" }}>🎵</span> Admin Panel
+                  
+                <span style={{ color: "#FF85B3" }}>หน้าต่างแอดมิน</span>
               </div>
-              <div style={{ fontSize: 13, color: "#888", fontWeight: 600 }}>Concert Phone Rental</div>
+              <div style={{ fontSize: 13, color: "#888", fontWeight: 600 }}>ระบบจอง</div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {/* Auto-refresh indicator */}
@@ -193,7 +194,7 @@ export default function AdminPage() {
         )}
 
         {/* ── Summary Cards ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 ,color: "#1a1a1a"}}>
           {[
             { label: "รอยืนยัน", value: counts.pending, emoji: "⏳", style: doodle.cardYellow },
             { label: "ยืนยันแล้ว", value: counts.confirmed, emoji: "✅", style: doodle.cardGreen },
@@ -203,7 +204,7 @@ export default function AdminPage() {
             <div key={c.label} style={{ ...c.style, padding: "14px 16px" }}>
               <div style={{ fontSize: 22, marginBottom: 4 }}>{c.emoji}</div>
               <div style={{ fontSize: 22, fontWeight: 900 }}>{c.value}</div>
-              <div style={{ fontSize: 12, color: "#666", fontWeight: 600 }}>{c.label}</div>
+              <div style={{ fontSize: 12, color: "#000000", fontWeight: 600 }}>{c.label}</div>
             </div>
           ))}
         </div>
@@ -249,7 +250,7 @@ export default function AdminPage() {
                       {b.renter_name[0].toUpperCase()}
                     </div>
                     <div>
-                      <div style={{ fontWeight: 900, fontSize: 16 }}>{b.renter_name}</div>
+                      <div style={{ fontWeight: 900, fontSize: 16, color: "#1a1a1a" }}>{b.renter_name}</div>
                       <div style={{ fontSize: 12, color: "#888", fontWeight: 600 }}>{b.ref_number}</div>
                     </div>
                   </div>

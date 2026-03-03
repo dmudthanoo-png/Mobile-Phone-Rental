@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 
 type Booking = {
   id: string;
@@ -12,7 +11,7 @@ type Booking = {
   rental_date: string;
   venue_name: string;
   total_amount: number;
-  slip_url: string;
+  slip_url: string | null;
   ref_number: string;
   status: "pending" | "confirmed" | "rejected";
 };
@@ -20,178 +19,239 @@ type Booking = {
 const THAI_MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 
 const formatThaiDate = (dateStr: string) => {
-  const [y, m, d] = dateStr.split('-');
+  const [y, m, d] = dateStr.split("-");
   return `${parseInt(d)} ${THAI_MONTHS[parseInt(m) - 1]} ${parseInt(y) + 543}`;
 };
 
 const STATUS_CONFIG = {
-  pending:   { label: '⏳ รอยืนยัน',   bg: '#FFF9E6', color: '#b45309', border: '#FCD34D' },
-  confirmed: { label: '✅ ยืนยันแล้ว', bg: '#F0FFF4', color: '#065f46', border: '#6EE7B7' },
-  rejected:  { label: '❌ ไม่อนุมัติ', bg: '#FFF1F2', color: '#9f1239', border: '#FDA4AF' },
+  pending:   { label: "⏳ รอยืนยัน",   bg: "#FFF9E6", color: "#b45309", border: "#FCD34D" },
+  confirmed: { label: "✅ ยืนยันแล้ว", bg: "#F0FFF4", color: "#065f46", border: "#6EE7B7" },
+  rejected:  { label: "❌ ไม่อนุมัติ", bg: "#FFF1F2", color: "#9f1239", border: "#FDA4AF" },
 };
 
 const doodle = {
-  card: { borderRadius: '18px', border: '2.5px solid #1a1a1a', boxShadow: '4px 4px 0px #1a1a1a', background: '#fff' } as React.CSSProperties,
-  cardPink: { borderRadius: '18px', border: '2.5px solid #1a1a1a', boxShadow: '4px 4px 0px #1a1a1a', background: '#FFE8F0' } as React.CSSProperties,
+  card: { borderRadius: "18px", border: "2.5px solid #1a1a1a", boxShadow: "4px 4px 0px #1a1a1a", background: "#fff" } as React.CSSProperties,
 };
 
 export default function BookingsPage() {
   const router = useRouter();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+
   const [slipModal, setSlipModal] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newSlipFile, setNewSlipFile] = useState<File | null>(null);
   const [newSlipPreview, setNewSlipPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) { router.push('/login'); return; }
+  const loadMyBookings = async () => {
+    const res = await fetch("/api/bookings/my", { cache: "no-store" });
+    const raw = await res.text();
 
-      supabase
-        .from('bookings')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false })
-        .then(({ data }) => {
-          if (data) setBookings(data as Booking[]);
-          setLoading(false);
-        });
-    });
+    let out: any = null;
+    try {
+      out = raw ? JSON.parse(raw) : null;
+    } catch {
+      console.error("Non-JSON /api/bookings/my:", raw);
+      throw new Error("API not json");
+    }
+
+    if (!res.ok) {
+      throw new Error(out?.error || "failed to load bookings");
+    }
+
+    setBookings((out?.bookings ?? []) as Booking[]);
+  };
+
+  useEffect(() => {
+    const run = async () => {
+      // เช็ค login จาก cookie
+      const meRes = await fetch("/api/me", { cache: "no-store" });
+      const meRaw = await meRes.text();
+      let me: any = null;
+
+      try {
+        me = meRaw ? JSON.parse(meRaw) : null;
+      } catch {
+        console.error("Non-JSON /api/me:", meRaw);
+        router.push("/login");
+        return;
+      }
+
+      if (!me?.user) {
+        router.push("/login");
+        return;
+      }
+
+      try {
+        await loadMyBookings();
+      } catch (e) {
+        console.error(e);
+        // ถ้า token หมดอายุ/unauthorized ให้กลับไป login
+        router.push("/login");
+        return;
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    run();
   }, [router]);
 
-  const handleUploadNewSlip = async (bookingId: string, userId: string) => {
+  const handleUploadNewSlip = async (bookingId: string) => {
     if (!newSlipFile) return;
+
     setUploading(true);
     try {
-      const ext = newSlipFile.type === 'image/png' ? 'png' : 'jpg';
-      const fileName = `${userId}_${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from('slips')
-        .upload(fileName, newSlipFile, { contentType: newSlipFile.type });
-      if (uploadError) throw uploadError;
+      const form = new FormData();
+      form.append("booking_id", bookingId);
+      form.append("slip", newSlipFile);
 
-      const { data } = supabase.storage.from('slips').getPublicUrl(fileName);
-      const { error: updateError } = await supabase
-        .from('bookings')
-        .update({ slip_url: data.publicUrl })
-        .eq('id', bookingId);
-      if (updateError) throw updateError;
+      const res = await fetch("/api/bookings/update-slip", { method: "POST", body: form });
+      const raw = await res.text();
 
-      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, slip_url: data.publicUrl } : b));
+      let out: any = null;
+      try {
+        out = raw ? JSON.parse(raw) : null;
+      } catch {
+        console.error("Non-JSON /api/bookings/update-slip:", raw);
+        throw new Error("API not json");
+      }
+
+      if (!res.ok) {
+        alert(out?.error || "เกิดข้อผิดพลาด กรุณาลองใหม่ครับ");
+        return;
+      }
+
+      const newUrl = out.slip_url as string;
+      setBookings((prev) => prev.map((b) => (b.id === bookingId ? { ...b, slip_url: newUrl } : b)));
+
       setEditingId(null);
       setNewSlipFile(null);
       setNewSlipPreview(null);
-      alert('✅ อัปเดตสลิปเรียบร้อยแล้วครับ!');
+      alert("✅ อัปเดตสลิปเรียบร้อยแล้วครับ!");
     } catch (err) {
       console.error(err);
-      alert('เกิดข้อผิดพลาด กรุณาลองใหม่ครับ');
+      alert("เกิดข้อผิดพลาด กรุณาลองใหม่ครับ");
     } finally {
       setUploading(false);
     }
   };
 
-  if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#FFF5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, fontFamily: 'inherit' }}>
-      <div style={{ fontSize: 48 }}>📋</div>
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#888' }}>กำลังโหลด...</div>
-    </div>
-  );
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#FFF5F9", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12, fontFamily: "inherit" }}>
+        <div style={{ fontSize: 48 }}>📋</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#888" }}>กำลังโหลด...</div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#FFF5F9', fontFamily: "'Mitr', 'Kanit', 'Segoe UI', sans-serif", display: 'flex', justifyContent: 'center', paddingBottom: 40 }}>
-      <div style={{ width: '100%', maxWidth: 480 }}>
-
+    <div style={{ minHeight: "100vh", background: "#FFF5F9", fontFamily: "'Mitr', 'Kanit', 'Segoe UI', sans-serif", display: "flex", justifyContent: "center", paddingBottom: 40 }}>
+      <div style={{ width: "100%", maxWidth: 480 }}>
         {/* Header */}
-        <div style={{ padding: '24px 20px 16px', position: 'sticky', top: 0, background: '#FFF5F9', zIndex: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 , color: "#1a1a1a"}}>
-            <button onClick={() => router.push('/')}
-              style={{ background: '#fff', border: '2.5px solid #1a1a1a', borderRadius: 50, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '2px 2px 0 #1a1a1a', fontSize: 16, flexShrink: 0 }}>
+        <div style={{ padding: "24px 20px 16px", position: "sticky", top: 0, background: "#FFF5F9", zIndex: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, color: "#1a1a1a" }}>
+            <button
+              onClick={() => router.push("/")}
+              style={{ background: "#fff", border: "2.5px solid #1a1a1a", borderRadius: 50, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "2px 2px 0 #1a1a1a", fontSize: 16, flexShrink: 0 }}
+            >
               ←
             </button>
             <div>
-              <div style={{ fontSize: 22, fontWeight: 900 , color: "#1a1a1a"}}>📋 ประวัติการจอง</div>
-              <div style={{ fontSize: 12, color: '#888', fontWeight: 600 }}>รายการจองทั้งหมดของคุณ</div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: "#1a1a1a" }}>📋 ประวัติการจอง</div>
+              <div style={{ fontSize: 12, color: "#888", fontWeight: 600 }}>รายการจองทั้งหมดของคุณ</div>
             </div>
           </div>
         </div>
 
-        <div style={{ padding: '0 20px' }}>
-
+        <div style={{ padding: "0 20px" }}>
           {/* Empty state */}
           {bookings.length === 0 && (
-            <div style={{ ...doodle.card, padding: 40, textAlign: 'center', marginTop: 20 }}>
+            <div style={{ ...doodle.card, padding: 40, textAlign: "center", marginTop: 20 }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
               <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>ยังไม่มีการจอง</div>
-              <p style={{ fontSize: 13, color: '#888', fontWeight: 600, marginBottom: 20 }}>เริ่มจองมือถือสำหรับคอนเสิร์ตได้เลยครับ!</p>
-              <button onClick={() => router.push('/')}
-                style={{ background: '#FF85B3', border: '2.5px solid #1a1a1a', borderRadius: 50, padding: '10px 24px', fontWeight: 800, fontSize: 14, cursor: 'pointer', boxShadow: '3px 3px 0 #1a1a1a', fontFamily: 'inherit' }}>
+              <p style={{ fontSize: 13, color: "#888", fontWeight: 600, marginBottom: 20 }}>เริ่มจองมือถือสำหรับคอนเสิร์ตได้เลยครับ!</p>
+              <button
+                onClick={() => router.push("/")}
+                style={{ background: "#FF85B3", border: "2.5px solid #1a1a1a", borderRadius: 50, padding: "10px 24px", fontWeight: 800, fontSize: 14, cursor: "pointer", boxShadow: "3px 3px 0 #1a1a1a", fontFamily: "inherit" }}
+              >
                 จองเลย 📱
               </button>
             </div>
           )}
 
           {/* Booking Cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 4 , color: "#1a1a1a"}}>
-            {bookings.map(b => {
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 4, color: "#1a1a1a" }}>
+            {bookings.map((b) => {
               const st = STATUS_CONFIG[b.status];
+
               return (
                 <div key={b.id} style={{ ...doodle.card, padding: 18 }}>
-
                   {/* Top row */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                     <div>
                       <div style={{ fontWeight: 900, fontSize: 16 }}>{b.package_name}</div>
-                      <div style={{ fontSize: 12, color: '#888', fontWeight: 600, marginTop: 2 }}>{b.ref_number}</div>
+                      <div style={{ fontSize: 12, color: "#888", fontWeight: 600, marginTop: 2 }}>{b.ref_number}</div>
                     </div>
-                    <span style={{ background: st.bg, color: st.color, border: `2px solid ${st.border}`, borderRadius: 20, padding: '4px 12px', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' }}>
+                    <span style={{ background: st.bg, color: st.color, border: `2px solid ${st.border}`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: 12, whiteSpace: "nowrap" }}>
                       {st.label}
                     </span>
                   </div>
 
                   {/* Info */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', fontSize: 13, marginBottom: 14 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px", fontSize: 13, marginBottom: 14 }}>
                     {[
-                      ['🗓️', formatThaiDate(b.rental_date)],
-                      ['📍', b.venue_name],
-                      ['💰', `฿${b.total_amount.toLocaleString()}`],
-                      ['🕐', new Date(b.created_at).toLocaleDateString('th-TH', { dateStyle: 'short' })],
+                      ["🗓️", formatThaiDate(b.rental_date)],
+                      ["📍", b.venue_name],
+                      ["💰", `฿${b.total_amount.toLocaleString()}`],
+                      ["🕐", new Date(b.created_at).toLocaleDateString("th-TH", { dateStyle: "short" })],
                     ].map(([icon, val]) => (
-                      <div key={val} style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#444', fontWeight: 600 }}>
-                        <span>{icon}</span><span>{val}</span>
+                      <div key={`${b.id}-${icon}`} style={{ display: "flex", alignItems: "center", gap: 6, color: "#444", fontWeight: 600 }}>
+                        <span>{icon}</span>
+                        <span>{val}</span>
                       </div>
                     ))}
                   </div>
 
                   {/* Status message */}
-                  {b.status === 'pending' && (
-                    <div style={{ background: '#FFF9E6', border: '2px dashed #FCD34D', borderRadius: 12, padding: '8px 12px', fontSize: 12, fontWeight: 700, color: '#92400e' }}>
+                  {b.status === "pending" && (
+                    <div style={{ background: "#FFF9E6", border: "2px dashed #FCD34D", borderRadius: 12, padding: "8px 12px", fontSize: 12, fontWeight: 700, color: "#92400e" }}>
                       ⏳ รอ admin ตรวจสอบสลิปและยืนยันการจองครับ
                     </div>
                   )}
-                  {b.status === 'confirmed' && (
-                    <div style={{ background: '#F0FFF4', border: '2px dashed #6EE7B7', borderRadius: 12, padding: '8px 12px', fontSize: 12, fontWeight: 700, color: '#065f46' }}>
+                  {b.status === "confirmed" && (
+                    <div style={{ background: "#F0FFF4", border: "2px dashed #6EE7B7", borderRadius: 12, padding: "8px 12px", fontSize: 12, fontWeight: 700, color: "#065f46" }}>
                       ✅ การจองได้รับการยืนยันแล้ว! กรุณามารับมือถือก่อนคอนเสิร์ตครับ
                     </div>
                   )}
-                  {b.status === 'rejected' && (
-                    <div style={{ background: '#FFF1F2', border: '2px dashed #FDA4AF', borderRadius: 12, padding: '8px 12px', fontSize: 12, fontWeight: 700, color: '#9f1239' }}>
+                  {b.status === "rejected" && (
+                    <div style={{ background: "#FFF1F2", border: "2px dashed #FDA4AF", borderRadius: 12, padding: "8px 12px", fontSize: 12, fontWeight: 700, color: "#9f1239" }}>
                       ❌ การจองถูกปฏิเสธ กรุณาติดต่อ LINE OA เพื่อสอบถามครับ
                     </div>
                   )}
 
                   {/* Slip buttons */}
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                  <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                     {b.slip_url && (
-                      <button onClick={() => setSlipModal(b.slip_url)}
-                        style={{ background: '#FFF9E6', border: '2px solid #1a1a1a', borderRadius: 20, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', boxShadow: '2px 2px 0 #1a1a1a', fontFamily: 'inherit' }}>
+                      <button
+                        onClick={() => setSlipModal(b.slip_url!)}
+                        style={{ background: "#FFF9E6", border: "2px solid #1a1a1a", borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", boxShadow: "2px 2px 0 #1a1a1a", fontFamily: "inherit" }}
+                      >
                         🧾 ดูสลิป
                       </button>
                     )}
-                    {b.status === 'pending' && (
-                      <button onClick={() => { setEditingId(editingId === b.id ? null : b.id); setNewSlipFile(null); setNewSlipPreview(null); }}
-                        style={{ background: '#EEF2FF', border: '2px solid #1a1a1a', borderRadius: 20, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', boxShadow: '2px 2px 0 #1a1a1a', fontFamily: 'inherit' }}>
+
+                    {b.status === "pending" && (
+                      <button
+                        onClick={() => {
+                          setEditingId(editingId === b.id ? null : b.id);
+                          setNewSlipFile(null);
+                          setNewSlipPreview(null);
+                        }}
+                        style={{ background: "#EEF2FF", border: "2px solid #1a1a1a", borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", boxShadow: "2px 2px 0 #1a1a1a", fontFamily: "inherit" }}
+                      >
                         ✏️ เปลี่ยนสลิป
                       </button>
                     )}
@@ -199,28 +259,45 @@ export default function BookingsPage() {
 
                   {/* Upload new slip */}
                   {editingId === b.id && (
-                    <div style={{ marginTop: 12, background: '#F8F8FF', border: '2px dashed #6366f1', borderRadius: 14, padding: 14 }}>
-                      <label style={{ cursor: 'pointer', display: 'block' }}>
-                        <div style={{ textAlign: 'center', marginBottom: newSlipPreview ? 10 : 0 }}>
+                    <div style={{ marginTop: 12, background: "#F8F8FF", border: "2px dashed #6366f1", borderRadius: 14, padding: 14 }}>
+                      <label style={{ cursor: "pointer", display: "block" }}>
+                        <div style={{ textAlign: "center", marginBottom: newSlipPreview ? 10 : 0 }}>
                           {newSlipPreview ? (
-                            <img src={newSlipPreview} alt="new slip" style={{ maxHeight: 120, borderRadius: 10, objectFit: 'contain', margin: '0 auto', display: 'block', border: '2px solid #1a1a1a' }} />
+                            <img src={newSlipPreview} alt="new slip" style={{ maxHeight: 120, borderRadius: 10, objectFit: "contain", margin: "0 auto", display: "block", border: "2px solid #1a1a1a" }} />
                           ) : (
-                            <div style={{ padding: '10px 0', fontSize: 13, fontWeight: 700, color: '#6366f1' }}>📎 แตะเพื่อเลือกสลิปใหม่</div>
+                            <div style={{ padding: "10px 0", fontSize: 13, fontWeight: 700, color: "#6366f1" }}>📎 แตะเพื่อเลือกสลิปใหม่</div>
                           )}
                         </div>
-                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
-                          const f = e.target.files?.[0];
-                          if (f) { setNewSlipFile(f); setNewSlipPreview(URL.createObjectURL(f)); }
-                        }} />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          style={{ display: "none" }}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) {
+                              setNewSlipFile(f);
+                              setNewSlipPreview(URL.createObjectURL(f));
+                            }
+                          }}
+                        />
                       </label>
+
                       {newSlipPreview && (
-                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                          <button onClick={() => handleUploadNewSlip(b.id, b.id)} disabled={uploading}
-                            style={{ flex: 1, background: '#5FD16A', border: '2px solid #1a1a1a', borderRadius: 20, padding: '8px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', color: '#fff' }}>
-                            {uploading ? '⏳ กำลังอัปโหลด...' : '✅ บันทึกสลิปใหม่'}
+                        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                          <button
+                            onClick={() => handleUploadNewSlip(b.id)}
+                            disabled={uploading}
+                            style={{ flex: 1, background: "#5FD16A", border: "2px solid #1a1a1a", borderRadius: 20, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", color: "#fff", opacity: uploading ? 0.7 : 1 }}
+                          >
+                            {uploading ? "⏳ กำลังอัปโหลด..." : "✅ บันทึกสลิปใหม่"}
                           </button>
-                          <button onClick={() => { setNewSlipFile(null); setNewSlipPreview(null); }}
-                            style={{ background: '#FFF1F2', border: '2px solid #ef4444', borderRadius: 20, padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', color: '#ef4444' }}>
+                          <button
+                            onClick={() => {
+                              setNewSlipFile(null);
+                              setNewSlipPreview(null);
+                            }}
+                            style={{ background: "#FFF1F2", border: "2px solid #ef4444", borderRadius: 20, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", color: "#ef4444" }}
+                          >
                             ยกเลิก
                           </button>
                         </div>
@@ -234,8 +311,10 @@ export default function BookingsPage() {
 
           {/* New booking button */}
           {bookings.length > 0 && (
-            <button onClick={() => router.push('/')}
-              style={{ marginTop: 20, width: '100%', background: '#FF85B3', border: '2.5px solid #1a1a1a', borderRadius: 50, padding: '13px 0', fontWeight: 800, fontSize: 15, cursor: 'pointer', boxShadow: '3px 3px 0 #1a1a1a', fontFamily: 'inherit' }}>
+            <button
+              onClick={() => router.push("/")}
+              style={{ marginTop: 20, width: "100%", background: "#FF85B3", border: "2.5px solid #1a1a1a", borderRadius: 50, padding: "13px 0", fontWeight: 800, fontSize: 15, cursor: "pointer", boxShadow: "3px 3px 0 #1a1a1a", fontFamily: "inherit" }}
+            >
               + จองเพิ่ม 📱
             </button>
           )}
@@ -244,17 +323,22 @@ export default function BookingsPage() {
 
       {/* Slip Modal */}
       {slipModal && (
-        <div onClick={() => setSlipModal(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999, padding: 20 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ background: '#fff', borderRadius: 16, border: '3px solid #1a1a1a', overflow: 'hidden', maxWidth: 380, width: '100%' }}>
-            <div style={{ padding: '12px 16px', borderBottom: '2px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div
+          onClick={() => setSlipModal(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, border: "3px solid #1a1a1a", overflow: "hidden", maxWidth: 380, width: "100%" }}>
+            <div style={{ padding: "12px 16px", borderBottom: "2px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 800 }}>🧾 สลิปการโอน</span>
-              <button onClick={() => setSlipModal(null)} style={{ border: 'none', background: 'none', fontSize: 20, cursor: 'pointer' }}>✕</button>
+              <button onClick={() => setSlipModal(null)} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer" }}>
+                ✕
+              </button>
             </div>
-            <img src={slipModal} alt="slip" style={{ width: '100%', display: 'block' }} />
-            <div style={{ padding: '10px 16px' }}>
-              <a href={slipModal} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#6366f1', fontWeight: 600 }}>เปิดในแท็บใหม่ ↗</a>
+            <img src={slipModal} alt="slip" style={{ width: "100%", display: "block" }} />
+            <div style={{ padding: "10px 16px" }}>
+              <a href={slipModal} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "#6366f1", fontWeight: 600 }}>
+                เปิดในแท็บใหม่ ↗
+              </a>
             </div>
           </div>
         </div>

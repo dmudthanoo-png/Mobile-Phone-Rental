@@ -1,37 +1,61 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 
 type Booking = {
   id: string;
   created_at: string;
   renter_name: string;
-  package_name: string;
-  rental_date: string;
-  venue_name: string;
+  renter_phone?: string | null;
   total_amount: number;
   slip_url: string | null;
   ref_number: string;
   status: "pending" | "confirmed" | "rejected";
-};
+  pending_expires_at?: string | null;
 
-const THAI_MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+  concert_sessions?: {
+    id: string;
+    start_at: string;
+    end_at: string | null;
+    note: string | null;
+    concerts?: {
+      id: string;
+      title: string;
+      venue_name: string | null;
+      poster_url: string | null;
+    } | null;
+  } | null;
 
-const formatThaiDate = (dateStr: string) => {
-  const [y, m, d] = dateStr.split("-");
-  return `${parseInt(d)} ${THAI_MONTHS[parseInt(m) - 1]} ${parseInt(y) + 543}`;
+  phones?: {
+    id: string;
+    model_name: string;
+    image_url: string | null;
+    price: number | null;
+  } | null;
 };
 
 const STATUS_CONFIG = {
-  pending:   { label: "⏳ รอยืนยัน",   bg: "#FFF9E6", color: "#b45309", border: "#FCD34D" },
+  pending: { label: "⏳ รอยืนยัน", bg: "#FFF9E6", color: "#b45309", border: "#FCD34D" },
   confirmed: { label: "✅ ยืนยันแล้ว", bg: "#F0FFF4", color: "#065f46", border: "#6EE7B7" },
-  rejected:  { label: "❌ ไม่อนุมัติ", bg: "#FFF1F2", color: "#9f1239", border: "#FDA4AF" },
+  rejected: { label: "❌ ไม่อนุมัติ", bg: "#FFF1F2", color: "#9f1239", border: "#FDA4AF" },
 };
 
 const doodle = {
-  card: { borderRadius: "18px", border: "2.5px solid #1a1a1a", boxShadow: "4px 4px 0px #1a1a1a", background: "#fff" } as React.CSSProperties,
+  card: {
+    borderRadius: "18px",
+    border: "2.5px solid #1a1a1a",
+    boxShadow: "4px 4px 0px #1a1a1a",
+    background: "#fff",
+  } as CSSProperties,
 };
+
+function formatSessionStart(startAt?: string | null) {
+  if (!startAt) return "-";
+  const d = new Date(startAt);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+}
 
 export default function BookingsPage() {
   const router = useRouter();
@@ -45,14 +69,15 @@ export default function BookingsPage() {
   const [uploading, setUploading] = useState(false);
 
   const loadMyBookings = async () => {
-    const res = await fetch("/api/bookings/my", { cache: "no-store" });
+    // ✅ ใช้ v2 (join session+concert+phone)
+    const res = await fetch("/api/bookings/my-v2", { cache: "no-store" });
     const raw = await res.text();
 
     let out: any = null;
     try {
       out = raw ? JSON.parse(raw) : null;
     } catch {
-      console.error("Non-JSON /api/bookings/my:", raw);
+      console.error("Non-JSON /api/bookings/my-v2:", raw);
       throw new Error("API not json");
     }
 
@@ -87,7 +112,6 @@ export default function BookingsPage() {
         await loadMyBookings();
       } catch (e) {
         console.error(e);
-        // ถ้า token หมดอายุ/unauthorized ให้กลับไป login
         router.push("/login");
         return;
       } finally {
@@ -140,7 +164,18 @@ export default function BookingsPage() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#FFF5F9", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12, fontFamily: "inherit" }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#FFF5F9",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexDirection: "column",
+          gap: 12,
+          fontFamily: "inherit",
+        }}
+      >
         <div style={{ fontSize: 48 }}>📋</div>
         <div style={{ fontSize: 14, fontWeight: 700, color: "#888" }}>กำลังโหลด...</div>
       </div>
@@ -148,14 +183,36 @@ export default function BookingsPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#FFF5F9", fontFamily: "'Mitr', 'Kanit', 'Segoe UI', sans-serif", display: "flex", justifyContent: "center", paddingBottom: 40 }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#FFF5F9",
+        fontFamily: "'Mitr', 'Kanit', 'Segoe UI', sans-serif",
+        display: "flex",
+        justifyContent: "center",
+        paddingBottom: 40,
+      }}
+    >
       <div style={{ width: "100%", maxWidth: 480 }}>
         {/* Header */}
         <div style={{ padding: "24px 20px 16px", position: "sticky", top: 0, background: "#FFF5F9", zIndex: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4, color: "#1a1a1a" }}>
             <button
               onClick={() => router.push("/")}
-              style={{ background: "#fff", border: "2.5px solid #1a1a1a", borderRadius: 50, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "2px 2px 0 #1a1a1a", fontSize: 16, flexShrink: 0 }}
+              style={{
+                background: "#fff",
+                border: "2.5px solid #1a1a1a",
+                borderRadius: 50,
+                width: 36,
+                height: 36,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                boxShadow: "2px 2px 0 #1a1a1a",
+                fontSize: 16,
+                flexShrink: 0,
+              }}
             >
               ←
             </button>
@@ -175,7 +232,17 @@ export default function BookingsPage() {
               <p style={{ fontSize: 13, color: "#888", fontWeight: 600, marginBottom: 20 }}>เริ่มจองมือถือสำหรับคอนเสิร์ตได้เลยครับ!</p>
               <button
                 onClick={() => router.push("/")}
-                style={{ background: "#FF85B3", border: "2.5px solid #1a1a1a", borderRadius: 50, padding: "10px 24px", fontWeight: 800, fontSize: 14, cursor: "pointer", boxShadow: "3px 3px 0 #1a1a1a", fontFamily: "inherit" }}
+                style={{
+                  background: "#FF85B3",
+                  border: "2.5px solid #1a1a1a",
+                  borderRadius: 50,
+                  padding: "10px 24px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  boxShadow: "3px 3px 0 #1a1a1a",
+                  fontFamily: "inherit",
+                }}
               >
                 จองเลย 📱
               </button>
@@ -187,15 +254,33 @@ export default function BookingsPage() {
             {bookings.map((b) => {
               const st = STATUS_CONFIG[b.status];
 
+              const concertTitle = b.concert_sessions?.concerts?.title ?? "คอนเสิร์ต";
+              const venueName = b.concert_sessions?.concerts?.venue_name ?? "-";
+              const phoneModel = b.phones?.model_name ?? "-";
+              const sessionLabel = formatSessionStart(b.concert_sessions?.start_at);
+
               return (
                 <div key={b.id} style={{ ...doodle.card, padding: 18 }}>
                   {/* Top row */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                     <div>
-                      <div style={{ fontWeight: 900, fontSize: 16 }}>{b.package_name}</div>
-                      <div style={{ fontSize: 12, color: "#888", fontWeight: 600, marginTop: 2 }}>{b.ref_number}</div>
+                      <div style={{ fontWeight: 900, fontSize: 16 }}>{concertTitle}</div>
+                      <div style={{ fontSize: 12, color: "#888", fontWeight: 600, marginTop: 2 }}>
+                        {phoneModel} • {b.ref_number}
+                      </div>
                     </div>
-                    <span style={{ background: st.bg, color: st.color, border: `2px solid ${st.border}`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: 12, whiteSpace: "nowrap" }}>
+                    <span
+                      style={{
+                        background: st.bg,
+                        color: st.color,
+                        border: `2px solid ${st.border}`,
+                        borderRadius: 20,
+                        padding: "4px 12px",
+                        fontWeight: 700,
+                        fontSize: 12,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {st.label}
                     </span>
                   </div>
@@ -203,10 +288,10 @@ export default function BookingsPage() {
                   {/* Info */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px", fontSize: 13, marginBottom: 14 }}>
                     {[
-                      ["🗓️", formatThaiDate(b.rental_date)],
-                      ["📍", b.venue_name],
+                      ["🗓️", sessionLabel],
+                      ["📍", venueName],
                       ["💰", `฿${b.total_amount.toLocaleString()}`],
-                      ["🕐", new Date(b.created_at).toLocaleDateString("th-TH", { dateStyle: "short" })],
+                      ["🕐", new Date(b.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })],
                     ].map(([icon, val]) => (
                       <div key={`${b.id}-${icon}`} style={{ display: "flex", alignItems: "center", gap: 6, color: "#444", fontWeight: 600 }}>
                         <span>{icon}</span>
@@ -237,7 +322,17 @@ export default function BookingsPage() {
                     {b.slip_url && (
                       <button
                         onClick={() => setSlipModal(b.slip_url!)}
-                        style={{ background: "#FFF9E6", border: "2px solid #1a1a1a", borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", boxShadow: "2px 2px 0 #1a1a1a", fontFamily: "inherit" }}
+                        style={{
+                          background: "#FFF9E6",
+                          border: "2px solid #1a1a1a",
+                          borderRadius: 20,
+                          padding: "6px 14px",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          boxShadow: "2px 2px 0 #1a1a1a",
+                          fontFamily: "inherit",
+                        }}
                       >
                         🧾 ดูสลิป
                       </button>
@@ -250,7 +345,17 @@ export default function BookingsPage() {
                           setNewSlipFile(null);
                           setNewSlipPreview(null);
                         }}
-                        style={{ background: "#EEF2FF", border: "2px solid #1a1a1a", borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", boxShadow: "2px 2px 0 #1a1a1a", fontFamily: "inherit" }}
+                        style={{
+                          background: "#EEF2FF",
+                          border: "2px solid #1a1a1a",
+                          borderRadius: 20,
+                          padding: "6px 14px",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          boxShadow: "2px 2px 0 #1a1a1a",
+                          fontFamily: "inherit",
+                        }}
                       >
                         ✏️ เปลี่ยนสลิป
                       </button>
@@ -263,7 +368,11 @@ export default function BookingsPage() {
                       <label style={{ cursor: "pointer", display: "block" }}>
                         <div style={{ textAlign: "center", marginBottom: newSlipPreview ? 10 : 0 }}>
                           {newSlipPreview ? (
-                            <img src={newSlipPreview} alt="new slip" style={{ maxHeight: 120, borderRadius: 10, objectFit: "contain", margin: "0 auto", display: "block", border: "2px solid #1a1a1a" }} />
+                            <img
+                              src={newSlipPreview}
+                              alt="new slip"
+                              style={{ maxHeight: 120, borderRadius: 10, objectFit: "contain", margin: "0 auto", display: "block", border: "2px solid #1a1a1a" }}
+                            />
                           ) : (
                             <div style={{ padding: "10px 0", fontSize: 13, fontWeight: 700, color: "#6366f1" }}>📎 แตะเพื่อเลือกสลิปใหม่</div>
                           )}
@@ -287,7 +396,19 @@ export default function BookingsPage() {
                           <button
                             onClick={() => handleUploadNewSlip(b.id)}
                             disabled={uploading}
-                            style={{ flex: 1, background: "#5FD16A", border: "2px solid #1a1a1a", borderRadius: 20, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", color: "#fff", opacity: uploading ? 0.7 : 1 }}
+                            style={{
+                              flex: 1,
+                              background: "#5FD16A",
+                              border: "2px solid #1a1a1a",
+                              borderRadius: 20,
+                              padding: "8px 0",
+                              fontSize: 13,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              color: "#fff",
+                              opacity: uploading ? 0.7 : 1,
+                            }}
                           >
                             {uploading ? "⏳ กำลังอัปโหลด..." : "✅ บันทึกสลิปใหม่"}
                           </button>
@@ -296,7 +417,17 @@ export default function BookingsPage() {
                               setNewSlipFile(null);
                               setNewSlipPreview(null);
                             }}
-                            style={{ background: "#FFF1F2", border: "2px solid #ef4444", borderRadius: 20, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", color: "#ef4444" }}
+                            style={{
+                              background: "#FFF1F2",
+                              border: "2px solid #ef4444",
+                              borderRadius: 20,
+                              padding: "8px 14px",
+                              fontSize: 13,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              color: "#ef4444",
+                            }}
                           >
                             ยกเลิก
                           </button>
@@ -313,7 +444,19 @@ export default function BookingsPage() {
           {bookings.length > 0 && (
             <button
               onClick={() => router.push("/")}
-              style={{ marginTop: 20, width: "100%", background: "#FF85B3", border: "2.5px solid #1a1a1a", borderRadius: 50, padding: "13px 0", fontWeight: 800, fontSize: 15, cursor: "pointer", boxShadow: "3px 3px 0 #1a1a1a", fontFamily: "inherit" }}
+              style={{
+                marginTop: 20,
+                width: "100%",
+                background: "#FF85B3",
+                border: "2.5px solid #1a1a1a",
+                borderRadius: 50,
+                padding: "13px 0",
+                fontWeight: 800,
+                fontSize: 15,
+                cursor: "pointer",
+                boxShadow: "3px 3px 0 #1a1a1a",
+                fontFamily: "inherit",
+              }}
             >
               + จองเพิ่ม 📱
             </button>
@@ -325,9 +468,21 @@ export default function BookingsPage() {
       {slipModal && (
         <div
           onClick={() => setSlipModal(null)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.7)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 999,
+            padding: 20,
+          }}
         >
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, border: "3px solid #1a1a1a", overflow: "hidden", maxWidth: 380, width: "100%" }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#fff", borderRadius: 16, border: "3px solid #1a1a1a", overflow: "hidden", maxWidth: 380, width: "100%" }}
+          >
             <div style={{ padding: "12px 16px", borderBottom: "2px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 800 }}>🧾 สลิปการโอน</span>
               <button onClick={() => setSlipModal(null)} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer" }}>

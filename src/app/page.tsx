@@ -146,13 +146,13 @@ export default function PhoneRentalHome() {
   const [slipFile, setSlipFile] = useState<File | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false); // ← กัน double submit
   const [pageError, setPageError] = useState<string>("");
 
   const selectedConcert = useMemo(() => concerts.find((c) => c.id === selectedConcertId) || null, [concerts, selectedConcertId]);
   const selectedSession = useMemo(() => sessions.find((s) => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
   const selectedPhone = useMemo(() => phones.find((p) => p.phone_id === selectedPhoneId) || null, [phones, selectedPhoneId]);
 
-  // ✅ ใช้ deposit จากรุ่นมือถือ ไม่ใช่ fixed
   const depositFee = selectedPhone?.deposit ?? 0;
   const totalAmount = (selectedPhone ? Number(selectedPhone.price) : 0) + depositFee;
 
@@ -210,8 +210,8 @@ export default function PhoneRentalHome() {
         setMeUser(me.user);
         if (me.user.name) setRenterName(me.user.name);
         await loadConcerts();
-      } catch (e: any) {
-        setPageError(e?.message || "โหลดข้อมูลไม่สำเร็จ");
+      } catch (e: unknown) {
+        setPageError(e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ");
       } finally {
         setLoading(false);
       }
@@ -237,7 +237,7 @@ export default function PhoneRentalHome() {
   };
 
   const isNextDisabled = () => {
-    if (submitting) return true;
+    if (submitting || submitted) return true; // ← เพิ่ม submitted
     if (step === 1) return !selectedConcertId;
     if (step === 2) return !selectedSessionId || !selectedPhoneId;
     if (step === 3) return !renterName.trim() || !renterPhone.trim() || renterPhone.trim().length !== 10;
@@ -268,15 +268,21 @@ export default function PhoneRentalHome() {
     }
 
     if (step === 4) {
+      // ← กัน double submit ทันทีก่อน async ใดๆ
+      if (submitted) return;
+      setSubmitted(true);
       setSubmitting(true);
+
       try {
         if (!selectedSessionId || !selectedPhoneId) {
           setPageError("กรุณาเลือกรอบและมือถือ");
+          setSubmitted(false);
           setStep(2);
           return;
         }
         if (!slipFile) {
           setPageError("กรุณาแนบสลิป");
+          setSubmitted(false);
           return;
         }
 
@@ -294,11 +300,12 @@ export default function PhoneRentalHome() {
           cache: "no-store",
         });
 
-        let upOut: any = null;
+        let upOut: { error?: string; booking_id?: string; ref_number?: string } | null = null;
         try {
           upOut = await safeJson(upRes);
-        } catch (e: any) {
-          setPageError(e?.message || "upload failed (not json)");
+        } catch (e: unknown) {
+          setPageError(e instanceof Error ? e.message : "upload failed (not json)");
+          setSubmitted(false);
           return;
         }
 
@@ -308,25 +315,30 @@ export default function PhoneRentalHome() {
             if (selectedSessionId) await loadPhones(selectedSessionId);
             setSelectedPhoneId(null);
             resetSlip();
+            setSubmitted(false);
             setStep(2);
             return;
           }
-            if (upRes.status === 429) {
-          setPageError("มีการจองที่รอยืนยันอยู่แล้ว กรุณารอให้แอดมินตรวจสอบก่อนจองใหม่");
-          return;
+          if (upRes.status === 429) {
+            setPageError("มีการจองที่รอยืนยันอยู่แล้ว กรุณารอให้แอดมินตรวจสอบก่อนจองใหม่");
+            setSubmitted(false);
+            return;
           }
           setPageError(upOut?.error || "upload failed");
+          setSubmitted(false);
           return;
         }
 
-        setBookingId(upOut.booking_id as string);
-        setRefNumber((upOut.ref_number as string) ?? null);
+        setBookingId(upOut?.booking_id ?? null);
+        setRefNumber(upOut?.ref_number ?? null);
         if (selectedSessionId) await loadPhones(selectedSessionId);
         setStep(5);
-      } catch (e: any) {
-        setPageError(e?.message || "upload error");
+      } catch (e: unknown) {
+        setPageError(e instanceof Error ? e.message : "upload error");
+        setSubmitted(false);
       } finally {
         setSubmitting(false);
+        // ไม่ reset submitted — ถ้าสำเร็จไป step 5 แล้วไม่มีปุ่มให้กดอีก
       }
       return;
     }
@@ -411,7 +423,7 @@ export default function PhoneRentalHome() {
                       setSelectedConcertId(c.id);
                       resetBelowConcert();
                       try { await loadSessions(c.id); }
-                      catch (e: any) { setPageError(e?.message || "โหลดรอบไม่สำเร็จ"); }
+                      catch (e: unknown) { setPageError(e instanceof Error ? e.message : "โหลดรอบไม่สำเร็จ"); }
                     }} style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 10, cursor: "pointer", position: "relative", transform: sel ? "translate(-2px,-2px)" : "", boxShadow: sel ? "6px 6px 0px #1a1a1a" : "4px 4px 0px #1a1a1a", transition: "all .15s", overflow: "hidden" }}>
                       <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 14, border: "2px solid #1a1a1a", background: "#fff", overflow: "hidden" }}>
                         {c.poster_url ? (
@@ -460,7 +472,7 @@ export default function PhoneRentalHome() {
                         setSelectedSessionId(s.id);
                         resetBelowSession();
                         try { await loadPhones(s.id); }
-                        catch (e: any) { setPageError(e?.message || "โหลดมือถือไม่สำเร็จ"); }
+                        catch (e: unknown) { setPageError(e instanceof Error ? e.message : "โหลดมือถือไม่สำเร็จ"); }
                       }} style={{ ...(sel ? doodle.btnPrimary : doodle.btn), padding: "10px 12px", background: sel ? "#FF85B3" : "#fff", textAlign: "left" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                           <div>
@@ -481,7 +493,7 @@ export default function PhoneRentalHome() {
                   <button onClick={async () => {
                     if (!selectedSessionId) return;
                     try { await loadPhones(selectedSessionId); }
-                    catch (e: any) { setPageError(e?.message || "รีเฟรชไม่สำเร็จ"); }
+                    catch (e: unknown) { setPageError(e instanceof Error ? e.message : "รีเฟรชไม่สำเร็จ"); }
                   }} style={{ border: "none", background: "transparent", cursor: selectedSessionId ? "pointer" : "not-allowed", fontWeight: 900, color: "#FF85B3", opacity: selectedSessionId ? 1 : 0.4 }} disabled={!selectedSessionId}>
                     ↻ รีเฟรช
                   </button>
@@ -501,7 +513,6 @@ export default function PhoneRentalHome() {
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 900, fontSize: 14 }}>{p.model_name}</div>
                               <div style={{ fontSize: 12, fontWeight: 800, color: "#FF85B3" }}>ค่าเช่า ฿{p.price}</div>
-                              {/* ✅ แสดง deposit ต่อรุ่น */}
                               {p.deposit > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: "#888" }}>มัดจำ ฿{p.deposit}</div>}
                               <div style={{ fontSize: 11, fontWeight: 700, color: "#555" }}>เหลือ {p.remaining} เครื่อง</div>
                             </div>

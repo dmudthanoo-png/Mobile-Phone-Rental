@@ -76,6 +76,16 @@ const card: React.CSSProperties = {
   boxShadow: UI.shadow, overflow: "hidden",
 };
 
+// ── InfoCell: label + value ──
+function InfoCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#9d174d", background: "#FFE4F0", border: "1.5px solid #fbcfe8", borderRadius: 999, padding: "1px 8px", display: "inline-block" }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 900, color: UI.ink }}>{value}</div>
+    </div>
+  );
+}
+
 // ─────────────────────────────── component ───────────────────────────────
 export default function AdminPage() {
   const [isAuthed, setIsAuthed] = useState(false);
@@ -191,7 +201,7 @@ export default function AdminPage() {
   };
 
   const archiveConcert = async (id: string, archive: boolean) => {
-    const res = await fetch(`/api/admin/concerts/${id}`, { method: archive ? "DELETE" : "PATCH", 
+    const res = await fetch(`/api/admin/concerts/${id}`, { method: archive ? "DELETE" : "PATCH",
       body: archive ? undefined : (() => { const f = new FormData(); f.append("archived","false"); return f; })(),
       cache:"no-store" });
     if (!res.ok) { showMsg(archive ? "archive ไม่สำเร็จ" : "restore ไม่สำเร็จ", false); return; }
@@ -310,7 +320,6 @@ export default function AdminPage() {
         setIsAuthed(true);
         const out = await res.json();
         setBookings(out.bookings ?? []);
-        // เรียกตรงๆ แทน loadAll() เพื่อหลีกเลี่ยง stale closure
         fetchBookings();
         fetchSummary();
         fetchConcerts();
@@ -424,14 +433,16 @@ export default function AdminPage() {
                 return (
                   <div key={b.id} style={card}>
                     <div style={{ padding:14 }}>
+
+                      {/* Header row */}
                       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:10 }}>
                         <div style={{ display:"flex", gap:10, alignItems:"center" }}>
-                          <div style={{ width:34, height:34, borderRadius:"50%", background:"#FF85B3", border:`2px solid ${UI.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900 }}>
+                          <div style={{ width:36, height:36, borderRadius:"50%", background:"#FF85B3", border:`2px solid ${UI.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900, fontSize:16, flexShrink:0 }}>
                             {firstChar}
                           </div>
                           <div>
                             <div style={{ fontWeight:900, fontSize:15 }}>{b.renter_name}</div>
-                            <div style={{ fontSize:11, color:UI.muted, fontWeight:800 }}>{b.ref_number ?? "-"}</div>
+                            <div style={{ fontSize:11, color:UI.muted, fontWeight:800 }}>REF: {b.ref_number ?? "-"}</div>
                           </div>
                         </div>
                         <div style={{ borderRadius:999, border:`2px solid ${meta.pillBorder}`, background:meta.pillBg, padding:"5px 12px", fontWeight:900, color:meta.text, fontSize:12 }}>
@@ -439,26 +450,20 @@ export default function AdminPage() {
                         </div>
                       </div>
 
-                      <div style={{ height:1, background:"#f0f0f0", marginBottom:10 }} />
+                      <div style={{ height:1, background:"#f0f0f0", marginBottom:12 }} />
 
-                      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:10, fontSize:13 }}>
-                        {([
-                          ["🎫", concertTitle],
-                          ["⏰", sessionTime],
-                          ["📍", venue],
-                          ["📱", phoneModel],
-                          ["💰", money(b.total_amount)],
-                          ["📞", b.renter_phone ?? "-"],
-                          ["🕐", fmtDT(b.created_at)],
-                        ] as [string, string][]).map(([icon, val]) => (
-                          <div key={icon} style={{ display:"flex", gap:6, alignItems:"flex-start" }}>
-                            <span>{icon}</span>
-                            <span style={{ fontWeight:700, color:UI.ink }}>{val}</span>
-                          </div>
-                        ))}
+                      {/* Info grid with labels */}
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:"10px 16px" }}>
+                        <InfoCell label="คอนเสิร์ต"        value={concertTitle} />
+                        <InfoCell label="เวลาคอนเสิร์ต"    value={sessionTime} />
+                        <InfoCell label="สถานที่"           value={venue} />
+                        <InfoCell label="รุ่นมือถือ"        value={phoneModel} />
+                        <InfoCell label="ยอดชำระ"          value={money(b.total_amount)} />
+                        <InfoCell label="เบอร์โทร"         value={b.renter_phone ?? "-"} />
+                        <InfoCell label="วันที่จอง"        value={fmtDT(b.created_at)} />
                       </div>
 
-                      <div style={{ display:"flex", gap:8, marginTop:12, flexWrap:"wrap" }}>
+                      <div style={{ display:"flex", gap:8, marginTop:14, flexWrap:"wrap" }}>
                         <button onClick={()=>b.slip_url?setSlipModal(b.slip_url):showMsg("ไม่มีสลิป",false)} style={btnStyle("white")}>🧾 ดูสลิป</button>
                         <button disabled={!pending||loading} onClick={()=>setBookingStatus(b.id,"confirmed")} style={btnStyle("green",!pending||loading)}>✅ ยืนยัน</button>
                         <button disabled={!pending||loading} onClick={()=>setBookingStatus(b.id,"rejected")} style={btnStyle("red",!pending||loading)}>❌ ปฏิเสธ</button>
@@ -491,14 +496,12 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* toggle archived */}
             <div style={{ display:"flex", gap:8, marginBottom:12 }}>
               <button onClick={()=>setShowArchived(false)} style={{ ...btnStyle("white"), background: !showArchived?"#FF85B3":"#fff", fontSize:12 }}>🎫 คอนเสิร์ตปัจจุบัน</button>
               <button onClick={()=>setShowArchived(true)}  style={{ ...btnStyle("white"), background: showArchived?"#FF85B3":"#fff", fontSize:12 }}>📦 ที่ archive แล้ว</button>
             </div>
 
             <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-              {/* ✅ แก้ไข: ใช้ (c.archived ?? false) แทน c.archived เพื่อรองรับ null/undefined */}
               {concerts.filter(c => (c.archived ?? false) === showArchived).map(c => (
                 <div key={c.id} style={card}>
                   <div style={{ padding:14 }}>

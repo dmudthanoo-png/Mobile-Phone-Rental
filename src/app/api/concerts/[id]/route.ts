@@ -17,24 +17,30 @@ export async function GET(
     }
 
     const { id: concertId } = await params;
-    if (!concertId) return NextResponse.json({ error: "missing concert id" }, { status: 400 });
+    if (!concertId) {
+      return NextResponse.json({ error: "missing concert id" }, { status: 400 });
+    }
 
-    const supabaseAdmin = createClient(url, serviceKey);
+    const supabase = createClient(url, serviceKey);
 
-    const { data, error } = await supabaseAdmin
+    // ดึง sessions พร้อม inventory ของแต่ละ session
+    const { data, error } = await supabase
       .from("concert_sessions")
       .select("id, concert_id, start_at, end_at, note, created_at")
       .eq("concert_id", concertId)
       .order("start_at", { ascending: true });
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
     return NextResponse.json(
       { sessions: data ?? [] },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "server_error";
     console.error("GET /api/concerts/[id] error:", err);
-    return NextResponse.json({ error: err?.message || "server_error" }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

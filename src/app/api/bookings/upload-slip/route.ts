@@ -172,14 +172,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 500 });
     }
 
-    const row = Array.isArray(rpc.data) ? rpc.data[0] : null;
+ // ใหม่ — RPC return jsonb ตรงๆ ไม่ใช่ array
+const row = rpc.data as { booking_id: string; ref_number: string } | null;
 
-    if (!row?.booking_id) {
-      // best-effort cleanup
-      await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
-      return NextResponse.json({ error: "rpc_no_result" }, { status: 500 });
-    }
-
+if (!row?.booking_id) {
+  await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
+  return NextResponse.json({ error: "rpc_no_result" }, { status: 500 });
+}
     return NextResponse.json(
       {
         ok: true,

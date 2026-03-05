@@ -12,6 +12,12 @@ function getSupabase() {
   return createClient(url, serviceKey);
 }
 
+function getImageExt(mimeType: string): string {
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  return "jpg";
+}
+
 // GET /api/admin/phones — ดูมือถือทั้งหมด
 export async function GET(req: NextRequest) {
   const admin = await requireAdmin(req);
@@ -29,7 +35,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ phones: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
 }
 
-// POST /api/admin/phones — เพิ่มมือถือใหม่ (FormData: model_name, price, image?)
+// POST /api/admin/phones — เพิ่มมือถือใหม่ (FormData: model_name, price, qty, image?)
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -40,7 +46,7 @@ export async function POST(req: NextRequest) {
   const model_name = (form.get("model_name") as string | null)?.trim();
   const price = Number(form.get("price") ?? 0);
   const qty = Number(form.get("qty") ?? 0);
-  const imageFile = form.get("image") as File | null;
+  const imageFile = form.get("image");
 
   if (!model_name) return NextResponse.json({ error: "model_name is required" }, { status: 400 });
   if (!price || price <= 0) return NextResponse.json({ error: "price must be > 0" }, { status: 400 });
@@ -48,8 +54,8 @@ export async function POST(req: NextRequest) {
 
   let image_url: string | null = null;
 
-  if (imageFile instanceof File) {
-    const ext = imageFile.type === "image/png" ? "png" : "jpg";
+  if (imageFile instanceof File && imageFile.size > 0) {
+    const ext = getImageExt(imageFile.type);
     const fileName = `phone_${model_name.replace(/\s+/g, "_")}_${Date.now()}.${ext}`;
     const buffer = Buffer.from(await imageFile.arrayBuffer());
 
@@ -74,7 +80,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, phone: data }, { status: 201 });
 }
 
-// PATCH /api/admin/phones — แก้ข้อมูลมือถือ (FormData: id, model_name?, price?, image?)
+// PATCH /api/admin/phones — แก้ข้อมูลมือถือ (FormData: id, model_name?, price?, deposit?, qty?, image?)
 export async function PATCH(req: NextRequest) {
   const admin = await requireAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -85,13 +91,13 @@ export async function PATCH(req: NextRequest) {
   const id = (form.get("id") as string | null)?.trim();
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
-  const updates: Record<string, any> = {};
+  const updates: Record<string, unknown> = {};
 
   const model_name = (form.get("model_name") as string | null)?.trim();
   const price = form.get("price");
   const deposit = form.get("deposit");
   const qty = form.get("qty");
-  const imageFile = form.get("image") as File | null;
+  const imageFile = form.get("image");
 
   if (model_name) updates.model_name = model_name;
   if (price !== null && price !== "") {
@@ -106,8 +112,8 @@ export async function PATCH(req: NextRequest) {
     updates.qty = q;
   }
 
-  if (imageFile instanceof File) {
-    const ext = imageFile.type === "image/png" ? "png" : "jpg";
+  if (imageFile instanceof File && imageFile.size > 0) {
+    const ext = getImageExt(imageFile.type);
     const fileName = `phone_${id}_${Date.now()}.${ext}`;
     const buffer = Buffer.from(await imageFile.arrayBuffer());
 
@@ -131,7 +137,7 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
-// DELETE /api/admin/phones?id=xxx — ลบมือถือ
+// DELETE /api/admin/phones?id=xxx — ลบมือถือพร้อม inventory
 export async function DELETE(req: NextRequest) {
   const admin = await requireAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -141,6 +147,7 @@ export async function DELETE(req: NextRequest) {
 
   const supabase = getSupabase();
 
+  // ลบ inventory ก่อน แล้วค่อยลบ phone (foreign key safety)
   const { error: invErr } = await supabase
     .from("session_phone_inventory")
     .delete()

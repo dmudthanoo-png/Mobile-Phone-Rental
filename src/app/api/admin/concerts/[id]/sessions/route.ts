@@ -44,9 +44,8 @@ export async function POST(
   if (!concert_id) return NextResponse.json({ error: "missing concert id" }, { status: 400 });
 
   const body = await req.json().catch(() => null);
-  const { start_at, note } = body ?? {};
+  const { start_at, note } = (body ?? {}) as { start_at?: string; note?: string };
 
-  // ตัด end_at ออก — ไม่บังคับแล้ว
   if (!start_at) {
     return NextResponse.json({ error: "start_at is required" }, { status: 400 });
   }
@@ -73,9 +72,8 @@ export async function POST(
   return NextResponse.json({ ok: true, session: data }, { status: 201 });
 }
 
-// PATCH /api/admin/concerts/[id]/sessions/[session_id] — แก้ไขรอบ
-// เรียกที่ path: /api/admin/concerts/[id]/sessions/[session_id]
-// แต่เนื่องจากไฟล์นี้ handle [id]/sessions ให้รับ session_id จาก body แทน
+// PATCH /api/admin/concerts/[id]/sessions — แก้ไขรอบ (รับ session_id จาก body)
+// หมายเหตุ: session_id อยู่ใน body เพราะไฟล์นี้ handle path [id]/sessions ไม่ใช่ [id]/sessions/[session_id]
 export async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
@@ -87,7 +85,11 @@ export async function PATCH(
   if (!concert_id) return NextResponse.json({ error: "missing concert id" }, { status: 400 });
 
   const body = await req.json().catch(() => null);
-  const { session_id, start_at, note } = body ?? {};
+  const { session_id, start_at, note } = (body ?? {}) as {
+    session_id?: string;
+    start_at?: string;
+    note?: string;
+  };
 
   if (!session_id) return NextResponse.json({ error: "session_id is required" }, { status: 400 });
   if (!start_at) return NextResponse.json({ error: "start_at is required" }, { status: 400 });
@@ -98,7 +100,7 @@ export async function PATCH(
     .from("concert_sessions")
     .update({ start_at, note: note ?? null })
     .eq("id", session_id)
-    .eq("concert_id", concert_id);
+    .eq("concert_id", concert_id); // double-check ป้องกัน cross-concert edit
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -121,12 +123,11 @@ export async function DELETE(
 
   const supabase = getSupabase();
 
-  // ไม่ลบ session_phone_inventory แล้ว เพราะเปลี่ยนมาใช้ stock กลางใน phones.qty
   const { error } = await supabase
     .from("concert_sessions")
     .delete()
     .eq("id", session_id)
-    .eq("concert_id", concert_id);
+    .eq("concert_id", concert_id); // double-check ป้องกัน cross-concert delete
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

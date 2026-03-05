@@ -24,17 +24,18 @@ export async function PATCH(
 
   const title = form.get("title") as string | null;
   const venueName = form.get("venue_name") as string | null;
-  const posterFile = form.get("poster") as File | null;
+  const posterFile = form.get("poster");
 
-  const updates: Record<string, any> = {};
-  if (title) updates.title = title;
-  if (venueName) updates.venue_name = venueName;
+  const updates: Record<string, unknown> = {};
+  if (title?.trim()) updates.title = title.trim();
+  if (venueName?.trim()) updates.venue_name = venueName.trim();
+
   const archivedVal = form.get("archived");
   if (archivedVal !== null) updates.archived = archivedVal === "true";
 
   // อัปโหลดโปสเตอร์ใหม่ถ้ามี
-  if (posterFile instanceof File) {
-    const ext = posterFile.type === "image/png" ? "png" : "jpg";
+  if (posterFile instanceof File && posterFile.size > 0) {
+    const ext = posterFile.type === "image/png" ? "png" : posterFile.type === "image/webp" ? "webp" : "jpg";
     const fileName = `concert_${id}_${Date.now()}.${ext}`;
     const buffer = Buffer.from(await posterFile.arrayBuffer());
 

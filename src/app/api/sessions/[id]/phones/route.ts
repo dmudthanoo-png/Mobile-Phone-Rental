@@ -13,88 +13,57 @@ export async function GET(
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!url || !serviceKey) {
-      return NextResponse.json(
-        {
-          error: "missing env",
-          missing: {
-            NEXT_PUBLIC_SUPABASE_URL: !url,
-            SUPABASE_SERVICE_ROLE_KEY: !serviceKey,
-          },
-        },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "missing env" }, { status: 500 });
     }
 
     const { id: sessionId } = await params;
     if (!sessionId) return NextResponse.json({ error: "missing session id" }, { status: 400 });
 
-    const supabaseAdmin = createClient(url, serviceKey);
+    const supabase = createClient(url, serviceKey);
 
-    // 1) โหลด inventory + ข้อมูล phone
-    // หมายเหตุ: select relation "phones(...)" จะใช้ได้เมื่อ FK ถูกสร้างไว้แล้ว (phone_id -> phones.id)
-    const invRes = await supabaseAdmin
-      .from("session_phone_inventory")
-      .select("qty, phone_id, phones (id, model_name, image_url, price, active)")
-      .eq("session_id", sessionId);
+    // 1) ดึงมือถือทั้งหมดที่ active
+    const { data: phoneRows, error: phoneErr } = await supabase
+      .from("phones")
+      .select("id, model_name, image_url, price, deposit, qty")
+      .eq("active", true)
+      .order("model_name");
 
-    if (invRes.error) return NextResponse.json({ error: invRes.error.message }, { status: 500 });
-
-    const invRows = (invRes.data ?? []) as any[];
-
-    // ถ้า session ยังไม่ set inventory
-    if (invRows.length === 0) {
-      return NextResponse.json({ phones: [] }, { status: 200, headers: { "Cache-Control": "no-store" } });
+    if (phoneErr) return NextResponse.json({ error: phoneErr.message }, { status: 500 });
+    if (!phoneRows || phoneRows.length === 0) {
+      return NextResponse.json({ phones: [] }, { headers: { "Cache-Control": "no-store" } });
     }
 
-    // 2) โหลด bookings ที่กินสต๊อกของ session นี้ (confirmed + pending active)
-    // pending active = (pending_expires_at is null) OR (pending_expires_at > now)
-    const nowIso = new Date().toISOString();
-
-    const bkRes = await supabaseAdmin
+    // 2) นับ booking ที่กิน stock อยู่ (confirmed + pending)
+    //    stock เดียวกันทุก session/concert ไม่แยกรอบ
+    const { data: bookedRows, error: bkErr } = await supabase
       .from("bookings")
       .select("phone_id")
-      .eq("session_id", sessionId)
-      .or(
-        `status.eq.confirmed,status.eq.pending.and(pending_expires_at.is.null),status.eq.pending.and(pending_expires_at.gt.${nowIso})`
-      );
+      .in("status", ["confirmed", "pending"]);
 
-    if (bkRes.error) return NextResponse.json({ error: bkRes.error.message }, { status: 500 });
+    if (bkErr) return NextResponse.json({ error: bkErr.message }, { status: 500 });
 
-    const bookedRows = (bkRes.data ?? []) as { phone_id: string | null }[];
-
-    // 3) count booked per phone_id
+    // 3) นับจำนวนที่ถูกจองต่อรุ่น
     const bookedCount: Record<string, number> = {};
-    for (const r of bookedRows) {
-      const pid = r.phone_id ?? "";
-      if (!pid) continue;
-      bookedCount[pid] = (bookedCount[pid] || 0) + 1;
+    for (const r of bookedRows ?? []) {
+      if (!r.phone_id) continue;
+      bookedCount[r.phone_id] = (bookedCount[r.phone_id] || 0) + 1;
     }
 
-    // 4) build response
-    const phones = invRows
-      .filter((r) => r.phones && r.phones.active !== false) // show only active phones
-      .map((r) => {
-        const phone = r.phones;
-        const qty = Number(r.qty ?? 0);
-        const booked = Number(bookedCount[String(r.phone_id)] ?? 0);
-        const remaining = Math.max(0, qty - booked);
-
-        return {
-          phone_id: String(phone.id),
-          model_name: String(phone.model_name ?? ""),
-          image_url: phone.image_url ?? null,
-          price: Number(phone.price ?? 0),
-          remaining,
-        };
-      })
-      // เรียงให้รุ่นที่เหลือเยอะขึ้นก่อน (ปรับได้)
-      .sort((a, b) => b.remaining - a.remaining);
+    // 4) คำนวณ remaining แต่ละรุ่น
+    const phones = phoneRows.map((p) => ({
+      phone_id: String(p.id),
+      model_name: String(p.model_name ?? ""),
+      image_url: p.image_url ?? null,
+      price: Number(p.price ?? 0),
+      deposit: Number(p.deposit ?? 0),
+      remaining: Math.max(0, Number(p.qty ?? 0) - (bookedCount[String(p.id)] ?? 0)),
+    })).sort((a, b) => b.remaining - a.remaining);
 
     return NextResponse.json(
       { phones },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
- } catch (err: any) {
+  } catch (err: any) {
     console.error("GET /api/sessions/[id]/phones error:", err);
     return NextResponse.json({ error: err?.message || "server_error" }, { status: 500 });
   }

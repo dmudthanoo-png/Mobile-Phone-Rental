@@ -2,18 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-function supabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createClient(url, serviceKey);
 }
 
-// PATCH /api/admin/concerts/[id]
+// PATCH /api/admin/concerts/[id] — แก้ชื่อ/venue/โปสเตอร์
 export async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
@@ -24,44 +19,46 @@ export async function PATCH(
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: "missing id" }, { status: 400 });
 
+  const supabase = getSupabase();
   const form = await req.formData();
-  const title       = String(form.get("title")       ?? "").trim();
-  const venue_name  = String(form.get("venue_name")  ?? "").trim();
-  const description = String(form.get("description") ?? "").trim();
-  const poster      = form.get("poster");
 
-  const sb = supabase();
+  const title = form.get("title") as string | null;
+  const venueName = form.get("venue_name") as string | null;
+  const posterFile = form.get("poster") as File | null;
+
   const updates: Record<string, any> = {};
-  if (title)       updates.title       = title;
-  if (venue_name)  updates.venue_name  = venue_name;
-  if (description) updates.description = description;
+  if (title) updates.title = title;
+  if (venueName) updates.venue_name = venueName;
+  const archivedVal = form.get("archived");
+  if (archivedVal !== null) updates.archived = archivedVal === "true";
 
   // อัปโหลดโปสเตอร์ใหม่ถ้ามี
-  if (poster instanceof File && poster.size > 0) {
-    const ext = poster.type === "image/png" ? "png" : poster.type === "image/webp" ? "webp" : "jpg";
-    const fileName = `concerts/${id}_${Date.now()}.${ext}`;
-    const buf = Buffer.from(await poster.arrayBuffer());
+  if (posterFile instanceof File) {
+    const ext = posterFile.type === "image/png" ? "png" : "jpg";
+    const fileName = `concert_${id}_${Date.now()}.${ext}`;
+    const buffer = Buffer.from(await posterFile.arrayBuffer());
 
-    const { error: upErr } = await sb.storage
+    const { error: upErr } = await supabase.storage
       .from("posters")
-      .upload(fileName, buf, { contentType: poster.type, upsert: true });
+      .upload(fileName, buffer, { contentType: posterFile.type, upsert: true });
 
-    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+    if (upErr) return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
 
-    updates.poster_url = sb.storage.from("posters").getPublicUrl(fileName).data.publicUrl;
+    const { data: pub } = supabase.storage.from("posters").getPublicUrl(fileName);
+    updates.poster_url = pub.publicUrl;
   }
 
   if (Object.keys(updates).length === 0) {
-    return NextResponse.json({ error: "ไม่มีข้อมูลที่จะอัปเดต" }, { status: 400 });
+    return NextResponse.json({ error: "no fields to update" }, { status: 400 });
   }
 
-  const { error } = await sb.from("concerts").update(updates).eq("id", id);
+  const { error } = await supabase.from("concerts").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ ok: true });
 }
 
-// DELETE /api/admin/concerts/[id]
+// DELETE /api/admin/concerts/[id] — archive คอนเสิร์ต (ไม่ลบจริง)
 export async function DELETE(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
@@ -72,8 +69,14 @@ export async function DELETE(
   const { id } = await ctx.params;
   if (!id) return NextResponse.json({ error: "missing id" }, { status: 400 });
 
-  const { error } = await supabase().from("concerts").delete().eq("id", id);
+  const supabase = getSupabase();
+
+  const { error } = await supabase
+    .from("concerts")
+    .update({ archived: true })
+    .eq("id", id);
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ ok: true });
 }

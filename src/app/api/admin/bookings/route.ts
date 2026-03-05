@@ -21,13 +21,22 @@ export async function GET(req: NextRequest) {
     | "all";
   const q = (searchParams.get("q") || "").trim();
 
-  let query = supabaseAdmin.from("bookings").select("*").order("created_at", { ascending: false });
+  let query = supabaseAdmin
+    .from("bookings")
+    .select(`
+      id, created_at, renter_name, renter_phone, total_amount,
+      slip_url, ref_number, status,
+      concert_sessions:session_id (
+        start_at, note,
+        concerts:concert_id ( title, venue_name )
+      ),
+      phones:phone_id ( model_name )
+    `)
+    .order("created_at", { ascending: false });
 
   if (status !== "all") query = query.eq("status", status);
 
   if (q) {
-    // ค้น ref_number / renter_name / renter_phone แบบง่าย
-    // (ถ้าคอลัมน์ไม่ตรงให้ปรับชื่อ)
     query = query.or(
       `ref_number.ilike.%${q}%,renter_name.ilike.%${q}%,renter_phone.ilike.%${q}%`
     );

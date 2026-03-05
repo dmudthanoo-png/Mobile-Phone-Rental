@@ -13,21 +13,32 @@ type Booking = {
   ref_number: string | null;
   status: "pending" | "confirmed" | "rejected";
   concert_sessions?: {
-    start_at: string;
+    start_at: string | null;
     note: string | null;
     concerts?: { title: string; venue_name: string | null } | null;
   } | null;
   phones?: { model_name: string } | null;
 };
 
-type Concert = { id: string; title: string; venue_name: string | null; poster_url: string | null; description: string | null };
-type Session = { id: string; start_at: string; end_at: string | null; note: string | null };
-type Phone   = { id: string; model_name: string; price: number; deposit: number; image_url: string | null; active: boolean };
+type Concert = { id: string; title: string; venue_name: string | null; poster_url: string | null; description: string | null; archived: boolean | null };
+type Session = { id: string; start_at: string | null; end_at: string | null; note: string | null };
+type Phone   = { id: string; model_name: string; price: number; deposit: number; qty: number; image_url: string | null; active: boolean };
 type Summary = { total: number; pending: number; confirmed: number; rejected: number; revenue: number };
 
 // ─────────────────────────────── helpers ───────────────────────────────
-const money = (n: number) => `฿${n.toLocaleString("th-TH")}`;
-const fmtDT = (iso: string) => new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+const money = (n: number | null | undefined) => n != null ? `฿${n.toLocaleString("th-TH")}` : "-";
+const fmtDT = (iso: string | null | undefined) => {
+  if (!iso) return "-";
+  try {
+    const normalized = /Z|[+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + "Z";
+    return new Date(normalized).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  } catch { return "-"; }
+};
+
+const localToUTC = (localDT: string) => {
+  if (!localDT) return null;
+  return new Date(localDT).toISOString();
+};
 
 const STATUS_META = {
   pending:   { label: "⏳ รอยืนยัน",  pillBg: "#FFF9E6", pillBorder: "#FCD34D", text: "#7A4B00" },
@@ -84,15 +95,22 @@ export default function AdminPage() {
   const [expandedConcert, setExpandedConcert] = useState<string|null>(null);
   const [concertForm, setConcertForm] = useState({ title:"", venue_name:"", description:"" });
   const [concertPoster, setConcertPoster] = useState<File|null>(null);
-  const [sessionForm, setSessionForm] = useState({ start_at:"", end_at:"", note:"" });
+  const [sessionForm, setSessionForm] = useState({ start_at:"", note:"" });
+  const [showArchived, setShowArchived] = useState(false);
+  const [editConcert, setEditConcert] = useState<Concert|null>(null);
+  const [editConcertForm, setEditConcertForm] = useState({ title:"", venue_name:"", description:"" });
+  const [editConcertPoster, setEditConcertPoster] = useState<File|null>(null);
+  const [editSession, setEditSession] = useState<Session|null>(null);
+  const [editSessionForm, setEditSessionForm] = useState({ start_at:"", note:"" });
+  const [editSessionConcertId, setEditSessionConcertId] = useState<string>("");
 
   // phones + inventory
   const [phones, setPhones] = useState<Phone[]>([]);
-  const [phoneForm, setPhoneForm] = useState({ model_name:"", price:"", deposit:"" });
+  const [phoneForm, setPhoneForm] = useState({ model_name:"", price:"", deposit:"", qty:"0" });
   const [phoneImage, setPhoneImage] = useState<File|null>(null);
-  const [invSession, setInvSession] = useState("");
-  const [allSessions, setAllSessions] = useState<(Session & { concert_title: string })[]>([]);
-  const [invRows, setInvRows] = useState<Record<string, Record<string, number>>>({});
+  const [editPhone, setEditPhone] = useState<Phone|null>(null);
+  const [editForm, setEditForm] = useState({ model_name:"", price:"", deposit:"", qty:"" });
+  const [editImage, setEditImage] = useState<File|null>(null);
 
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<{text:string; ok:boolean}|null>(null);
@@ -113,7 +131,7 @@ export default function AdminPage() {
     setIsAuthed(false); setBookings([]); setConcerts([]); setPhones([]);
   };
 
-  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchAllSessions(); };
+  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); };
 
   // ── bookings ──
   const fetchBookings = async () => {
@@ -172,25 +190,64 @@ export default function AdminPage() {
     fetchConcerts();
   };
 
-  const deleteConcert = async (id: string) => {
-    if (!confirm("ลบคอนเสิร์ตนี้?")) return;
-    const res = await fetch(`/api/admin/concerts/${id}`, { method:"DELETE", cache:"no-store" });
-    if (!res.ok) { showMsg("ลบไม่สำเร็จ", false); return; }
-    showMsg("ลบแล้ว"); fetchConcerts();
+  const archiveConcert = async (id: string, archive: boolean) => {
+    const res = await fetch(`/api/admin/concerts/${id}`, { method: archive ? "DELETE" : "PATCH", 
+      body: archive ? undefined : (() => { const f = new FormData(); f.append("archived","false"); return f; })(),
+      cache:"no-store" });
+    if (!res.ok) { showMsg(archive ? "archive ไม่สำเร็จ" : "restore ไม่สำเร็จ", false); return; }
+    showMsg(archive ? "📦 archive แล้ว" : "✅ restore แล้ว");
+    fetchConcerts();
   };
 
   const createSession = async (concertId: string) => {
     if (!sessionForm.start_at) { showMsg("กรุณาเลือกวันเวลาเริ่ม", false); return; }
     const res = await fetch(`/api/admin/concerts/${concertId}/sessions`, {
       method:"POST", headers:{"content-type":"application/json"},
-      body: JSON.stringify({ start_at: sessionForm.start_at, end_at: sessionForm.end_at||null, note: sessionForm.note||null }),
+      body: JSON.stringify({ start_at: localToUTC(sessionForm.start_at), end_at: null, note: sessionForm.note||null }),
       cache:"no-store",
     });
     const out = await res.json().catch(()=>null);
     if (!res.ok) { showMsg(out?.error||"ไม่สำเร็จ", false); return; }
     showMsg("เพิ่มรอบแล้ว");
-    setSessionForm({ start_at:"", end_at:"", note:"" });
-    fetchSessions(concertId); fetchAllSessions();
+    setSessionForm({ start_at:"", note:"" });
+    fetchSessions(concertId);
+  };
+
+  const saveEditConcert = async () => {
+    if (!editConcert) return;
+    const form = new FormData();
+    form.append("title", editConcertForm.title.trim());
+    form.append("venue_name", editConcertForm.venue_name.trim());
+    form.append("description", editConcertForm.description.trim());
+    if (editConcertPoster) form.append("poster", editConcertPoster);
+    const res = await fetch(`/api/admin/concerts/${editConcert.id}`, { method:"PATCH", body:form, cache:"no-store" });
+    const out = await res.json().catch(()=>null);
+    if (!res.ok) { showMsg(out?.error||"แก้ไขไม่สำเร็จ", false); return; }
+    showMsg("แก้ไขคอนเสิร์ตแล้ว");
+    setEditConcert(null); setEditConcertPoster(null);
+    fetchConcerts();
+  };
+
+  const saveEditSession = async () => {
+    if (!editSession || !editSessionConcertId) return;
+    if (!editSessionForm.start_at) { showMsg("กรุณาเลือกวันเวลาเริ่ม", false); return; }
+    const res = await fetch(`/api/admin/concerts/${editSessionConcertId}/sessions/${editSession.id}`, {
+      method:"PATCH", headers:{"content-type":"application/json"},
+      body: JSON.stringify({ session_id: editSession.id, start_at: localToUTC(editSessionForm.start_at), note: editSessionForm.note||null }),
+      cache:"no-store",
+    });
+    const out = await res.json().catch(()=>null);
+    if (!res.ok) { showMsg(out?.error||"แก้ไขไม่สำเร็จ", false); return; }
+    showMsg("แก้ไขรอบแล้ว");
+    setEditSession(null);
+    fetchSessions(editSessionConcertId);
+  };
+
+  const deleteSession = async (concertId: string, sessionId: string) => {
+    if (!confirm("ลบรอบนี้?")) return;
+    const res = await fetch(`/api/admin/concerts/${concertId}/sessions?session_id=${sessionId}`, { method:"DELETE", cache:"no-store" });
+    if (!res.ok) { showMsg("ลบไม่สำเร็จ", false); return; }
+    showMsg("ลบรอบแล้ว"); fetchSessions(concertId);
   };
 
   // ── phones ──
@@ -205,39 +262,44 @@ export default function AdminPage() {
     form.append("model_name", phoneForm.model_name.trim());
     form.append("price", phoneForm.price || "0");
     form.append("deposit", phoneForm.deposit || "0");
+    form.append("qty", phoneForm.qty || "0");
     if (phoneImage) form.append("image", phoneImage);
     const res = await fetch("/api/admin/phones", { method:"POST", body:form, cache:"no-store" });
     const out = await res.json().catch(()=>null);
     if (!res.ok) { showMsg(out?.error||"ไม่สำเร็จ", false); return; }
     showMsg("เพิ่มมือถือแล้ว");
-    setPhoneForm({ model_name:"", price:"", deposit:"" }); setPhoneImage(null);
+    setPhoneForm({ model_name:"", price:"", deposit:"", qty:"0" }); setPhoneImage(null);
     fetchPhones();
   };
 
-  // ── inventory ──
-  const fetchAllSessions = async () => {
-    const cRes = await fetch("/api/admin/concerts", { cache:"no-store" });
-    if (!cRes.ok) return;
-    const cs: Concert[] = (await cRes.json()).concerts ?? [];
-    const all: (Session & { concert_title: string })[] = [];
-    for (const c of cs) {
-      const sRes = await fetch(`/api/admin/concerts/${c.id}/sessions`, { cache:"no-store" });
-      if (!sRes.ok) continue;
-      const ss: Session[] = (await sRes.json()).sessions ?? [];
-      ss.forEach(s => all.push({ ...s, concert_title: c.title }));
-    }
-    setAllSessions(all);
+  const openEditPhone = (p: Phone) => {
+    setEditPhone(p);
+    setEditForm({ model_name: p.model_name, price: String(p.price), deposit: String(p.deposit ?? ""), qty: String(p.qty ?? 0) });
+    setEditImage(null);
   };
 
-  const setInventory = async (sessionId: string, phoneId: string, qty: number) => {
-    const res = await fetch("/api/admin/inventory", {
-      method:"POST", headers:{"content-type":"application/json"},
-      body: JSON.stringify({ session_id: sessionId, phone_id: phoneId, qty }),
-      cache:"no-store",
-    });
-    if (!res.ok) { showMsg("บันทึก inventory ไม่สำเร็จ", false); return; }
-    showMsg("บันทึกแล้ว");
-    setInvRows(prev => ({ ...prev, [sessionId]: { ...(prev[sessionId]||{}), [phoneId]: qty } }));
+  const saveEditPhone = async () => {
+    if (!editPhone) return;
+    const form = new FormData();
+    form.append("id", editPhone.id);
+    if (editForm.model_name.trim()) form.append("model_name", editForm.model_name.trim());
+    if (editForm.price) form.append("price", editForm.price);
+    if (editForm.deposit) form.append("deposit", editForm.deposit);
+    if (editForm.qty !== "") form.append("qty", editForm.qty);
+    if (editImage) form.append("image", editImage);
+    const res = await fetch("/api/admin/phones", { method:"PATCH", body:form, cache:"no-store" });
+    const out = await res.json().catch(()=>null);
+    if (!res.ok) { showMsg(out?.error||"แก้ไขไม่สำเร็จ", false); return; }
+    showMsg("แก้ไขแล้ว");
+    setEditPhone(null); setEditImage(null);
+    fetchPhones();
+  };
+
+  const deletePhone = async (id: string) => {
+    if (!confirm("ลบมือถือนี้?")) return;
+    const res = await fetch(`/api/admin/phones?id=${id}`, { method:"DELETE", cache:"no-store" });
+    if (!res.ok) { showMsg("ลบไม่สำเร็จ", false); return; }
+    showMsg("ลบแล้ว"); fetchPhones();
   };
 
   // ── auto-check session ──
@@ -248,7 +310,11 @@ export default function AdminPage() {
         setIsAuthed(true);
         const out = await res.json();
         setBookings(out.bookings ?? []);
-        loadAll();
+        // เรียกตรงๆ แทน loadAll() เพื่อหลีกเลี่ยง stale closure
+        fetchBookings();
+        fetchSummary();
+        fetchConcerts();
+        fetchPhones();
       }
     })();
   }, []);
@@ -329,12 +395,10 @@ export default function AdminPage() {
         {/* ═══════════════ TAB: BOOKINGS ═══════════════ */}
         {tab === "bookings" && (
           <div>
-            {/* Filter pills */}
             <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12, alignItems:"center" }}>
               {(["pending","all","confirmed","rejected"] as const).map(s => (
                 <button key={s} onClick={()=>setBStatus(s)} style={{
-                  ...btnStyle("white"), background: bStatus===s ? "#FF85B3" : "#fff",
-                  fontSize:12,
+                  ...btnStyle("white"), background: bStatus===s ? "#FF85B3" : "#fff", fontSize:12,
                 }}>
                   {s==="pending"?`⏳ รอยืนยัน (${summary.pending})`:s==="all"?`📋 ทั้งหมด (${summary.total})`:s==="confirmed"?`✅ ยืนยัน (${summary.confirmed})`:`❌ ปฏิเสธ (${summary.rejected})`}
                 </button>
@@ -349,12 +413,13 @@ export default function AdminPage() {
 
             <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
               {bookings.map(b => {
-                const meta = STATUS_META[b.status];
+                const meta = STATUS_META[b.status] ?? STATUS_META.pending;
                 const pending = b.status === "pending";
                 const concertTitle = b.concert_sessions?.concerts?.title ?? "-";
-                const sessionTime = b.concert_sessions?.start_at ? fmtDT(b.concert_sessions.start_at) : "-";
+                const sessionTime = fmtDT(b.concert_sessions?.start_at);
                 const venue = b.concert_sessions?.concerts?.venue_name ?? "-";
                 const phoneModel = b.phones?.model_name ?? "-";
+                const firstChar = (b.renter_name || "U").trim()[0]?.toUpperCase() ?? "U";
 
                 return (
                   <div key={b.id} style={card}>
@@ -362,7 +427,7 @@ export default function AdminPage() {
                       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:10 }}>
                         <div style={{ display:"flex", gap:10, alignItems:"center" }}>
                           <div style={{ width:34, height:34, borderRadius:"50%", background:"#FF85B3", border:`2px solid ${UI.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900 }}>
-                            {(b.renter_name||"U").trim()[0].toUpperCase()}
+                            {firstChar}
                           </div>
                           <div>
                             <div style={{ fontWeight:900, fontSize:15 }}>{b.renter_name}</div>
@@ -377,15 +442,15 @@ export default function AdminPage() {
                       <div style={{ height:1, background:"#f0f0f0", marginBottom:10 }} />
 
                       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:10, fontSize:13 }}>
-                        {[
+                        {([
                           ["🎫", concertTitle],
                           ["⏰", sessionTime],
                           ["📍", venue],
                           ["📱", phoneModel],
                           ["💰", money(b.total_amount)],
-                          ["📞", b.renter_phone],
+                          ["📞", b.renter_phone ?? "-"],
                           ["🕐", fmtDT(b.created_at)],
-                        ].map(([icon, val]) => (
+                        ] as [string, string][]).map(([icon, val]) => (
                           <div key={icon} style={{ display:"flex", gap:6, alignItems:"flex-start" }}>
                             <span>{icon}</span>
                             <span style={{ fontWeight:700, color:UI.ink }}>{val}</span>
@@ -409,7 +474,6 @@ export default function AdminPage() {
         {/* ═══════════════ TAB: CONCERTS ═══════════════ */}
         {tab === "concerts" && (
           <div>
-            {/* Add concert form */}
             <div style={{ ...card, padding:16, marginBottom:16 }}>
               <div style={{ fontWeight:900, fontSize:15, marginBottom:12 }}>➕ เพิ่มคอนเสิร์ต</div>
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
@@ -427,9 +491,15 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Concert list */}
+            {/* toggle archived */}
+            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+              <button onClick={()=>setShowArchived(false)} style={{ ...btnStyle("white"), background: !showArchived?"#FF85B3":"#fff", fontSize:12 }}>🎫 คอนเสิร์ตปัจจุบัน</button>
+              <button onClick={()=>setShowArchived(true)}  style={{ ...btnStyle("white"), background: showArchived?"#FF85B3":"#fff", fontSize:12 }}>📦 ที่ archive แล้ว</button>
+            </div>
+
             <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-              {concerts.map(c => (
+              {/* ✅ แก้ไข: ใช้ (c.archived ?? false) แทน c.archived เพื่อรองรับ null/undefined */}
+              {concerts.filter(c => (c.archived ?? false) === showArchived).map(c => (
                 <div key={c.id} style={card}>
                   <div style={{ padding:14 }}>
                     <div style={{ display:"flex", gap:12, alignItems:"flex-start", flexWrap:"wrap" }}>
@@ -439,14 +509,18 @@ export default function AdminPage() {
                         {c.venue_name && <div style={{ fontSize:12, color:UI.muted, fontWeight:700 }}>📍 {c.venue_name}</div>}
                       </div>
                       <div style={{ display:"flex", gap:8 }}>
-                        <button onClick={()=>{ setExpandedConcert(expandedConcert===c.id?null:c.id); if(expandedConcert!==c.id) fetchSessions(c.id); }} style={btnStyle("white")}>
-                          {expandedConcert===c.id?"▲ ซ่อนรอบ":"▼ จัดการรอบ"}
+                        {!(c.archived ?? false) && <>
+                          <button onClick={()=>{ setEditConcert(c); setEditConcertForm({ title:c.title, venue_name:c.venue_name||"", description:c.description||"" }); setEditConcertPoster(null); }} style={btnStyle("white")}>✏️ แก้ไข</button>
+                          <button onClick={()=>{ setExpandedConcert(expandedConcert===c.id?null:c.id); if(expandedConcert!==c.id) fetchSessions(c.id); }} style={btnStyle("white")}>
+                            {expandedConcert===c.id?"▲ ซ่อนรอบ":"▼ จัดการรอบ"}
+                          </button>
+                        </>}
+                        <button onClick={()=>archiveConcert(c.id, !(c.archived ?? false))} style={btnStyle((c.archived ?? false)?"green":"red")}>
+                          {(c.archived ?? false) ? "♻️ Restore" : "📦 Archive"}
                         </button>
-                        <button onClick={()=>deleteConcert(c.id)} style={btnStyle("red")}>🗑</button>
                       </div>
                     </div>
 
-                    {/* Sessions panel */}
                     {expandedConcert===c.id && (
                       <div style={{ marginTop:12, background:"#FFFDF5", borderRadius:12, border:`2px dashed ${UI.border}`, padding:12 }}>
                         <div style={{ fontWeight:900, fontSize:13, marginBottom:10 }}>รอบการแสดง</div>
@@ -454,23 +528,22 @@ export default function AdminPage() {
                         {(sessions[c.id]??[]).map(s => (
                           <div key={s.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom:"1px dashed #eee", fontSize:13, fontWeight:700 }}>
                             <span>⏰ {fmtDT(s.start_at)}{s.note?` — ${s.note}`:""}</span>
+                            <div style={{ display:"flex", gap:6 }}>
+                              <button onClick={()=>{ setEditSession(s); setEditSessionConcertId(c.id); setEditSessionForm({ start_at: s.start_at?.slice(0,16)||"", note: s.note||"" }); }} style={{ ...btnStyle("white"), padding:"4px 10px", fontSize:12 }}>✏️</button>
+                              <button onClick={()=>deleteSession(c.id, s.id)} style={{ ...btnStyle("red"), padding:"4px 10px", fontSize:12 }}>🗑</button>
+                            </div>
                           </div>
                         ))}
                         {(sessions[c.id]??[]).length===0 && <div style={{ fontSize:12, color:UI.muted, fontWeight:700, marginBottom:8 }}>ยังไม่มีรอบ</div>}
 
-                        {/* Add session */}
-                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr auto", gap:8, marginTop:10, alignItems:"end" }}>
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr auto", gap:8, marginTop:10, alignItems:"end" }}>
                           <div>
-                            <div style={{ fontSize:11, fontWeight:800, marginBottom:4 }}>เริ่ม *</div>
+                            <div style={{ fontSize:11, fontWeight:800, marginBottom:4 }}>วันเวลาเริ่ม *</div>
                             <input type="datetime-local" value={sessionForm.start_at} onChange={e=>setSessionForm(p=>({...p,start_at:e.target.value}))} style={inputStyle} />
                           </div>
                           <div>
-                            <div style={{ fontSize:11, fontWeight:800, marginBottom:4 }}>สิ้นสุด</div>
-                            <input type="datetime-local" value={sessionForm.end_at} onChange={e=>setSessionForm(p=>({...p,end_at:e.target.value}))} style={inputStyle} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize:11, fontWeight:800, marginBottom:4 }}>หมายเหตุ</div>
-                            <input placeholder="เช่น รอบเช้า" value={sessionForm.note} onChange={e=>setSessionForm(p=>({...p,note:e.target.value}))} style={inputStyle} />
+                            <div style={{ fontSize:11, fontWeight:800, marginBottom:4 }}>หมายเหตุ (เช่น รอบเช้า)</div>
+                            <input placeholder="ไม่บังคับ" value={sessionForm.note} onChange={e=>setSessionForm(p=>({...p,note:e.target.value}))} style={inputStyle} />
                           </div>
                           <button onClick={()=>createSession(c.id)} style={btnStyle("green")}>+ เพิ่ม</button>
                         </div>
@@ -479,21 +552,84 @@ export default function AdminPage() {
                   </div>
                 </div>
               ))}
-              {concerts.length===0 && <div style={{ ...card, padding:20, fontWeight:800, color:UI.muted }}>ยังไม่มีคอนเสิร์ต</div>}
+              {concerts.filter(c => (c.archived ?? false) === showArchived).length === 0 && (
+                <div style={{ ...card, padding:20, fontWeight:800, color:UI.muted }}>
+                  {showArchived ? "ไม่มีคอนเสิร์ตที่ archive" : "ยังไม่มีคอนเสิร์ต"}
+                </div>
+              )}
             </div>
+
+            {/* Edit Concert Modal */}
+            {editConcert && (
+              <div onClick={()=>setEditConcert(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:20 }}>
+                <div onClick={e=>e.stopPropagation()} style={{ ...card, width:"100%", maxWidth:480, padding:20 }}>
+                  <div style={{ fontWeight:900, fontSize:16, marginBottom:14 }}>✏️ แก้ไขคอนเสิร์ต</div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:14 }}>
+                    {[
+                      { label:"ชื่อคอนเสิร์ต *", key:"title", val: editConcertForm.title },
+                      { label:"สถานที่", key:"venue_name", val: editConcertForm.venue_name },
+                    ].map(f => (
+                      <div key={f.key}>
+                        <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>{f.label}</div>
+                        <input value={f.val} onChange={e=>setEditConcertForm(p=>({...p,[f.key]:e.target.value}))} style={inputStyle} />
+                      </div>
+                    ))}
+                    <div>
+                      <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>รายละเอียด</div>
+                      <textarea value={editConcertForm.description} onChange={e=>setEditConcertForm(p=>({...p,description:e.target.value}))}
+                        style={{ ...inputStyle, minHeight:60, resize:"vertical" }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>โปสเตอร์</div>
+                      <label style={{ ...btnStyle("white"), cursor:"pointer", width:"100%", justifyContent:"center", boxSizing:"border-box" }}>
+                        🖼 {editConcertPoster ? editConcertPoster.name : "เปลี่ยนโปสเตอร์ (ไม่บังคับ)"}
+                        <input type="file" accept="image/*" style={{ display:"none" }} onChange={e=>setEditConcertPoster(e.target.files?.[0]||null)} />
+                      </label>
+                    </div>
+                  </div>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={saveEditConcert} style={{ ...btnStyle("dark"), flex:1, justifyContent:"center" }}>💾 บันทึก</button>
+                    <button onClick={()=>setEditConcert(null)} style={btnStyle("white")}>ยกเลิก</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Edit Session Modal */}
+            {editSession && (
+              <div onClick={()=>setEditSession(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:20 }}>
+                <div onClick={e=>e.stopPropagation()} style={{ ...card, width:"100%", maxWidth:400, padding:20 }}>
+                  <div style={{ fontWeight:900, fontSize:16, marginBottom:14 }}>✏️ แก้ไขรอบ</div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:14 }}>
+                    <div>
+                      <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>วันเวลาเริ่ม *</div>
+                      <input type="datetime-local" value={editSessionForm.start_at} onChange={e=>setEditSessionForm(p=>({...p,start_at:e.target.value}))} style={inputStyle} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>หมายเหตุ</div>
+                      <input placeholder="เช่น รอบเช้า" value={editSessionForm.note} onChange={e=>setEditSessionForm(p=>({...p,note:e.target.value}))} style={inputStyle} />
+                    </div>
+                  </div>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={saveEditSession} style={{ ...btnStyle("dark"), flex:1, justifyContent:"center" }}>💾 บันทึก</button>
+                    <button onClick={()=>setEditSession(null)} style={btnStyle("white")}>ยกเลิก</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* ═══════════════ TAB: PHONES ═══════════════ */}
         {tab === "phones" && (
           <div>
-            {/* Add phone */}
             <div style={{ ...card, padding:16, marginBottom:16 }}>
               <div style={{ fontWeight:900, fontSize:15, marginBottom:12 }}>➕ เพิ่มมือถือ</div>
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))", gap:10, marginBottom:10 }}>
                 <input placeholder="ชื่อรุ่น *" value={phoneForm.model_name} onChange={e=>setPhoneForm(p=>({...p,model_name:e.target.value}))} style={inputStyle} />
                 <input placeholder="ราคาเช่า" type="number" value={phoneForm.price} onChange={e=>setPhoneForm(p=>({...p,price:e.target.value}))} style={inputStyle} />
                 <input placeholder="มัดจำ" type="number" value={phoneForm.deposit} onChange={e=>setPhoneForm(p=>({...p,deposit:e.target.value}))} style={inputStyle} />
+                <input placeholder="จำนวนเครื่อง" type="number" min={0} value={phoneForm.qty} onChange={e=>setPhoneForm(p=>({...p,qty:e.target.value}))} style={inputStyle} />
               </div>
               <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
                 <label style={{ ...btnStyle("white"), cursor:"pointer" }}>
@@ -504,42 +640,58 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Phone list */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:12, marginBottom:24 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:12 }}>
               {phones.map(p => (
                 <div key={p.id} style={{ ...card, padding:12 }}>
                   {p.image_url && <img src={p.image_url} alt={p.model_name} style={{ width:"100%", aspectRatio:"1/1", objectFit:"cover", borderRadius:10, border:`2px solid ${UI.border}`, marginBottom:8 }} />}
                   <div style={{ fontWeight:900, fontSize:14 }}>{p.model_name}</div>
-                  <div style={{ fontSize:12, color:UI.muted, fontWeight:700 }}>เช่า {money(p.price)} · มัดจำ {money(p.deposit)}</div>
+                  <div style={{ fontSize:12, color:UI.muted, fontWeight:700 }}>เช่า {money(p.price)}{p.deposit ? ` · มัดจำ ${money(p.deposit)}` : ""}</div>
+                  <div style={{ fontSize:12, fontWeight:900, color: (p.qty ?? 0) > 0 ? "#0B6B2C" : "#9F1239", marginTop:4, marginBottom:10 }}>
+                    คงเหลือ {p.qty ?? 0} เครื่อง
+                  </div>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <button onClick={()=>openEditPhone(p)} style={{ ...btnStyle("white"), flex:1, justifyContent:"center" }}>✏️ แก้ไข</button>
+                    <button onClick={()=>deletePhone(p.id)} style={btnStyle("red")}>🗑</button>
+                  </div>
                 </div>
               ))}
               {phones.length===0 && <div style={{ ...card, padding:20, fontWeight:800, color:UI.muted }}>ยังไม่มีมือถือ</div>}
             </div>
 
-            {/* Inventory grid */}
-            <div style={{ ...card, padding:16 }}>
-              <div style={{ fontWeight:900, fontSize:15, marginBottom:12 }}>📦 ตั้งจำนวน Inventory ต่อรอบ</div>
-              {allSessions.length===0 && <div style={{ fontSize:13, color:UI.muted, fontWeight:700 }}>ยังไม่มีรอบ — กรุณาเพิ่มรอบในแท็บคอนเสิร์ตก่อน</div>}
-              {allSessions.map(s => (
-                <div key={s.id} style={{ marginBottom:16 }}>
-                  <div style={{ fontWeight:900, fontSize:13, marginBottom:8 }}>🎫 {s.concert_title} — {fmtDT(s.start_at)}{s.note?` (${s.note})`:""}</div>
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:10 }}>
-                    {phones.map(p => {
-                      const qty = invRows[s.id]?.[p.id] ?? "";
-                      return (
-                        <div key={p.id} style={{ display:"flex", alignItems:"center", gap:8, background:"#FFFDF5", border:`2px solid ${UI.border}`, borderRadius:12, padding:"8px 12px" }}>
-                          <span style={{ fontWeight:800, fontSize:13 }}>{p.model_name}</span>
-                          <input type="number" min={0} value={qty}
-                            onChange={e=>setInvRows(prev=>({ ...prev, [s.id]:{ ...(prev[s.id]||{}), [p.id]: Number(e.target.value) } }))}
-                            style={{ ...inputStyle, width:60, textAlign:"center" }} />
-                          <button onClick={()=>setInventory(s.id, p.id, Number(invRows[s.id]?.[p.id]??0))} style={btnStyle("green")}>💾</button>
-                        </div>
-                      );
-                    })}
+            {/* Edit Phone Modal */}
+            {editPhone && (
+              <div onClick={()=>setEditPhone(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:20 }}>
+                <div onClick={e=>e.stopPropagation()} style={{ ...card, width:"100%", maxWidth:420, padding:20 }}>
+                  <div style={{ fontWeight:900, fontSize:16, marginBottom:14 }}>✏️ แก้ไข {editPhone.model_name}</div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:14 }}>
+                    {[
+                      { label:"ชื่อรุ่น", type:"text",   val: editForm.model_name, key:"model_name" },
+                      { label:"ราคาเช่า (฿)", type:"number", val: editForm.price,      key:"price" },
+                      { label:"มัดจำ (฿)",    type:"number", val: editForm.deposit,    key:"deposit" },
+                      { label:"จำนวนเครื่อง (stock รวม)", type:"number", val: editForm.qty, key:"qty" },
+                    ].map(f => (
+                      <div key={f.key}>
+                        <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>{f.label}</div>
+                        <input type={f.type} min={f.type==="number"?0:undefined} value={f.val}
+                          onChange={e=>setEditForm(p=>({...p,[f.key]:e.target.value}))}
+                          style={inputStyle} />
+                      </div>
+                    ))}
+                    <div>
+                      <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>รูปมือถือ</div>
+                      <label style={{ ...btnStyle("white"), cursor:"pointer", width:"100%", justifyContent:"center", boxSizing:"border-box" }}>
+                        📷 {editImage ? editImage.name : "เปลี่ยนรูป (ไม่บังคับ)"}
+                        <input type="file" accept="image/*" style={{ display:"none" }} onChange={e=>setEditImage(e.target.files?.[0]||null)} />
+                      </label>
+                    </div>
+                  </div>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={saveEditPhone} style={{ ...btnStyle("dark"), flex:1, justifyContent:"center" }}>💾 บันทึก</button>
+                    <button onClick={()=>setEditPhone(null)} style={btnStyle("white")}>ยกเลิก</button>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
         )}
       </div>

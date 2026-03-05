@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/adminAuth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const runtime = "nodejs";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from("phones")
-    .select("id, model_name, image_url, price")
+    .select("id, model_name, image_url, price, deposit, qty")
     .order("model_name", { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -38,10 +39,12 @@ export async function POST(req: NextRequest) {
 
   const model_name = (form.get("model_name") as string | null)?.trim();
   const price = Number(form.get("price") ?? 0);
+  const qty = Number(form.get("qty") ?? 0);
   const imageFile = form.get("image") as File | null;
 
   if (!model_name) return NextResponse.json({ error: "model_name is required" }, { status: 400 });
   if (!price || price <= 0) return NextResponse.json({ error: "price must be > 0" }, { status: 400 });
+  if (qty < 0) return NextResponse.json({ error: "qty must be >= 0" }, { status: 400 });
 
   let image_url: string | null = null;
 
@@ -62,8 +65,8 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase
     .from("phones")
-    .insert({ model_name, price, image_url })
-    .select("id, model_name, image_url, price")
+    .insert({ model_name, price, image_url, qty })
+    .select("id, model_name, image_url, price, deposit, qty")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -86,6 +89,8 @@ export async function PATCH(req: NextRequest) {
 
   const model_name = (form.get("model_name") as string | null)?.trim();
   const price = form.get("price");
+  const deposit = form.get("deposit");
+  const qty = form.get("qty");
   const imageFile = form.get("image") as File | null;
 
   if (model_name) updates.model_name = model_name;
@@ -93,6 +98,12 @@ export async function PATCH(req: NextRequest) {
     const p = Number(price);
     if (p <= 0) return NextResponse.json({ error: "price must be > 0" }, { status: 400 });
     updates.price = p;
+  }
+  if (deposit !== null && deposit !== "") updates.deposit = Number(deposit);
+  if (qty !== null && qty !== "") {
+    const q = Number(qty);
+    if (q < 0) return NextResponse.json({ error: "qty must be >= 0" }, { status: 400 });
+    updates.qty = q;
   }
 
   if (imageFile instanceof File) {
@@ -130,7 +141,6 @@ export async function DELETE(req: NextRequest) {
 
   const supabase = getSupabase();
 
-  // ลบ inventory ของมือถือนี้ก่อน
   const { error: invErr } = await supabase
     .from("session_phone_inventory")
     .delete()

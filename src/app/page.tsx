@@ -30,10 +30,9 @@ type PhoneOption = {
   model_name: string;
   image_url?: string | null;
   price: number;
+  deposit: number;
   remaining: number;
 };
-
-const DEPOSIT_FEE = 500;
 
 const doodle = {
   card: {
@@ -89,14 +88,6 @@ const doodle = {
     background: "#eee",
     color: "#aaa",
   } as React.CSSProperties,
-  pill: {
-    borderRadius: "50px",
-    border: "2px solid #1a1a1a",
-    padding: "2px 10px",
-    fontSize: 11,
-    fontWeight: 700,
-    display: "inline-block",
-  } as React.CSSProperties,
   input: {
     borderRadius: "14px",
     border: "2.5px solid #1a1a1a",
@@ -137,7 +128,6 @@ export default function PhoneRentalHome() {
   const [step, setStep] = useState(1);
   const stepLabels = ["คอนเสิร์ต", "รอบ & มือถือ", "ข้อมูล", "ชำระเงิน", "เสร็จสิ้น"];
 
-  // ✅ A1: ได้ทั้งสองค่าหลัง upload-slip สำเร็จเท่านั้น
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [refNumber, setRefNumber] = useState<string | null>(null);
 
@@ -162,7 +152,9 @@ export default function PhoneRentalHome() {
   const selectedSession = useMemo(() => sessions.find((s) => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
   const selectedPhone = useMemo(() => phones.find((p) => p.phone_id === selectedPhoneId) || null, [phones, selectedPhoneId]);
 
-  const totalAmount = (selectedPhone ? Number(selectedPhone.price) : 0) + DEPOSIT_FEE;
+  // ✅ ใช้ deposit จากรุ่นมือถือ ไม่ใช่ fixed
+  const depositFee = selectedPhone?.deposit ?? 0;
+  const totalAmount = (selectedPhone ? Number(selectedPhone.price) : 0) + depositFee;
 
   const handleSignOut = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -244,12 +236,11 @@ export default function PhoneRentalHome() {
     setBookingId(null); resetSlip();
   };
 
-  // ✅ A1: step 4 ไม่ต้องรอ bookingId แล้ว แค่เช็ค slipFile
   const isNextDisabled = () => {
     if (submitting) return true;
     if (step === 1) return !selectedConcertId;
     if (step === 2) return !selectedSessionId || !selectedPhoneId;
-    if (step === 3) return !renterName.trim() || !renterPhone.trim() || renterPhone.trim().length < 9;
+    if (step === 3) return !renterName.trim() || !renterPhone.trim() || renterPhone.trim().length !== 10;
     if (step === 4) return !slipFile;
     return false;
   };
@@ -262,7 +253,6 @@ export default function PhoneRentalHome() {
   const handleNext = async () => {
     setPageError("");
 
-    // ✅ A1: step 3 → แค่ validate แล้วไป step 4 ได้เลย ไม่ต้องเรียก /reserve
     if (step === 3) {
       if (!selectedSessionId || !selectedPhoneId || !selectedPhone) {
         setPageError("กรุณาเลือก รอบ และ มือถือ");
@@ -277,7 +267,6 @@ export default function PhoneRentalHome() {
       return;
     }
 
-    // ✅ A1: step 4 → ส่งข้อมูลครบ + slip ไปยืนยันทีเดียว
     if (step === 4) {
       setSubmitting(true);
       try {
@@ -314,7 +303,6 @@ export default function PhoneRentalHome() {
         }
 
         if (!upRes.ok) {
-          // ✅ A1: ของหมดตอนกดยืนยัน (race condition) → กลับไปเลือกใหม่
           if (upRes.status === 409 && upOut?.error === "sold_out") {
             alert("ขออภัย รุ่นนี้เต็มแล้ว กรุณาเลือกรุ่น/รอบใหม่");
             if (selectedSessionId) await loadPhones(selectedSessionId);
@@ -327,10 +315,8 @@ export default function PhoneRentalHome() {
           return;
         }
 
-        // ได้ booking_id + ref_number หลัง confirmed สำเร็จ
         setBookingId(upOut.booking_id as string);
         setRefNumber((upOut.ref_number as string) ?? null);
-        // รีเฟรช remaining ให้ตรงกับความเป็นจริงหลังหัก qty
         if (selectedSessionId) await loadPhones(selectedSessionId);
         setStep(5);
       } catch (e: any) {
@@ -510,7 +496,9 @@ export default function PhoneRentalHome() {
                             </div>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 900, fontSize: 14 }}>{p.model_name}</div>
-                              <div style={{ fontSize: 12, fontWeight: 800, color: "#FF85B3" }}>฿{p.price}</div>
+                              <div style={{ fontSize: 12, fontWeight: 800, color: "#FF85B3" }}>ค่าเช่า ฿{p.price}</div>
+                              {/* ✅ แสดง deposit ต่อรุ่น */}
+                              {p.deposit > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: "#888" }}>มัดจำ ฿{p.deposit}</div>}
                               <div style={{ fontSize: 11, fontWeight: 700, color: "#555" }}>เหลือ {p.remaining} เครื่อง</div>
                             </div>
                             <div style={{ fontSize: 18 }}>{sel ? "✅" : ""}</div>
@@ -521,7 +509,7 @@ export default function PhoneRentalHome() {
                     {phones.length > 0 && phones.every((p) => p.remaining <= 0) && (
                       <div style={{ ...doodle.cardYellow, padding: 12 }}>รอบนี้มือถือเต็มหมดแล้ว กรุณาเลือกรอบอื่น</div>
                     )}
-                    {phones.length === 0 && <div style={{ fontSize: 13, fontWeight: 700, color: "#888" }}>รอบนี้ยังไม่ได้ตั้ง inventory มือถือ</div>}
+                    {phones.length === 0 && <div style={{ fontSize: 13, fontWeight: 700, color: "#888" }}>ยังไม่มีมือถือในระบบ</div>}
                   </div>
                 )}
               </div>
@@ -552,7 +540,7 @@ export default function PhoneRentalHome() {
                   ["⏰ รอบ", selectedSession ? `${selectedSession.note ?? "รอบ"} • ${formatThaiDateTime(selectedSession.start_at)}` : "-"],
                   ["📱 มือถือ", selectedPhone?.model_name || "-"],
                   ["💵 ค่าเช่า", selectedPhone ? `฿${selectedPhone.price}` : "-"],
-                  ["🔒 มัดจำ", `฿${DEPOSIT_FEE}`],
+                  ["🔒 มัดจำ", depositFee > 0 ? `฿${depositFee}` : "ไม่มี"],
                 ].map(([k, v]) => (
                   <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, marginBottom: 8, paddingBottom: 8, borderBottom: "1.5px dashed #000000" }}>
                     <span style={{ color: "#000000" }}>{k}</span>
@@ -575,12 +563,10 @@ export default function PhoneRentalHome() {
                 <span style={{ fontWeight: 900, fontSize: 18, color: "#1a1a1a" }}>ชำระเงิน</span>
               </div>
 
-              {/* ✅ A1: ไม่มี refNumber/expiresAt แล้ว — ตัดออก */}
-
               <div style={{ ...doodle.cardPink, padding: "20px 16px", textAlign: "center", marginBottom: 16 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#888", marginBottom: 4 }}>ยอดที่ต้องโอน</div>
                 <div style={{ fontSize: 42, fontWeight: 900, color: "#1a1a1a", lineHeight: 1 }}>฿{totalAmount}</div>
-                <div style={{ fontSize: 12, color: "#888", marginTop: 6, fontWeight: 600 }}>รวมมัดจำ ฿{DEPOSIT_FEE} (คืนวันส่งเครื่อง)</div>
+                {depositFee > 0 && <div style={{ fontSize: 12, color: "#888", marginTop: 6, fontWeight: 600 }}>รวมมัดจำ ฿{depositFee} (คืนวันส่งเครื่อง)</div>}
               </div>
 
               <div style={{ ...doodle.card, overflow: "hidden", marginBottom: 16, color: "#1a1a1a" }}>
@@ -634,7 +620,6 @@ export default function PhoneRentalHome() {
                 ระบบยืนยันการจองแล้ว~<br />พบกันที่คอนเสิร์ต! 🎶
               </p>
               <div style={{ ...doodle.cardYellow, padding: 16, marginBottom: 16, textAlign: "left", color: "#1a1a1a" }}>
-                {/* ✅ A1: โชว์ bookingId แทน refNumber */}
                 <div style={{ textAlign: "center", marginBottom: 12, paddingBottom: 12, borderBottom: "2px dashed #E0D0B0" }}>
                   <div style={{ fontSize: 12, color: "#000000", fontWeight: 700 }}>หมายเลขการจอง</div>
                   <div style={{ fontSize: 20, fontWeight: 900, color: "#FF85B3", letterSpacing: 2, marginTop: 4 }}>

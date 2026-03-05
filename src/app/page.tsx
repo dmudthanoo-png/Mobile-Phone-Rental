@@ -112,33 +112,21 @@ const doodle = {
 
 function WiggleLine() {
   return (
-    <svg
-      width="100%"
-      height="8"
-      viewBox="0 0 300 8"
-      preserveAspectRatio="none"
-      style={{ display: "block", margin: "4px 0" }}
-    >
+    <svg width="100%" height="8" viewBox="0 0 300 8" preserveAspectRatio="none" style={{ display: "block", margin: "4px 0" }}>
       <path
         d="M0,4 Q15,0 30,4 Q45,8 60,4 Q75,0 90,4 Q105,8 120,4 Q135,0 150,4 Q165,8 180,4 Q195,0 210,4 Q225,8 240,4 Q255,0 270,4 Q285,8 300,4"
-        fill="none"
-        stroke="#FFB3D1"
-        strokeWidth="2.5"
+        fill="none" stroke="#FFB3D1" strokeWidth="2.5"
       />
     </svg>
   );
 }
 
 function formatThaiDateTime(iso: string) {
-  const dt = new Date(iso);
   return new Intl.DateTimeFormat("th-TH", {
     timeZone: "Asia/Bangkok",
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(dt);
+    year: "numeric", month: "short", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  }).format(new Date(iso));
 }
 
 export default function PhoneRentalHome() {
@@ -146,11 +134,12 @@ export default function PhoneRentalHome() {
 
   const [meUser, setMeUser] = useState<MeUser | null>(null);
   const [loading, setLoading] = useState(true);
-
   const [step, setStep] = useState(1);
   const stepLabels = ["คอนเสิร์ต", "รอบ & มือถือ", "ข้อมูล", "ชำระเงิน", "เสร็จสิ้น"];
+
+  // ✅ A1: ได้ทั้งสองค่าหลัง upload-slip สำเร็จเท่านั้น
   const [bookingId, setBookingId] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [refNumber, setRefNumber] = useState<string | null>(null);
 
   const [concerts, setConcerts] = useState<Concert[]>([]);
   const [sessions, setSessions] = useState<ConcertSession[]>([]);
@@ -166,25 +155,14 @@ export default function PhoneRentalHome() {
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
   const [slipFile, setSlipFile] = useState<File | null>(null);
 
-  const [refNumber, setRefNumber] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [pageError, setPageError] = useState<string>("");
 
-  const selectedConcert = useMemo(
-    () => concerts.find((c) => c.id === selectedConcertId) || null,
-    [concerts, selectedConcertId]
-  );
-  const selectedSession = useMemo(
-    () => sessions.find((s) => s.id === selectedSessionId) || null,
-    [sessions, selectedSessionId]
-  );
-  const selectedPhone = useMemo(
-    () => phones.find((p) => p.phone_id === selectedPhoneId) || null,
-    [phones, selectedPhoneId]
-  );
+  const selectedConcert = useMemo(() => concerts.find((c) => c.id === selectedConcertId) || null, [concerts, selectedConcertId]);
+  const selectedSession = useMemo(() => sessions.find((s) => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
+  const selectedPhone = useMemo(() => phones.find((p) => p.phone_id === selectedPhoneId) || null, [phones, selectedPhoneId]);
 
-  const totalAmount =
-    (selectedPhone ? Number(selectedPhone.price) : 0) + DEPOSIT_FEE;
+  const totalAmount = (selectedPhone ? Number(selectedPhone.price) : 0) + DEPOSIT_FEE;
 
   const handleSignOut = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -201,11 +179,8 @@ export default function PhoneRentalHome() {
     const ct = res.headers.get("content-type") || "";
     const raw = await res.text();
     if (ct.includes("application/json")) {
-      try {
-        return raw ? JSON.parse(raw) : null;
-      } catch {
-        throw new Error("API ส่ง JSON ไม่ถูกต้อง");
-      }
+      try { return raw ? JSON.parse(raw) : null; }
+      catch { throw new Error("API ส่ง JSON ไม่ถูกต้อง"); }
     }
     throw new Error(`API ไม่ได้ส่ง JSON (status ${res.status})\n` + raw.slice(0, 200));
   }
@@ -219,7 +194,6 @@ export default function PhoneRentalHome() {
   }
 
   async function loadSessions(concertId: string) {
-    if (!concertId) throw new Error("missing concert id");
     const res = await fetch(`/api/concerts/${concertId}`, { cache: "no-store" });
     const raw = await res.text();
     if (!res.ok) throw new Error(raw || "failed to load sessions");
@@ -228,7 +202,6 @@ export default function PhoneRentalHome() {
   }
 
   async function loadPhones(sessionId: string) {
-    if (!sessionId) throw new Error("missing session id");
     const res = await fetch(`/api/sessions/${sessionId}/phones`, { cache: "no-store" });
     const raw = await res.text();
     if (!res.ok) throw new Error(raw || "failed to load phones");
@@ -241,15 +214,11 @@ export default function PhoneRentalHome() {
       try {
         const meRes = await fetch("/api/me", { cache: "no-store" });
         const me = await meRes.json();
-        if (!me.user) {
-          router.push("/login");
-          return;
-        }
+        if (!me.user) { router.push("/login"); return; }
         setMeUser(me.user);
         if (me.user.name) setRenterName(me.user.name);
         await loadConcerts();
       } catch (e: any) {
-        console.error(e);
         setPageError(e?.message || "โหลดข้อมูลไม่สำเร็จ");
       } finally {
         setLoading(false);
@@ -258,34 +227,30 @@ export default function PhoneRentalHome() {
     run();
   }, [router]);
 
-  const resetBookingAndPayment = () => {
-    setBookingId(null);
-    setExpiresAt(null);
-    setRefNumber("");
+  const resetSlip = () => {
     setSlipFile(null);
     setSlipPreview(null);
+    setRefNumber(null);
   };
 
   const resetBelowConcert = () => {
-    setSessions([]);
-    setPhones([]);
-    setSelectedSessionId(null);
-    setSelectedPhoneId(null);
-    resetBookingAndPayment();
+    setSessions([]); setPhones([]);
+    setSelectedSessionId(null); setSelectedPhoneId(null);
+    setBookingId(null); resetSlip();
   };
 
   const resetBelowSession = () => {
-    setPhones([]);
-    setSelectedPhoneId(null);
-    resetBookingAndPayment();
+    setPhones([]); setSelectedPhoneId(null);
+    setBookingId(null); resetSlip();
   };
 
+  // ✅ A1: step 4 ไม่ต้องรอ bookingId แล้ว แค่เช็ค slipFile
   const isNextDisabled = () => {
     if (submitting) return true;
     if (step === 1) return !selectedConcertId;
     if (step === 2) return !selectedSessionId || !selectedPhoneId;
     if (step === 3) return !renterName.trim() || !renterPhone.trim() || renterPhone.trim().length < 9;
-    if (step === 4) return !bookingId || !slipFile;
+    if (step === 4) return !slipFile;
     return false;
   };
 
@@ -297,74 +262,28 @@ export default function PhoneRentalHome() {
   const handleNext = async () => {
     setPageError("");
 
+    // ✅ A1: step 3 → แค่ validate แล้วไป step 4 ได้เลย ไม่ต้องเรียก /reserve
     if (step === 3) {
-      if (bookingId) {
-        setStep(4);
+      if (!selectedSessionId || !selectedPhoneId || !selectedPhone) {
+        setPageError("กรุณาเลือก รอบ และ มือถือ");
+        setStep(2);
         return;
       }
-      setSubmitting(true);
-      try {
-        if (!selectedSessionId || !selectedPhoneId || !selectedPhone) {
-          setPageError("กรุณาเลือก รอบ และ มือถือ");
-          setStep(2);
-          return;
-        }
-        if (!renterName.trim() || !renterPhone.trim() || renterPhone.trim().length < 9) {
-          setPageError("กรุณากรอกข้อมูลผู้เช่าให้ครบ");
-          return;
-        }
-
-        const reserveRes = await fetch("/api/bookings/reserve", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            session_id: selectedSessionId,
-            phone_id: selectedPhoneId,
-            renter_name: renterName.trim(),
-            renter_phone: renterPhone.trim(),
-            total_amount: totalAmount,
-          }),
-          cache: "no-store",
-        });
-
-        let reserveOut: any = null;
-        try {
-          reserveOut = await safeJson(reserveRes);
-        } catch (e: any) {
-          setPageError(e?.message || "reserve failed (not json)");
-          return;
-        }
-
-        if (!reserveRes.ok) {
-          if (reserveRes.status === 409 && reserveOut?.error === "sold_out") {
-            alert("รุ่นนี้เต็มแล้ว กรุณาเลือกใหม่");
-            await loadPhones(selectedSessionId);
-            setStep(2);
-            return;
-          }
-          setPageError(reserveOut?.error || "reserve failed");
-          return;
-        }
-
-        setBookingId(reserveOut.booking_id as string);
-        setExpiresAt((reserveOut.expires_at as string) ?? null);
-        setRefNumber((reserveOut.ref_number as string) ?? "");
-        setStep(4);
-      } catch (e: any) {
-        console.error(e);
-        setPageError(e?.message || "reserve error");
-      } finally {
-        setSubmitting(false);
+      if (!renterName.trim() || !renterPhone.trim() || renterPhone.trim().length < 9) {
+        setPageError("กรุณากรอกข้อมูลผู้เช่าให้ครบ");
+        return;
       }
+      setStep(4);
       return;
     }
 
+    // ✅ A1: step 4 → ส่งข้อมูลครบ + slip ไปยืนยันทีเดียว
     if (step === 4) {
       setSubmitting(true);
       try {
-        if (!bookingId) {
-          setPageError("ไม่พบ booking_id กรุณากลับไปกรอกข้อมูลใหม่");
-          setStep(3);
+        if (!selectedSessionId || !selectedPhoneId) {
+          setPageError("กรุณาเลือกรอบและมือถือ");
+          setStep(2);
           return;
         }
         if (!slipFile) {
@@ -373,7 +292,11 @@ export default function PhoneRentalHome() {
         }
 
         const form = new FormData();
-        form.append("booking_id", bookingId);
+        form.append("session_id", selectedSessionId);
+        form.append("phone_id", selectedPhoneId);
+        form.append("renter_name", renterName.trim());
+        form.append("renter_phone", renterPhone.trim());
+        form.append("total_amount", String(totalAmount));
         form.append("slip", slipFile);
 
         const upRes = await fetch("/api/bookings/upload-slip", {
@@ -391,10 +314,12 @@ export default function PhoneRentalHome() {
         }
 
         if (!upRes.ok) {
-          if (upRes.status === 410 && upOut?.error === "pending_expired") {
-            alert("หมดเวลา 30 นาทีแล้ว กรุณากลับไปจองใหม่");
-            resetBookingAndPayment();
+          // ✅ A1: ของหมดตอนกดยืนยัน (race condition) → กลับไปเลือกใหม่
+          if (upRes.status === 409 && upOut?.error === "sold_out") {
+            alert("ขออภัย รุ่นนี้เต็มแล้ว กรุณาเลือกรุ่น/รอบใหม่");
             if (selectedSessionId) await loadPhones(selectedSessionId);
+            setSelectedPhoneId(null);
+            resetSlip();
             setStep(2);
             return;
           }
@@ -402,9 +327,13 @@ export default function PhoneRentalHome() {
           return;
         }
 
+        // ได้ booking_id + ref_number หลัง confirmed สำเร็จ
+        setBookingId(upOut.booking_id as string);
+        setRefNumber((upOut.ref_number as string) ?? null);
+        // รีเฟรช remaining ให้ตรงกับความเป็นจริงหลังหัก qty
+        if (selectedSessionId) await loadPhones(selectedSessionId);
         setStep(5);
       } catch (e: any) {
-        console.error(e);
         setPageError(e?.message || "upload error");
       } finally {
         setSubmitting(false);
@@ -417,18 +346,7 @@ export default function PhoneRentalHome() {
 
   if (loading) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#FFF5F9",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexDirection: "column",
-          gap: 12,
-          fontFamily: "inherit",
-        }}
-      >
+      <div style={{ minHeight: "100vh", background: "#FFF5F9", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
         <div style={{ fontSize: 48 }}>📱</div>
         <div style={{ fontSize: 14, fontWeight: 700, color: "#888" }}>กำลังโหลด...</div>
       </div>
@@ -436,17 +354,9 @@ export default function PhoneRentalHome() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#FFF5F9",
-        fontFamily: "'Mitr', 'Kanit', 'Segoe UI', sans-serif",
-        display: "flex",
-        justifyContent: "center",
-        paddingBottom: 100,
-      }}
-    >
+    <div style={{ minHeight: "100vh", background: "#FFF5F9", fontFamily: "'Mitr', 'Kanit', 'Segoe UI', sans-serif", display: "flex", justifyContent: "center", paddingBottom: 100 }}>
       <div style={{ width: "100%", maxWidth: 420 }}>
+
         {/* Header */}
         <div style={{ padding: "24px 20px 12px", position: "sticky", top: 0, background: "#FFF5F9", zIndex: 10 }}>
           <div style={{ textAlign: "center", marginBottom: 4 }}>
@@ -455,81 +365,23 @@ export default function PhoneRentalHome() {
           </div>
 
           {meUser && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                background: "#FFE8F0",
-                border: "2px solid #1a1a1a",
-                borderRadius: 50,
-                padding: "5px 14px 5px 5px",
-                marginBottom: 10,
-              }}
-            >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#FFE8F0", border: "2px solid #1a1a1a", borderRadius: 50, padding: "5px 14px 5px 5px", marginBottom: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {meUser.picture ? (
-                  <img
-                    src={meUser.picture}
-                    alt="profile"
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: "50%",
-                      border: "2px solid #1a1a1a",
-                      objectFit: "cover",
-                      flexShrink: 0,
-                    }}
-                  />
+                  <img src={meUser.picture} alt="profile" style={{ width: 28, height: 28, borderRadius: "50%", border: "2px solid #1a1a1a", objectFit: "cover", flexShrink: 0 }} />
                 ) : (
-                  <div
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: "50%",
-                      background: "#FF85B3",
-                      border: "2px solid #1a1a1a",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 13,
-                      fontWeight: 900,
-                      color: "#fff",
-                      flexShrink: 0,
-                    }}
-                  >
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#FF85B3", border: "2px solid #1a1a1a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, color: "#fff", flexShrink: 0 }}>
                     {((meUser.name ?? "U")[0] ?? "U").toUpperCase()}
                   </div>
                 )}
                 <span style={{ fontSize: 12, fontWeight: 700, color: "#1a1a1a" }}>{meUser.name ?? "ผู้ใช้"}</span>
               </div>
-
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button
-                  onClick={() => router.push("/bookings")}
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: "#FF85B3",
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
+                <button onClick={() => router.push("/bookings")} style={{ fontSize: 13, fontWeight: 700, color: "#FF85B3", background: "transparent", border: "none", cursor: "pointer" }}>
                   📋 ประวัติ
                 </button>
                 <span style={{ color: "#ddd", fontSize: 12 }}>|</span>
-                <button
-                  onClick={handleSignOut}
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: "#000000",
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
+                <button onClick={handleSignOut} style={{ fontSize: 12, fontWeight: 700, color: "#000000", background: "transparent", border: "none", cursor: "pointer" }}>
                   ออกจากระบบ
                 </button>
               </div>
@@ -538,20 +390,10 @@ export default function PhoneRentalHome() {
 
           <WiggleLine />
 
-          {/* Step dots */}
           <div style={{ display: "flex", justifyContent: "center", gap: 8, alignItems: "center", marginTop: 8 }}>
             {stepLabels.map((l, i) => (
               <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                <div
-                  style={{
-                    width: step === i + 1 ? 32 : 10,
-                    height: 10,
-                    borderRadius: 10,
-                    background: step > i ? "#FF85B3" : "#E0E0E0",
-                    border: "2px solid #1a1a1a",
-                    transition: "all .3s",
-                  }}
-                />
+                <div style={{ width: step === i + 1 ? 32 : 10, height: 10, borderRadius: 10, background: step > i ? "#FF85B3" : "#E0E0E0", border: "2px solid #1a1a1a", transition: "all .3s" }} />
                 <span style={{ fontSize: 9, fontWeight: 700, color: step === i + 1 ? "#FF85B3" : "#bbb" }}>{l}</span>
               </div>
             ))}
@@ -565,416 +407,159 @@ export default function PhoneRentalHome() {
             </div>
           )}
 
-          {/* STEP 1: Concert cards */}
+          {/* STEP 1 */}
           {step === 1 && (
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
                 <span style={{ fontWeight: 900, fontSize: 18, color: "#1a1a1a" }}>เลือกคอนเสิร์ต</span>
               </div>
-
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 {concerts.map((c) => {
                   const sel = selectedConcertId === c.id;
                   return (
-                    <div
-                      key={c.id}
-                      onClick={async () => {
-                        if (!c?.id) {
-                          setPageError("concert id หาย");
-                          return;
-                        }
-                        setSelectedConcertId(c.id);
-                        resetBelowConcert();
-                        try {
-                          await loadSessions(c.id);
-                        } catch (e: any) {
-                          setPageError(e?.message || "โหลดรอบไม่สำเร็จ");
-                        }
-                      }}
-                      style={{
-                        ...(sel ? doodle.cardPink : doodle.card),
-                        padding: 10,
-                        cursor: "pointer",
-                        position: "relative",
-                        transform: sel ? "translate(-2px,-2px)" : "",
-                        boxShadow: sel ? "6px 6px 0px #1a1a1a" : "4px 4px 0px #1a1a1a",
-                        transition: "all .15s",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: "100%",
-                          aspectRatio: "1/1",
-                          borderRadius: 14,
-                          border: "2px solid #1a1a1a",
-                          background: "#fff",
-                          overflow: "hidden",
-                        }}
-                      >
+                    <div key={c.id} onClick={async () => {
+                      setSelectedConcertId(c.id);
+                      resetBelowConcert();
+                      try { await loadSessions(c.id); }
+                      catch (e: any) { setPageError(e?.message || "โหลดรอบไม่สำเร็จ"); }
+                    }} style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 10, cursor: "pointer", position: "relative", transform: sel ? "translate(-2px,-2px)" : "", boxShadow: sel ? "6px 6px 0px #1a1a1a" : "4px 4px 0px #1a1a1a", transition: "all .15s", overflow: "hidden" }}>
+                      <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 14, border: "2px solid #1a1a1a", background: "#fff", overflow: "hidden" }}>
                         {c.poster_url ? (
-                          <img
-                            src={c.poster_url}
-                            alt={c.title}
-                            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                          />
+                          <img src={c.poster_url} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         ) : (
-                          <div
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontWeight: 900,
-                              color: "#888",
-                            }}
-                          >
-                            ไม่มีโปสเตอร์
-                          </div>
+                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, color: "#888" }}>ไม่มีโปสเตอร์</div>
                         )}
                       </div>
-
                       <div style={{ marginTop: 8, color: "#1a1a1a" }}>
                         <div style={{ fontWeight: 900, fontSize: 13, lineHeight: 1.2 }}>{c.title}</div>
                         <div style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>{c.venue_name ? `📍 ${c.venue_name}` : ""}</div>
                       </div>
-
                       {sel && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: 10,
-                            right: 10,
-                            background: "#FFD600",
-                            border: "2px solid #1a1a1a",
-                            borderRadius: 999,
-                            padding: "2px 10px",
-                            fontSize: 11,
-                            fontWeight: 900,
-                          }}
-                        >
-                          ✓ เลือกแล้ว
-                        </div>
+                        <div style={{ position: "absolute", top: 10, right: 10, background: "#FFD600", border: "2px solid #1a1a1a", borderRadius: 999, padding: "2px 10px", fontSize: 11, fontWeight: 900 }}>✓ เลือกแล้ว</div>
                       )}
                     </div>
                   );
                 })}
               </div>
-
               {concerts.length === 0 && (
-                <div style={{ ...doodle.cardYellow, padding: 16, marginTop: 10, color: "#1a1a1a" }}>
-                  ยังไม่มีคอนเสิร์ตในระบบ (ให้ admin เพิ่มก่อน)
-                </div>
+                <div style={{ ...doodle.cardYellow, padding: 16, marginTop: 10, color: "#1a1a1a" }}>ยังไม่มีคอนเสิร์ตในระบบ</div>
               )}
             </div>
           )}
 
-          {/* STEP 2: sessions + phones */}
+          {/* STEP 2 */}
           {step === 2 && (
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <span style={{ fontSize: 20 }}>🎟️</span>
                 <span style={{ fontWeight: 900, fontSize: 18, color: "#1a1a1a" }}>เลือกรอบ & มือถือ</span>
               </div>
-
               {selectedConcert && (
                 <div style={{ ...doodle.cardYellow, padding: 12, marginBottom: 12, color: "#1a1a1a" }}>
                   <div style={{ fontWeight: 900 }}>{selectedConcert.title}</div>
-                  {selectedConcert.venue_name && (
-                    <div style={{ fontSize: 12, color: "#555", fontWeight: 700 }}>📍 {selectedConcert.venue_name}</div>
-                  )}
+                  {selectedConcert.venue_name && <div style={{ fontSize: 12, color: "#555", fontWeight: 700 }}>📍 {selectedConcert.venue_name}</div>}
                 </div>
               )}
-
               <div style={{ ...doodle.card, padding: 14, marginBottom: 12, color: "#1a1a1a" }}>
                 <div style={{ fontWeight: 900, marginBottom: 10 }}>รอบการแสดง</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {sessions.map((s) => {
                     const sel = selectedSessionId === s.id;
                     return (
-                      <button
-                        key={s.id}
-                        onClick={async () => {
-                          if (!s?.id) {
-                            setPageError("session id หาย");
-                            return;
-                          }
-                          setSelectedSessionId(s.id);
-                          resetBelowSession();
-                          try {
-                            await loadPhones(s.id);
-                          } catch (e: any) {
-                            setPageError(e?.message || "โหลดมือถือไม่สำเร็จ");
-                          }
-                        }}
-                        style={{
-                          ...(sel ? doodle.btnPrimary : doodle.btn),
-                          padding: "10px 12px",
-                          background: sel ? "#FF85B3" : "#fff",
-                          textAlign: "left",
-                        }}
-                      >
+                      <button key={s.id} onClick={async () => {
+                        setSelectedSessionId(s.id);
+                        resetBelowSession();
+                        try { await loadPhones(s.id); }
+                        catch (e: any) { setPageError(e?.message || "โหลดมือถือไม่สำเร็จ"); }
+                      }} style={{ ...(sel ? doodle.btnPrimary : doodle.btn), padding: "10px 12px", background: sel ? "#FF85B3" : "#fff", textAlign: "left" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                           <div>
-                            <div style={{ fontWeight: 900, fontSize: 13 }}>
-                              {s.note ? s.note : "รอบ"}{" "}
-                              <span style={{ fontWeight: 700, opacity: 0.85 }}>• {formatThaiDateTime(s.start_at)}</span>
-                            </div>
-                            {s.end_at && (
-                              <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.75 }}>
-                                ถึง {formatThaiDateTime(s.end_at)}
-                              </div>
-                            )}
+                            <div style={{ fontWeight: 900, fontSize: 13 }}>{s.note ?? "รอบ"} <span style={{ fontWeight: 700, opacity: 0.85 }}>• {formatThaiDateTime(s.start_at)}</span></div>
+                            {s.end_at && <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.75 }}>ถึง {formatThaiDateTime(s.end_at)}</div>}
                           </div>
                           <div style={{ fontWeight: 900 }}>{sel ? "✓" : ""}</div>
                         </div>
                       </button>
                     );
                   })}
-
-                  {sessions.length === 0 && (
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#888" }}>ยังไม่มีรอบ</div>
-                  )}
+                  {sessions.length === 0 && <div style={{ fontSize: 13, fontWeight: 700, color: "#888" }}>ยังไม่มีรอบ</div>}
                 </div>
               </div>
-
               <div style={{ ...doodle.card, padding: 14, color: "#1a1a1a" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                   <div style={{ fontWeight: 900 }}>เลือกรุ่นมือถือ</div>
-                  <button
-                    onClick={async () => {
-                      if (!selectedSessionId) return;
-                      try {
-                        await loadPhones(selectedSessionId);
-                      } catch (e: any) {
-                        setPageError(e?.message || "รีเฟรชไม่สำเร็จ");
-                      }
-                    }}
-                    style={{
-                      border: "none",
-                      background: "transparent",
-                      cursor: selectedSessionId ? "pointer" : "not-allowed",
-                      fontWeight: 900,
-                      color: "#FF85B3",
-                      opacity: selectedSessionId ? 1 : 0.4,
-                    }}
-                    disabled={!selectedSessionId}
-                    title="รีเฟรชจำนวนคงเหลือ"
-                  >
+                  <button onClick={async () => {
+                    if (!selectedSessionId) return;
+                    try { await loadPhones(selectedSessionId); }
+                    catch (e: any) { setPageError(e?.message || "รีเฟรชไม่สำเร็จ"); }
+                  }} style={{ border: "none", background: "transparent", cursor: selectedSessionId ? "pointer" : "not-allowed", fontWeight: 900, color: "#FF85B3", opacity: selectedSessionId ? 1 : 0.4 }} disabled={!selectedSessionId}>
                     ↻ รีเฟรช
                   </button>
                 </div>
-
                 {!selectedSessionId ? (
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#888" }}>กรุณาเลือกรอบก่อน</div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {phones
-                      .filter((p) => p.remaining > 0)
-                      .map((p) => {
-                        const sel = selectedPhoneId === p.phone_id;
-                        return (
-                          <div
-                            key={p.phone_id}
-                            onClick={() => {
-                              setSelectedPhoneId(p.phone_id);
-                              resetBookingAndPayment();
-                            }}
-                            style={{
-                              ...(sel ? doodle.cardPink : doodle.card),
-                              padding: 12,
-                              cursor: "pointer",
-                              transform: sel ? "translate(-2px,-2px)" : "",
-                              boxShadow: sel ? "6px 6px 0px #1a1a1a" : "4px 4px 0px #1a1a1a",
-                              transition: "all .15s",
-                            }}
-                          >
-                            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                              <div
-                                style={{
-                                  width: 52,
-                                  height: 52,
-                                  borderRadius: 14,
-                                  border: "2px solid #1a1a1a",
-                                  overflow: "hidden",
-                                  background: "#fff",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {p.image_url ? (
-                                  <img
-                                    src={p.image_url}
-                                    alt={p.model_name}
-                                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                                  />
-                                ) : (
-                                  <div
-                                    style={{
-                                      width: "100%",
-                                      height: "100%",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      fontWeight: 900,
-                                      color: "#aaa",
-                                      fontSize: 18,
-                                    }}
-                                  >
-                                    📱
-                                  </div>
-                                )}
-                              </div>
-
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: 900, fontSize: 14 }}>{p.model_name}</div>
-                                <div style={{ fontSize: 12, fontWeight: 800, color: "#FF85B3" }}>฿{p.price}</div>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: "#555" }}>เหลือ {p.remaining} เครื่อง</div>
-                              </div>
-
-                              <div style={{ fontSize: 18 }}>{sel ? "✅" : ""}</div>
+                    {phones.filter((p) => p.remaining > 0).map((p) => {
+                      const sel = selectedPhoneId === p.phone_id;
+                      return (
+                        <div key={p.phone_id} onClick={() => { setSelectedPhoneId(p.phone_id); setBookingId(null); resetSlip(); }} style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 12, cursor: "pointer", transform: sel ? "translate(-2px,-2px)" : "", boxShadow: sel ? "6px 6px 0px #1a1a1a" : "4px 4px 0px #1a1a1a", transition: "all .15s" }}>
+                          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                            <div style={{ width: 52, height: 52, borderRadius: 14, border: "2px solid #1a1a1a", overflow: "hidden", background: "#fff", flexShrink: 0 }}>
+                              {p.image_url ? <img src={p.image_url} alt={p.model_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, color: "#aaa", fontSize: 18 }}>📱</div>}
                             </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 900, fontSize: 14 }}>{p.model_name}</div>
+                              <div style={{ fontSize: 12, fontWeight: 800, color: "#FF85B3" }}>฿{p.price}</div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "#555" }}>เหลือ {p.remaining} เครื่อง</div>
+                            </div>
+                            <div style={{ fontSize: 18 }}>{sel ? "✅" : ""}</div>
                           </div>
-                        );
-                      })}
-
-                    {selectedSessionId && phones.length > 0 && phones.every((p) => p.remaining <= 0) && (
-                      <div style={{ ...doodle.cardYellow, padding: 12 }}>
-                        รอบนี้มือถือเต็มหมดแล้ว กรุณาเลือกรอบอื่น
-                      </div>
+                        </div>
+                      );
+                    })}
+                    {phones.length > 0 && phones.every((p) => p.remaining <= 0) && (
+                      <div style={{ ...doodle.cardYellow, padding: 12 }}>รอบนี้มือถือเต็มหมดแล้ว กรุณาเลือกรอบอื่น</div>
                     )}
-
-                    {selectedSessionId && phones.length === 0 && (
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#888" }}>
-                        รอบนี้ยังไม่ได้ตั้ง inventory มือถือ
-                      </div>
-                    )}
+                    {phones.length === 0 && <div style={{ fontSize: 13, fontWeight: 700, color: "#888" }}>รอบนี้ยังไม่ได้ตั้ง inventory มือถือ</div>}
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* STEP 3: renter info + summary */}
+          {/* STEP 3 */}
           {step === 3 && (
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
                 <span style={{ fontSize: 20 }}>👤</span>
                 <span style={{ fontWeight: 900, fontSize: 18, color: "#1a1a1a" }}>ข้อมูลผู้เช่า</span>
               </div>
-
-              {bookingId && (
-                <div style={{ ...doodle.cardYellow, padding: 12, marginBottom: 12, color: "#1a1a1a" }}>
-                  <b>ล็อกข้อมูลแล้ว</b> เพราะคุณได้ทำการจองไว้แล้ว
-                  <br />
-                  <div style={{ marginTop: 6, fontWeight: 800 }}>
-                    หมายเลขการจอง: <span style={{ color: "#FF85B3" }}>{refNumber || "-"}</span>
-                  </div>
-                  {expiresAt && (
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginTop: 4 }}>
-                      หมดอายุ: {formatThaiDateTime(expiresAt)}
-                    </div>
-                  )}
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginTop: 6 }}>
-                    ถ้าต้องการแก้ชื่อ/เบอร์ หรือเปลี่ยนรุ่นมือถือ ให้กลับไปเลือกรอบ/มือถือใหม่เพื่อเริ่มจองใหม่
-                  </div>
-                </div>
-              )}
-
               <div style={{ ...doodle.card, padding: 16, marginBottom: 16 }}>
                 <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: "block", fontSize: 13, fontWeight: 800, marginBottom: 6, color: "#1a1a1a" }}>
-                    ชื่อ-นามสกุล
-                  </label>
-                  <input
-                    style={{
-                      ...doodle.input,
-                      color: "#1a1a1a",
-                      opacity: bookingId ? 0.6 : 1,
-                      cursor: bookingId ? "not-allowed" : "text",
-                    }}
-                    disabled={!!bookingId}
-                    type="text"
-                    placeholder="ระบุชื่อตามบัตรประชาชน"
-                    value={renterName}
-                    onChange={(e) => setRenterName(e.target.value)}
-                  />
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 800, marginBottom: 6, color: "#1a1a1a" }}>ชื่อ-นามสกุล</label>
+                  <input style={{ ...doodle.input, color: "#1a1a1a" }} type="text" placeholder="ระบุชื่อตามบัตรประชาชน" value={renterName} onChange={(e) => setRenterName(e.target.value)} />
                 </div>
-
                 <div>
-                  <label style={{ display: "block", fontSize: 13, fontWeight: 800, marginBottom: 6, color: "#1a1a1a" }}>
-                    เบอร์โทรศัพท์
-                  </label>
-                  <input
-                    style={{
-                      ...doodle.input,
-                      color: "#1a1a1a",
-                      opacity: bookingId ? 0.6 : 1,
-                      cursor: bookingId ? "not-allowed" : "text",
-                    }}
-                    disabled={!!bookingId}
-                    type="tel"
-                    placeholder="08X-XXX-XXXX"
-                    maxLength={10}
-                    value={renterPhone}
-                    onChange={(e) => setRenterPhone(e.target.value)}
-                  />
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 800, marginBottom: 6, color: "#1a1a1a" }}>เบอร์โทรศัพท์</label>
+                  <input style={{ ...doodle.input, color: "#1a1a1a" }} type="tel" placeholder="08X-XXX-XXXX" maxLength={10} value={renterPhone} onChange={(e) => setRenterPhone(e.target.value)} />
                 </div>
               </div>
-
               <div style={{ ...doodle.cardYellow, padding: 16, color: "#1a1a1a" }}>
-                <div
-                  style={{
-                    fontWeight: 900,
-                    fontSize: 13,
-                    color: "#2c2c2c",
-                    textTransform: "uppercase",
-                    letterSpacing: 1,
-                    marginBottom: 12,
-                  }}
-                >
-                  🧾 สรุปการจอง
-                </div>
-
+                <div style={{ fontWeight: 900, fontSize: 13, color: "#2c2c2c", textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>🧾 สรุปการจอง</div>
                 {[
                   ["🎫 คอนเสิร์ต", selectedConcert?.title || "-"],
-                  [
-                    "⏰ รอบ",
-                    selectedSession
-                      ? `${selectedSession.note ?? "รอบ"} • ${formatThaiDateTime(selectedSession.start_at)}`
-                      : "-",
-                  ],
+                  ["⏰ รอบ", selectedSession ? `${selectedSession.note ?? "รอบ"} • ${formatThaiDateTime(selectedSession.start_at)}` : "-"],
                   ["📱 มือถือ", selectedPhone?.model_name || "-"],
                   ["💵 ค่าเช่า", selectedPhone ? `฿${selectedPhone.price}` : "-"],
                   ["🔒 มัดจำ", `฿${DEPOSIT_FEE}`],
                 ].map(([k, v]) => (
-                  <div
-                    key={k}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      marginBottom: 8,
-                      paddingBottom: 8,
-                      borderBottom: "1.5px dashed #000000",
-                    }}
-                  >
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, marginBottom: 8, paddingBottom: 8, borderBottom: "1.5px dashed #000000" }}>
                     <span style={{ color: "#000000" }}>{k}</span>
                     <span>{v}</span>
                   </div>
                 ))}
-
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontWeight: 900,
-                    fontSize: 16,
-                    marginTop: 4,
-                    color: "#1a1a1a",
-                  }}
-                >
+                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: 16, marginTop: 4, color: "#1a1a1a" }}>
                   <span>💰 รวมทั้งหมด</span>
                   <span style={{ color: "#FF85B3", fontSize: 20 }}>฿{totalAmount}</span>
                 </div>
@@ -982,7 +567,7 @@ export default function PhoneRentalHome() {
             </div>
           )}
 
-          {/* STEP 4: payment + slip */}
+          {/* STEP 4 */}
           {step === 4 && (
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
@@ -990,23 +575,12 @@ export default function PhoneRentalHome() {
                 <span style={{ fontWeight: 900, fontSize: 18, color: "#1a1a1a" }}>ชำระเงิน</span>
               </div>
 
-              {refNumber && (
-                <div style={{ ...doodle.cardYellow, padding: 12, marginBottom: 12, color: "#1a1a1a" }}>
-                  <div style={{ fontWeight: 900 }}>หมายเลขการจอง: {refNumber}</div>
-                  {expiresAt && (
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#555" }}>
-                      หมดอายุ: {formatThaiDateTime(expiresAt)}
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* ✅ A1: ไม่มี refNumber/expiresAt แล้ว — ตัดออก */}
 
               <div style={{ ...doodle.cardPink, padding: "20px 16px", textAlign: "center", marginBottom: 16 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#888", marginBottom: 4 }}>ยอดที่ต้องโอน</div>
                 <div style={{ fontSize: 42, fontWeight: 900, color: "#1a1a1a", lineHeight: 1 }}>฿{totalAmount}</div>
-                <div style={{ fontSize: 12, color: "#888", marginTop: 6, fontWeight: 600 }}>
-                  รวมมัดจำ ฿{DEPOSIT_FEE} (คืนวันส่งเครื่อง)
-                </div>
+                <div style={{ fontSize: 12, color: "#888", marginTop: 6, fontWeight: 600 }}>รวมมัดจำ ฿{DEPOSIT_FEE} (คืนวันส่งเครื่อง)</div>
               </div>
 
               <div style={{ ...doodle.card, overflow: "hidden", marginBottom: 16, color: "#1a1a1a" }}>
@@ -1014,52 +588,13 @@ export default function PhoneRentalHome() {
                   { bg: "#003D6B", label: "พร้อมเพย์", num: "081-234-5678", name: "บจก. คอนเสิร์ต เรนทัล", val: "0812345678", key: "pp" },
                   { bg: "#138F2D", label: "KBank", num: "123-4-56789-0", name: "บจก. คอนเสิร์ต เรนทัล", val: "1234567890", key: "bk" },
                 ].map(({ bg, label, num, name, val, key }, i) => (
-                  <div
-                    key={key}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: "12px 14px",
-                      borderBottom: i === 0 ? "2px dashed #eee" : "none",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 42,
-                        height: 42,
-                        background: bg,
-                        borderRadius: 12,
-                        border: "2px solid #1a1a1a",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#fff",
-                        fontSize: 10,
-                        fontWeight: 900,
-                        textAlign: "center",
-                        lineHeight: 1.2,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {label}
-                    </div>
+                  <div key={key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderBottom: i === 0 ? "2px dashed #eee" : "none" }}>
+                    <div style={{ width: 42, height: 42, background: bg, borderRadius: 12, border: "2px solid #1a1a1a", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 900, textAlign: "center", lineHeight: 1.2, flexShrink: 0 }}>{label}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 800, fontSize: 14 }}>{num}</div>
                       <div style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>{name}</div>
                     </div>
-                    <button
-                      onClick={() => handleCopy(val, key)}
-                      style={{
-                        ...doodle.btn,
-                        padding: "6px 12px",
-                        fontSize: 11,
-                        background: copiedType === key ? "#5FD16A" : "#FFF5F9",
-                        color: "#1a1a1a",
-                        border: "2px solid #1a1a1a",
-                        flexShrink: 0,
-                      }}
-                    >
+                    <button onClick={() => handleCopy(val, key)} style={{ ...doodle.btn, padding: "6px 12px", fontSize: 11, background: copiedType === key ? "#5FD16A" : "#FFF5F9", color: "#1a1a1a", border: "2px solid #1a1a1a", flexShrink: 0 }}>
                       {copiedType === key ? "✓ แล้ว!" : "คัดลอก"}
                     </button>
                   </div>
@@ -1067,33 +602,11 @@ export default function PhoneRentalHome() {
               </div>
 
               <label style={{ cursor: "pointer", display: "block" }}>
-                <div
-                  style={{
-                    border: "2.5px dashed #1a1a1a",
-                    borderRadius: 18,
-                    padding: 20,
-                    textAlign: "center",
-                    background: slipPreview ? "#F0FFF4" : "#FFFDF5",
-                    transition: "all .2s",
-                  }}
-                >
+                <div style={{ border: "2.5px dashed #1a1a1a", borderRadius: 18, padding: 20, textAlign: "center", background: slipPreview ? "#F0FFF4" : "#FFFDF5", transition: "all .2s" }}>
                   {slipPreview ? (
                     <div>
-                      <img
-                        src={slipPreview}
-                        alt="slip"
-                        style={{
-                          maxHeight: 140,
-                          borderRadius: 12,
-                          objectFit: "contain",
-                          margin: "0 auto",
-                          display: "block",
-                          border: "2.5px solid #1a1a1a",
-                        }}
-                      />
-                      <p style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: "#5FD16A" }}>
-                        ✅ แนบสลิปแล้ว! แตะเพื่อเปลี่ยน
-                      </p>
+                      <img src={slipPreview} alt="slip" style={{ maxHeight: 140, borderRadius: 12, objectFit: "contain", margin: "0 auto", display: "block", border: "2.5px solid #1a1a1a" }} />
+                      <p style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: "#5FD16A" }}>✅ แนบสลิปแล้ว! แตะเพื่อเปลี่ยน</p>
                     </div>
                   ) : (
                     <div>
@@ -1103,108 +616,50 @@ export default function PhoneRentalHome() {
                     </div>
                   )}
                 </div>
-
-                <input
-                  type="file"
-                  accept="image/*"
-                  style={{ display: "none" }}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) {
-                      setSlipFile(f);
-                      setSlipPreview(URL.createObjectURL(f));
-                    }
-                  }}
-                />
+                <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) { setSlipFile(f); setSlipPreview(URL.createObjectURL(f)); }
+                }} />
               </label>
             </div>
           )}
 
-          {/* STEP 5: done */}
+          {/* STEP 5 */}
           {step === 5 && (
             <div style={{ textAlign: "center", paddingTop: 16 }}>
               <div style={{ fontSize: 64, marginBottom: 8 }}>🎉</div>
-              <div style={{ fontWeight: 900, fontSize: 24, marginBottom: 4, color: "#1a1a1a" }}>รอการยืนยัน!</div>
-              <div style={{ fontSize: 32, marginBottom: 4 }}>⏳</div>
-
+              <div style={{ fontWeight: 900, fontSize: 24, marginBottom: 4, color: "#1a1a1a" }}>จองสำเร็จแล้ว!</div>
+              <div style={{ fontSize: 32, marginBottom: 4 }}>✅</div>
               <p style={{ fontSize: 18, color: "#888", fontWeight: 600, marginBottom: 16, lineHeight: 1.6 }}>
-                เราได้รับข้อมูลแล้ว~<br />
-                รอแอดมินตรวจสอบสลิป ✨
+                ระบบยืนยันการจองแล้ว~<br />พบกันที่คอนเสิร์ต! 🎶
               </p>
-
               <div style={{ ...doodle.cardYellow, padding: 16, marginBottom: 16, textAlign: "left", color: "#1a1a1a" }}>
-                <div
-                  style={{
-                    textAlign: "center",
-                    marginBottom: 12,
-                    paddingBottom: 12,
-                    borderBottom: "2px dashed #E0D0B0",
-                  }}
-                >
+                {/* ✅ A1: โชว์ bookingId แทน refNumber */}
+                <div style={{ textAlign: "center", marginBottom: 12, paddingBottom: 12, borderBottom: "2px dashed #E0D0B0" }}>
                   <div style={{ fontSize: 12, color: "#000000", fontWeight: 700 }}>หมายเลขการจอง</div>
-                  <div
-                    style={{
-                      fontSize: 20,
-                      fontWeight: 900,
-                      color: "#FF85B3",
-                      letterSpacing: 2,
-                      marginTop: 4,
-                    }}
-                  >
-                    {refNumber || "-"}
+                  <div style={{ fontSize: 20, fontWeight: 900, color: "#FF85B3", letterSpacing: 2, marginTop: 4 }}>
+                    {refNumber ?? bookingId ?? "-"}
                   </div>
                 </div>
-
                 {[
                   ["👤 ชื่อ", renterName || "-"],
                   ["🎫 คอนเสิร์ต", selectedConcert?.title || "-"],
-                  [
-                    "⏰ รอบ",
-                    selectedSession
-                      ? `${selectedSession.note ?? "รอบ"} • ${formatThaiDateTime(selectedSession.start_at)}`
-                      : "-",
-                  ],
+                  ["⏰ รอบ", selectedSession ? `${selectedSession.note ?? "รอบ"} • ${formatThaiDateTime(selectedSession.start_at)}` : "-"],
                   ["📱 มือถือ", selectedPhone?.model_name || "-"],
                   ["💰 ยอดชำระ", `฿${totalAmount}`],
                 ].map(([k, v]) => (
-                  <div
-                    key={k}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      marginBottom: 8,
-                    }}
-                  >
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
                     <span style={{ color: "#888" }}>{k}</span>
                     <span>{v}</span>
                   </div>
                 ))}
               </div>
-
-              <button
-                onClick={() => router.push("/bookings")}
-                style={{ ...doodle.btnPrimary, padding: "14px 0", fontSize: 15, width: "100%" }}
-              >
+              <button onClick={() => router.push("/bookings")} style={{ ...doodle.btnPrimary, padding: "14px 0", fontSize: 15, width: "100%" }}>
                 ไปหน้าประวัติการจอง
               </button>
-
               <div style={{ height: 12 }} />
-
               <a href="https://line.me/R/ti/p/@your_oa_id" style={{ textDecoration: "none" }}>
-                <div
-                  style={{
-                    ...doodle.btnGreen,
-                    padding: "14px 0",
-                    fontSize: 15,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 10,
-                    width: "100%",
-                  }}
-                >
+                <div style={{ ...doodle.btnGreen, padding: "14px 0", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%" }}>
                   <svg viewBox="0 0 24 24" width="22" height="22" fill="white">
                     <path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.036 9.608.391.084.922.258 1.057.592.114.281.072.717.035.922-.047.251-.301 1.488-.363 1.831-.107.575-.515 2.059 1.802 1.082 2.316-.976 12.433-7.311 12.433-14.035z" />
                   </svg>
@@ -1217,45 +672,14 @@ export default function PhoneRentalHome() {
 
         {/* Bottom Nav */}
         {step < 5 && (
-          <div
-            style={{
-              position: "fixed",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              display: "flex",
-              justifyContent: "center",
-              padding: "12px 20px 20px",
-              background: "linear-gradient(to top, #FFF5F9 60%, transparent)",
-            }}
-          >
+          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, display: "flex", justifyContent: "center", padding: "12px 20px 20px", background: "linear-gradient(to top, #FFF5F9 60%, transparent)" }}>
             <div style={{ width: "100%", maxWidth: 420, display: "flex", gap: 12 }}>
               {step > 1 && (
-                <button
-                  onClick={handleBack}
-                  style={{
-                    ...doodle.btn,
-                    flex: "0 0 90px",
-                    padding: "13px 0",
-                    background: "#fff",
-                    color: "#1a1a1a",
-                    fontSize: 14,
-                  }}
-                >
+                <button onClick={handleBack} style={{ ...doodle.btn, flex: "0 0 90px", padding: "13px 0", background: "#fff", color: "#1a1a1a", fontSize: 14 }}>
                   ← กลับ
                 </button>
               )}
-
-              <button
-                onClick={handleNext}
-                disabled={isNextDisabled()}
-                style={{
-                  ...(isNextDisabled() ? doodle.btnGray : step === 4 ? doodle.btnGreen : doodle.btnPrimary),
-                  flex: 1,
-                  padding: "13px 0",
-                  fontSize: 15,
-                }}
-              >
+              <button onClick={handleNext} disabled={isNextDisabled()} style={{ ...(isNextDisabled() ? doodle.btnGray : step === 4 ? doodle.btnGreen : doodle.btnPrimary), flex: 1, padding: "13px 0", fontSize: 15 }}>
                 {step === 4 ? (submitting ? "⏳ กำลังบันทึก..." : "✓ ฉันโอนแล้ว!") : "ต่อไป →"}
               </button>
             </div>

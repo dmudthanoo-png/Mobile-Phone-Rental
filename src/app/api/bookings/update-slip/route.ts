@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 function base64urlToBuffer(b64url: string) {
   const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64url.length + 3) % 4);
   return Buffer.from(b64, "base64");
@@ -51,36 +55,59 @@ export async function POST(req: NextRequest) {
   if (!bookingId) return NextResponse.json({ error: "missing booking_id" }, { status: 400 });
   if (!(slip instanceof File)) return NextResponse.json({ error: "missing slip file" }, { status: 400 });
 
+  if (slip.size > 8 * 1024 * 1024)
+    return NextResponse.json({ error: "file_too_large" }, { status: 400 });
+
+  const allowed = ["image/jpeg", "image/png", "image/jpg", "image/webp"];
+  if (!allowed.includes(slip.type))
+    return NextResponse.json({ error: `unsupported file type: ${slip.type}` }, { status: 400 });
+
   const supabaseAdmin = createClient(url, serviceKey);
 
-  // เช็คว่า booking นี้เป็นของ user และต้อง pending เท่านั้น
+  // ✅ หา user_id จาก line_sub
+  let user_id = payload?.app_user_id as string | undefined;
+  if (!user_id) {
+    const { data: ident, error: identErr } = await supabaseAdmin
+      .from("line_identities").select("user_id").eq("line_sub", lineSub).maybeSingle();
+    if (identErr) return NextResponse.json({ error: identErr.message }, { status: 500 });
+    user_id = ident?.user_id ?? undefined;
+  }
+  if (!user_id) return NextResponse.json({ error: "user not linked" }, { status: 401 });
+
+  // ✅ เช็ค ownership ด้วย user_id แทน line_sub
   const { data: bk, error: bkErr } = await supabaseAdmin
     .from("bookings")
-    .select("id,line_sub,status")
+    .select("id, user_id, status")
     .eq("id", bookingId)
     .single();
 
   if (bkErr || !bk) return NextResponse.json({ error: "booking not found" }, { status: 404 });
-  if (bk.line_sub !== lineSub) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  if (bk.status !== "pending") return NextResponse.json({ error: "only pending can update slip" }, { status: 400 });
+  if (bk.user_id !== user_id) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-  const ext = slip.type === "image/png" ? "png" : "jpg";
+  // ✅ แก้จากเดิม: รองรับทั้ง pending และ rejected
+  if (!["pending", "rejected"].includes(bk.status)) {
+    return NextResponse.json(
+      { error: "cannot_update_slip", message: "เปลี่ยนสลิปได้เฉพาะรายการที่รอตรวจสอบหรือถูกปฏิเสธเท่านั้น" },
+      { status: 400 }
+    );
+  }
+
+  const ext = slip.type === "image/png" ? "png" : slip.type === "image/webp" ? "webp" : "jpg";
   const fileName = `${lineSub}_${Date.now()}.${ext}`;
   const buffer = Buffer.from(await slip.arrayBuffer());
 
-  const { error: upErr } = await supabaseAdmin.storage.from("slips").upload(fileName, buffer, {
-    contentType: slip.type,
-    upsert: true,
-  });
+  const { error: upErr } = await supabaseAdmin.storage
+    .from("slips").upload(fileName, buffer, { contentType: slip.type, upsert: true });
 
   if (upErr) return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
 
   const { data: pub } = supabaseAdmin.storage.from("slips").getPublicUrl(fileName);
   const slipUrl = pub.publicUrl;
 
+  // ✅ แก้จากเดิม: อัปเดต slip_url + reset status → pending ให้ admin รู้ว่ามีสลิปใหม่
   const { error: upRowErr } = await supabaseAdmin
     .from("bookings")
-    .update({ slip_url: slipUrl })
+    .update({ slip_url: slipUrl, status: "pending" })
     .eq("id", bookingId);
 
   if (upRowErr) return NextResponse.json({ error: `update failed: ${upRowErr.message}` }, { status: 500 });

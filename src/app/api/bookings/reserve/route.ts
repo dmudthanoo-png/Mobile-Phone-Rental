@@ -46,6 +46,8 @@ type ReserveBody = {
   total_amount?: number;
 };
 
+// A1: endpoint นี้ใช้ "เช็คว่าของยังมี" + ส่งข้อมูลผู้เช่าไปขั้นตอนชำระเงิน
+// ✅ ไม่สร้าง booking และไม่ใช้ pending อีกต่อไป
 export async function POST(req: NextRequest) {
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -134,17 +136,13 @@ export async function POST(req: NextRequest) {
     const qty = Number(inv.data?.qty ?? 0);
     if (qty <= 0) return NextResponse.json({ error: "sold_out" }, { status: 409 });
 
-    // 5) นับ booked (confirmed + pending active)
-    const nowIso = new Date().toISOString();
-
+    // 5) นับ booked เฉพาะ confirmed (A1 ไม่มี pending)
     const bookedRes = await supabaseAdmin
       .from("bookings")
       .select("id", { count: "exact", head: true })
       .eq("session_id", session_id)
       .eq("phone_id", phone_id)
-      .or(
-        `status.eq.confirmed,status.eq.pending.and(pending_expires_at.is.null),status.eq.pending.and(pending_expires_at.gt.${nowIso})`
-      );
+      .eq("status", "confirmed");
 
     if (bookedRes.error) return NextResponse.json({ error: bookedRes.error.message }, { status: 500 });
 
@@ -152,39 +150,16 @@ export async function POST(req: NextRequest) {
     const remaining = qty - booked;
     if (remaining <= 0) return NextResponse.json({ error: "sold_out" }, { status: 409 });
 
-    // 6) insert booking pending + set expires (30 นาที)
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-    const ref_number = `RT-${Math.floor(100000 + Math.random() * 900000)}`;
-
-    const ins = await supabaseAdmin
-      .from("bookings")
-      .insert({
-        user_id,
-        line_sub: lineSub,
+    // 6) ✅ ไม่สร้าง booking แล้ว — ส่งข้อมูลกลับไปให้ client ไปขั้นตอนชำระเงิน/อัปโหลดสลิป
+    return NextResponse.json(
+      {
+        ok: true,
+        remaining,
         session_id,
         phone_id,
         renter_name,
         renter_phone,
         total_amount: Number.isFinite(total_amount) ? total_amount : 0,
-        slip_url: null,
-        slip_uploaded_at: null,
-        status: "pending",
-        pending_expires_at: expiresAt.toISOString(),
-        ref_number,
-      })
-      .select("id, pending_expires_at, ref_number")
-      .single();
-
-    if (ins.error) {
-      return NextResponse.json({ error: ins.error.message }, { status: 500 });
-    }
-
-    return NextResponse.json(
-      {
-        ok: true,
-        booking_id: ins.data.id,
-        ref_number: ins.data.ref_number,
-        expires_at: ins.data.pending_expires_at,
       },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );

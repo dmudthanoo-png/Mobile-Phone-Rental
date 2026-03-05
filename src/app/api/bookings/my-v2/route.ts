@@ -52,10 +52,8 @@ export async function GET(req: NextRequest) {
 
   const supabaseAdmin = createClient(url, serviceKey);
 
-  // ✅ 1) userId จาก session (ใหม่)
   let userId = payload?.app_user_id as string | undefined;
 
-  // ✅ 2) fallback: session เก่า lookup จาก line_identities
   if (!userId) {
     const { data: ident, error: identErr } = await supabaseAdmin
       .from("line_identities")
@@ -71,12 +69,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "user not linked. please login again." }, { status: 401 });
   }
 
-  // ✅ 3) join session + concert + phone มาให้ครบ
   const { data, error } = await supabaseAdmin
     .from("bookings")
     .select(`
       id, created_at, renter_name, renter_phone, total_amount, slip_url, ref_number, status,
-      pending_expires_at,
       concert_sessions:session_id (
         id, start_at, end_at, note,
         concerts:concert_id ( id, title, venue_name, poster_url )
@@ -84,6 +80,8 @@ export async function GET(req: NextRequest) {
       phones:phone_id ( id, model_name, image_url, price )
     `)
     .eq("user_id", userId)
+    // ✅ ดึงทุก status ที่ควรโชว์ในประวัติ
+    .in("status", ["pending", "confirmed", "rejected", "waiting_review"])
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

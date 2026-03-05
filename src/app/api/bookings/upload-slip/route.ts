@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
 
     const supabaseAdmin = createClient(url, serviceKey);
 
-    // ✅ หา user_id ให้ “เหมือน /api/bookings/my-v2”
+    // ✅ หา user_id
     let user_id = payload?.app_user_id as string | undefined;
 
     if (!user_id) {
@@ -89,7 +89,6 @@ export async function POST(req: NextRequest) {
     const renter_name = String(form.get("renter_name") ?? "").trim();
     const renter_phone = String(form.get("renter_phone") ?? "").trim();
 
-    // ✅ validate total_amount
     let amount = Number(form.get("total_amount") ?? 0);
     if (!Number.isFinite(amount)) amount = 0;
     amount = Math.max(0, Math.floor(amount));
@@ -104,9 +103,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "missing slip file" }, { status: 400 });
     }
 
-    // กันไฟล์ใหญ่เกิน (ตัวอย่าง 8MB)
-    const MAX_BYTES = 8 * 1024 * 1024;
-    if (slip.size > MAX_BYTES) {
+    if (slip.size > 8 * 1024 * 1024) {
       return NextResponse.json({ error: "file_too_large" }, { status: 400 });
     }
 
@@ -118,7 +115,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3) upload slip ก่อน
+    // 3) rate limit — เบอร์เดิม pending อยู่แล้วไม่ให้จองซ้ำ
+    const { count: pendingCount, error: pendingErr } = await supabaseAdmin
+      .from("bookings")
+      .select("*", { count: "exact", head: true })
+      .eq("renter_phone", renter_phone)
+      .eq("status", "pending");
+
+    if (pendingErr) return NextResponse.json({ error: pendingErr.message }, { status: 500 });
+
+    if ((pendingCount ?? 0) >= 2) {
+      return NextResponse.json(
+        { error: "มีการจองที่รอยืนยันอยู่แล้ว กรุณารอให้แอดมินตรวจสอบก่อน" },
+        { status: 429 }
+      );
+    }
+
+    // 4) upload slip
     const ext =
       slip.type === "image/png" ? "png" :
       slip.type === "image/webp" ? "webp" : "jpg";
@@ -141,12 +154,11 @@ export async function POST(req: NextRequest) {
     const slip_url = pub?.publicUrl ?? null;
 
     if (!slip_url) {
-      // best-effort cleanup
       await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
       return NextResponse.json({ error: "cannot_get_public_url" }, { status: 500 });
     }
 
-    // 4) สร้าง booking แบบ atomic (กัน oversell) → pending (รอตรวจ)
+    // 5) สร้าง booking แบบ atomic (กัน oversell) → pending
     const rpc = await supabaseAdmin.rpc("create_pending_booking_if_available", {
       p_user_id: user_id,
       p_session_id: session_id,
@@ -160,25 +172,20 @@ export async function POST(req: NextRequest) {
 
     if (rpc.error) {
       const msg = rpc.error.message || "";
-
-      // SOLD_OUT → ลบไฟล์ที่อัปไว้ทิ้ง (best-effort)
+      await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
       if (msg.includes("SOLD_OUT")) {
-        await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
         return NextResponse.json({ error: "sold_out" }, { status: 409 });
       }
-
-      // error อื่น ๆ → (จะลบไฟล์ก็ได้) แนะนำลบเพื่อไม่ให้ค้าง
-      await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
       return NextResponse.json({ error: msg }, { status: 500 });
     }
 
- // ใหม่ — RPC return jsonb ตรงๆ ไม่ใช่ array
-const row = rpc.data as { booking_id: string; ref_number: string } | null;
+    const row = rpc.data as { booking_id: string; ref_number: string } | null;
 
-if (!row?.booking_id) {
-  await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
-  return NextResponse.json({ error: "rpc_no_result" }, { status: 500 });
-}
+    if (!row?.booking_id) {
+      await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
+      return NextResponse.json({ error: "rpc_no_result" }, { status: 500 });
+    }
+
     return NextResponse.json(
       {
         ok: true,
@@ -188,11 +195,9 @@ if (!row?.booking_id) {
       },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "server_error";
     console.error("upload-slip fatal error:", err);
-    return NextResponse.json(
-      { error: err?.message || "server_error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

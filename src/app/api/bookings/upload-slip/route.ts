@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
 
     if (pendingErr) return NextResponse.json({ error: pendingErr.message }, { status: 500 });
 
-    if ((pendingCount ?? 0) >= 2) {
+    if ((pendingCount ?? 0) >= 3) {
       return NextResponse.json(
         { error: "มีการจองที่รอยืนยันอยู่แล้ว กรุณารอให้แอดมินตรวจสอบก่อน" },
         { status: 429 }

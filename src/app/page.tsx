@@ -311,6 +311,10 @@ export default function PhoneRentalHome() {
             setStep(2);
             return;
           }
+            if (upRes.status === 429) {
+          setPageError("มีการจองที่รอยืนยันอยู่แล้ว กรุณารอให้แอดมินตรวจสอบก่อนจองใหม่");
+          return;
+          }
           setPageError(upOut?.error || "upload failed");
           return;
         }

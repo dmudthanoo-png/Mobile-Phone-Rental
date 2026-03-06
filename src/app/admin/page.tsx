@@ -12,6 +12,8 @@ type Booking = {
   slip_url: string | null;
   ref_number: string | null;
   status: "pending" | "confirmed" | "rejected";
+  add_lens?: boolean;       // ← เพิ่ม
+  lens_price?: number;      // ← เพิ่ม
   concert_sessions?: {
     start_at: string | null;
     note: string | null;
@@ -22,7 +24,7 @@ type Booking = {
 
 type Concert = { id: string; title: string; venue_name: string | null; poster_url: string | null; description: string | null; archived: boolean | null };
 type Session = { id: string; start_at: string | null; end_at: string | null; note: string | null };
-type Phone   = { id: string; model_name: string; price: number; deposit: number; qty: number; image_url: string | null; active: boolean };
+type Phone   = { id: string; model_name: string; price: number; deposit: number; qty: number; image_url: string | null; active: boolean; lens_addon_price: number | null }; // ← เพิ่ม lens_addon_price
 type Summary = { total: number; pending: number; confirmed: number; rejected: number; revenue: number };
 
 // ─────────────────────────────── helpers ───────────────────────────────
@@ -116,10 +118,10 @@ export default function AdminPage() {
 
   // phones + inventory
   const [phones, setPhones] = useState<Phone[]>([]);
-  const [phoneForm, setPhoneForm] = useState({ model_name:"", price:"", deposit:"", qty:"0" });
+  const [phoneForm, setPhoneForm] = useState({ model_name:"", price:"", deposit:"", qty:"0", lens_addon_price:"" }); // ← เพิ่ม lens
   const [phoneImage, setPhoneImage] = useState<File|null>(null);
   const [editPhone, setEditPhone] = useState<Phone|null>(null);
-  const [editForm, setEditForm] = useState({ model_name:"", price:"", deposit:"", qty:"" });
+  const [editForm, setEditForm] = useState({ model_name:"", price:"", deposit:"", qty:"", lens_addon_price:"" }); // ← เพิ่ม lens
   const [editImage, setEditImage] = useState<File|null>(null);
 
   const [loading, setLoading] = useState(false);
@@ -270,21 +272,29 @@ export default function AdminPage() {
     if (!phoneForm.model_name.trim()) { showMsg("กรุณากรอกชื่อรุ่น", false); return; }
     const form = new FormData();
     form.append("model_name", phoneForm.model_name.trim());
-    form.append("price", phoneForm.price || "0");
+    form.append("price",   phoneForm.price   || "0");
     form.append("deposit", phoneForm.deposit || "0");
-    form.append("qty", phoneForm.qty || "0");
+    form.append("qty",     phoneForm.qty     || "0");
+    // ส่ง lens_addon_price เฉพาะถ้ากรอกมา
+    if (phoneForm.lens_addon_price.trim()) form.append("lens_addon_price", phoneForm.lens_addon_price.trim());
     if (phoneImage) form.append("image", phoneImage);
     const res = await fetch("/api/admin/phones", { method:"POST", body:form, cache:"no-store" });
     const out = await res.json().catch(()=>null);
     if (!res.ok) { showMsg(out?.error||"ไม่สำเร็จ", false); return; }
     showMsg("เพิ่มมือถือแล้ว");
-    setPhoneForm({ model_name:"", price:"", deposit:"", qty:"0" }); setPhoneImage(null);
+    setPhoneForm({ model_name:"", price:"", deposit:"", qty:"0", lens_addon_price:"" }); setPhoneImage(null);
     fetchPhones();
   };
 
   const openEditPhone = (p: Phone) => {
     setEditPhone(p);
-    setEditForm({ model_name: p.model_name, price: String(p.price), deposit: String(p.deposit ?? ""), qty: String(p.qty ?? 0) });
+    setEditForm({
+      model_name: p.model_name,
+      price:      String(p.price),
+      deposit:    String(p.deposit ?? ""),
+      qty:        String(p.qty ?? 0),
+      lens_addon_price: p.lens_addon_price != null ? String(p.lens_addon_price) : "",
+    });
     setEditImage(null);
   };
 
@@ -293,9 +303,11 @@ export default function AdminPage() {
     const form = new FormData();
     form.append("id", editPhone.id);
     if (editForm.model_name.trim()) form.append("model_name", editForm.model_name.trim());
-    if (editForm.price) form.append("price", editForm.price);
+    if (editForm.price)   form.append("price",   editForm.price);
     if (editForm.deposit) form.append("deposit", editForm.deposit);
     if (editForm.qty !== "") form.append("qty", editForm.qty);
+    // lens: ถ้าว่างเปล่า = ลบ option, ถ้ามีค่า = ตั้งราคา
+    form.append("lens_addon_price", editForm.lens_addon_price.trim() || "");
     if (editImage) form.append("image", editImage);
     const res = await fetch("/api/admin/phones", { method:"PATCH", body:form, cache:"no-store" });
     const out = await res.json().catch(()=>null);
@@ -425,10 +437,10 @@ export default function AdminPage() {
                 const meta = STATUS_META[b.status] ?? STATUS_META.pending;
                 const pending = b.status === "pending";
                 const concertTitle = b.concert_sessions?.concerts?.title ?? "-";
-                const sessionTime = fmtDT(b.concert_sessions?.start_at);
-                const venue = b.concert_sessions?.concerts?.venue_name ?? "-";
-                const phoneModel = b.phones?.model_name ?? "-";
-                const firstChar = (b.renter_name || "U").trim()[0]?.toUpperCase() ?? "U";
+                const sessionTime  = fmtDT(b.concert_sessions?.start_at);
+                const venue        = b.concert_sessions?.concerts?.venue_name ?? "-";
+                const phoneModel   = b.phones?.model_name ?? "-";
+                const firstChar    = (b.renter_name || "U").trim()[0]?.toUpperCase() ?? "U";
 
                 return (
                   <div key={b.id} style={card}>
@@ -445,8 +457,16 @@ export default function AdminPage() {
                             <div style={{ fontSize:11, color:UI.muted, fontWeight:800 }}>REF: {b.ref_number ?? "-"}</div>
                           </div>
                         </div>
-                        <div style={{ borderRadius:999, border:`2px solid ${meta.pillBorder}`, background:meta.pillBg, padding:"5px 12px", fontWeight:900, color:meta.text, fontSize:12 }}>
-                          {meta.label}
+                        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+                          {/* ── Lens badge ── */}
+                          {b.add_lens && (
+                            <div style={{ borderRadius:999, border:"1.5px solid #a78bfa", background:"#f5f3ff", padding:"4px 10px", fontWeight:900, color:"#6d28d9", fontSize:11 }}>
+                              🔭 Lens +{money(b.lens_price)}
+                            </div>
+                          )}
+                          <div style={{ borderRadius:999, border:`2px solid ${meta.pillBorder}`, background:meta.pillBg, padding:"5px 12px", fontWeight:900, color:meta.text, fontSize:12 }}>
+                            {meta.label}
+                          </div>
                         </div>
                       </div>
 
@@ -454,13 +474,13 @@ export default function AdminPage() {
 
                       {/* Info grid with labels */}
                       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:"10px 16px" }}>
-                        <InfoCell label="คอนเสิร์ต"        value={concertTitle} />
-                        <InfoCell label="เวลาคอนเสิร์ต"    value={sessionTime} />
-                        <InfoCell label="สถานที่"           value={venue} />
-                        <InfoCell label="รุ่นมือถือ"        value={phoneModel} />
-                        <InfoCell label="ยอดชำระ"          value={money(b.total_amount)} />
-                        <InfoCell label="เบอร์โทร"         value={b.renter_phone ?? "-"} />
-                        <InfoCell label="วันที่จอง"        value={fmtDT(b.created_at)} />
+                        <InfoCell label="คอนเสิร์ต"      value={concertTitle} />
+                        <InfoCell label="เวลาคอนเสิร์ต"  value={sessionTime} />
+                        <InfoCell label="สถานที่"         value={venue} />
+                        <InfoCell label="รุ่นมือถือ"      value={phoneModel} />
+                        <InfoCell label="ยอดชำระ"        value={money(b.total_amount)} />
+                        <InfoCell label="เบอร์โทร"       value={b.renter_phone ?? "-"} />
+                        <InfoCell label="วันที่จอง"      value={fmtDT(b.created_at)} />
                       </div>
 
                       <div style={{ display:"flex", gap:8, marginTop:14, flexWrap:"wrap" }}>
@@ -569,8 +589,8 @@ export default function AdminPage() {
                   <div style={{ fontWeight:900, fontSize:16, marginBottom:14 }}>✏️ แก้ไขคอนเสิร์ต</div>
                   <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:14 }}>
                     {[
-                      { label:"ชื่อคอนเสิร์ต *", key:"title", val: editConcertForm.title },
-                      { label:"สถานที่", key:"venue_name", val: editConcertForm.venue_name },
+                      { label:"ชื่อคอนเสิร์ต *", key:"title",      val: editConcertForm.title },
+                      { label:"สถานที่",           key:"venue_name", val: editConcertForm.venue_name },
                     ].map(f => (
                       <div key={f.key}>
                         <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>{f.label}</div>
@@ -626,6 +646,7 @@ export default function AdminPage() {
         {/* ═══════════════ TAB: PHONES ═══════════════ */}
         {tab === "phones" && (
           <div>
+            {/* ── Add Phone Form ── */}
             <div style={{ ...card, padding:16, marginBottom:16 }}>
               <div style={{ fontWeight:900, fontSize:15, marginBottom:12 }}>➕ เพิ่มมือถือ</div>
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))", gap:10, marginBottom:10 }}>
@@ -633,6 +654,8 @@ export default function AdminPage() {
                 <input placeholder="ราคาเช่า" type="number" value={phoneForm.price} onChange={e=>setPhoneForm(p=>({...p,price:e.target.value}))} style={inputStyle} />
                 <input placeholder="มัดจำ" type="number" value={phoneForm.deposit} onChange={e=>setPhoneForm(p=>({...p,deposit:e.target.value}))} style={inputStyle} />
                 <input placeholder="จำนวนเครื่อง" type="number" min={0} value={phoneForm.qty} onChange={e=>setPhoneForm(p=>({...p,qty:e.target.value}))} style={inputStyle} />
+                {/* ── Lens price field ── */}
+                <input placeholder="ราคา Lens ซูม (ว่าง=ไม่มี)" type="number" min={0} value={phoneForm.lens_addon_price} onChange={e=>setPhoneForm(p=>({...p,lens_addon_price:e.target.value}))} style={inputStyle} />
               </div>
               <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
                 <label style={{ ...btnStyle("white"), cursor:"pointer" }}>
@@ -649,6 +672,10 @@ export default function AdminPage() {
                   {p.image_url && <img src={p.image_url} alt={p.model_name} style={{ width:"100%", aspectRatio:"1/1", objectFit:"cover", borderRadius:10, border:`2px solid ${UI.border}`, marginBottom:8 }} />}
                   <div style={{ fontWeight:900, fontSize:14 }}>{p.model_name}</div>
                   <div style={{ fontSize:12, color:UI.muted, fontWeight:700 }}>เช่า {money(p.price)}{p.deposit ? ` · มัดจำ ${money(p.deposit)}` : ""}</div>
+                  {/* ── แสดง lens price ── */}
+                  {p.lens_addon_price != null && (
+                    <div style={{ fontSize:11, fontWeight:700, color:"#6d28d9", marginTop:2 }}>🔭 Lens +{money(p.lens_addon_price)}</div>
+                  )}
                   <div style={{ fontSize:12, fontWeight:900, color: (p.qty ?? 0) > 0 ? "#0B6B2C" : "#9F1239", marginTop:4, marginBottom:10 }}>
                     คงเหลือ {p.qty ?? 0} เครื่อง
                   </div>
@@ -668,10 +695,11 @@ export default function AdminPage() {
                   <div style={{ fontWeight:900, fontSize:16, marginBottom:14 }}>✏️ แก้ไข {editPhone.model_name}</div>
                   <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:14 }}>
                     {[
-                      { label:"ชื่อรุ่น", type:"text",   val: editForm.model_name, key:"model_name" },
-                      { label:"ราคาเช่า (฿)", type:"number", val: editForm.price,      key:"price" },
-                      { label:"มัดจำ (฿)",    type:"number", val: editForm.deposit,    key:"deposit" },
-                      { label:"จำนวนเครื่อง (stock รวม)", type:"number", val: editForm.qty, key:"qty" },
+                      { label:"ชื่อรุ่น",                       type:"text",   val: editForm.model_name,       key:"model_name" },
+                      { label:"ราคาเช่า (฿)",                   type:"number", val: editForm.price,            key:"price" },
+                      { label:"มัดจำ (฿)",                      type:"number", val: editForm.deposit,          key:"deposit" },
+                      { label:"จำนวนเครื่อง (stock รวม)",       type:"number", val: editForm.qty,             key:"qty" },
+                      { label:"ราคา Lens ซูม (฿) — ว่าง = ไม่มี option นี้", type:"number", val: editForm.lens_addon_price, key:"lens_addon_price" },
                     ].map(f => (
                       <div key={f.key}>
                         <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>{f.label}</div>

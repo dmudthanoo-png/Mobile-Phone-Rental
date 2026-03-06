@@ -32,6 +32,7 @@ type PhoneOption = {
   price: number;
   deposit: number;
   remaining: number;
+  lens_addon_price: number | null; // ← เพิ่ม
 };
 
 const doodle = {
@@ -145,16 +146,20 @@ export default function PhoneRentalHome() {
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
   const [slipFile, setSlipFile] = useState<File | null>(null);
 
+  // ── lens addon state ──────────────────────────────
+  const [addLens, setAddLens] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false); // ← กัน double submit
+  const [submitted, setSubmitted] = useState(false);
   const [pageError, setPageError] = useState<string>("");
 
   const selectedConcert = useMemo(() => concerts.find((c) => c.id === selectedConcertId) || null, [concerts, selectedConcertId]);
   const selectedSession = useMemo(() => sessions.find((s) => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
-  const selectedPhone = useMemo(() => phones.find((p) => p.phone_id === selectedPhoneId) || null, [phones, selectedPhoneId]);
+  const selectedPhone   = useMemo(() => phones.find((p) => p.phone_id === selectedPhoneId) || null, [phones, selectedPhoneId]);
 
-  const depositFee = selectedPhone?.deposit ?? 0;
-  const totalAmount = (selectedPhone ? Number(selectedPhone.price) : 0) + depositFee;
+  const depositFee  = selectedPhone?.deposit ?? 0;
+  const lensPrice   = (addLens && selectedPhone?.lens_addon_price) ? selectedPhone.lens_addon_price : 0;
+  const totalAmount = (selectedPhone ? Number(selectedPhone.price) : 0) + depositFee + lensPrice;
 
   const handleSignOut = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -168,7 +173,7 @@ export default function PhoneRentalHome() {
   };
 
   async function safeJson(res: Response) {
-    const ct = res.headers.get("content-type") || "";
+    const ct  = res.headers.get("content-type") || "";
     const raw = await res.text();
     if (ct.includes("application/json")) {
       try { return raw ? JSON.parse(raw) : null; }
@@ -228,16 +233,18 @@ export default function PhoneRentalHome() {
   const resetBelowConcert = () => {
     setSessions([]); setPhones([]);
     setSelectedSessionId(null); setSelectedPhoneId(null);
+    setAddLens(false); // ← reset lens ด้วย
     setBookingId(null); resetSlip();
   };
 
   const resetBelowSession = () => {
     setPhones([]); setSelectedPhoneId(null);
+    setAddLens(false); // ← reset lens ด้วย
     setBookingId(null); resetSlip();
   };
 
   const isNextDisabled = () => {
-    if (submitting || submitted) return true; // ← เพิ่ม submitted
+    if (submitting || submitted) return true;
     if (step === 1) return !selectedConcertId;
     if (step === 2) return !selectedSessionId || !selectedPhoneId;
     if (step === 3) return !renterName.trim() || !renterPhone.trim() || renterPhone.trim().length !== 10;
@@ -268,7 +275,6 @@ export default function PhoneRentalHome() {
     }
 
     if (step === 4) {
-      // ← กัน double submit ทันทีก่อน async ใดๆ
       if (submitted) return;
       setSubmitted(true);
       setSubmitting(true);
@@ -287,12 +293,13 @@ export default function PhoneRentalHome() {
         }
 
         const form = new FormData();
-        form.append("session_id", selectedSessionId);
-        form.append("phone_id", selectedPhoneId);
-        form.append("renter_name", renterName.trim());
+        form.append("session_id",   selectedSessionId);
+        form.append("phone_id",     selectedPhoneId);
+        form.append("renter_name",  renterName.trim());
         form.append("renter_phone", renterPhone.trim());
         form.append("total_amount", String(totalAmount));
-        form.append("slip", slipFile);
+        form.append("add_lens",     String(addLens));   // ← ส่ง lens flag
+        form.append("slip",         slipFile);
 
         const upRes = await fetch("/api/bookings/upload-slip", {
           method: "POST",
@@ -338,7 +345,6 @@ export default function PhoneRentalHome() {
         setSubmitted(false);
       } finally {
         setSubmitting(false);
-        // ไม่ reset submitted — ถ้าสำเร็จไป step 5 แล้วไม่มีปุ่มให้กดอีก
       }
       return;
     }
@@ -505,7 +511,12 @@ export default function PhoneRentalHome() {
                     {phones.filter((p) => p.remaining > 0).map((p) => {
                       const sel = selectedPhoneId === p.phone_id;
                       return (
-                        <div key={p.phone_id} onClick={() => { setSelectedPhoneId(p.phone_id); setBookingId(null); resetSlip(); }} style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 12, cursor: "pointer", transform: sel ? "translate(-2px,-2px)" : "", boxShadow: sel ? "6px 6px 0px #1a1a1a" : "4px 4px 0px #1a1a1a", transition: "all .15s" }}>
+                        <div key={p.phone_id} onClick={() => {
+                          setSelectedPhoneId(p.phone_id);
+                          setAddLens(false); // ← reset lens เมื่อเปลี่ยนรุ่น
+                          setBookingId(null);
+                          resetSlip();
+                        }} style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 12, cursor: "pointer", transform: sel ? "translate(-2px,-2px)" : "", boxShadow: sel ? "6px 6px 0px #1a1a1a" : "4px 4px 0px #1a1a1a", transition: "all .15s" }}>
                           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                             <div style={{ width: 52, height: 52, borderRadius: 14, border: "2px solid #1a1a1a", overflow: "hidden", background: "#fff", flexShrink: 0 }}>
                               {p.image_url ? <img src={p.image_url} alt={p.model_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, color: "#aaa", fontSize: 18 }}>📱</div>}
@@ -514,6 +525,9 @@ export default function PhoneRentalHome() {
                               <div style={{ fontWeight: 900, fontSize: 14 }}>{p.model_name}</div>
                               <div style={{ fontSize: 12, fontWeight: 800, color: "#FF85B3" }}>ค่าเช่า ฿{p.price}</div>
                               {p.deposit > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: "#888" }}>มัดจำ ฿{p.deposit}</div>}
+                              {p.lens_addon_price != null && (
+                                <div style={{ fontSize: 11, fontWeight: 700, color: "#7B61FF" }}>🔭 เพิ่ม Lens ซูมได้ +฿{p.lens_addon_price}</div>
+                              )}
                               <div style={{ fontSize: 11, fontWeight: 700, color: "#555" }}>เหลือ {p.remaining} เครื่อง</div>
                             </div>
                             <div style={{ fontSize: 18 }}>{sel ? "✅" : ""}</div>
@@ -548,14 +562,60 @@ export default function PhoneRentalHome() {
                   <input style={{ ...doodle.input, color: "#1a1a1a" }} type="tel" placeholder="08X-XXX-XXXX" maxLength={10} value={renterPhone} onChange={(e) => setRenterPhone(e.target.value)} />
                 </div>
               </div>
+
+              {/* ── Lens Addon Toggle ── */}
+              {selectedPhone?.lens_addon_price != null && (
+                <div
+                  onClick={() => setAddLens((v) => !v)}
+                  style={{
+                    ...(addLens ? doodle.cardPink : doodle.card),
+                    padding: "14px 16px",
+                    marginBottom: 16,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    transition: "all .15s",
+                    transform: addLens ? "translate(-2px,-2px)" : "",
+                    boxShadow: addLens ? "6px 6px 0px #1a1a1a" : "4px 4px 0px #1a1a1a",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 900, fontSize: 14, color: "#1a1a1a" }}>🔭 เพิ่ม Lens ซูม</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#7B61FF" }}>+฿{selectedPhone.lens_addon_price}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#888" }}>เลนส์ซูมเพิ่มเติมสำหรับถ่ายใกล้</div>
+                  </div>
+                  <div style={{
+                    width: 44, height: 26, borderRadius: 999,
+                    background: addLens ? "#FF85B3" : "#ddd",
+                    border: "2.5px solid #1a1a1a",
+                    position: "relative",
+                    transition: "background .2s",
+                    flexShrink: 0,
+                  }}>
+                    <div style={{
+                      position: "absolute",
+                      top: 2, left: addLens ? 18 : 2,
+                      width: 18, height: 18,
+                      borderRadius: "50%",
+                      background: "#fff",
+                      border: "2px solid #1a1a1a",
+                      transition: "left .2s",
+                    }} />
+                  </div>
+                </div>
+              )}
+
               <div style={{ ...doodle.cardYellow, padding: 16, color: "#1a1a1a" }}>
                 <div style={{ fontWeight: 900, fontSize: 13, color: "#2c2c2c", textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>🧾 สรุปการจอง</div>
                 {[
-                  ["🎫 คอนเสิร์ต", selectedConcert?.title || "-"],
-                  ["⏰ รอบ", selectedSession ? `${selectedSession.note ?? "รอบ"} • ${formatThaiDateTime(selectedSession.start_at)}` : "-"],
-                  ["📱 มือถือ", selectedPhone?.model_name || "-"],
-                  ["💵 ค่าเช่า", selectedPhone ? `฿${selectedPhone.price}` : "-"],
-                  ["🔒 มัดจำ", depositFee > 0 ? `฿${depositFee}` : "ไม่มี"],
+                  ["🎫 คอนเสิร์ต",  selectedConcert?.title || "-"],
+                  ["⏰ รอบ",         selectedSession ? `${selectedSession.note ?? "รอบ"} • ${formatThaiDateTime(selectedSession.start_at)}` : "-"],
+                  ["📱 มือถือ",      selectedPhone?.model_name || "-"],
+                  ["💵 ค่าเช่า",     selectedPhone ? `฿${selectedPhone.price}` : "-"],
+                  ["🔒 มัดจำ",       depositFee > 0 ? `฿${depositFee}` : "ไม่มี"],
+                  ...(addLens && lensPrice > 0 ? [["🔭 Lens ซูม", `฿${lensPrice}`]] : []),
                 ].map(([k, v]) => (
                   <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, marginBottom: 8, paddingBottom: 8, borderBottom: "1.5px dashed #000000" }}>
                     <span style={{ color: "#000000" }}>{k}</span>
@@ -582,12 +642,13 @@ export default function PhoneRentalHome() {
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#888", marginBottom: 4 }}>ยอดที่ต้องโอน</div>
                 <div style={{ fontSize: 42, fontWeight: 900, color: "#1a1a1a", lineHeight: 1 }}>฿{totalAmount}</div>
                 {depositFee > 0 && <div style={{ fontSize: 12, color: "#888", marginTop: 6, fontWeight: 600 }}>รวมมัดจำ ฿{depositFee} (คืนวันส่งเครื่อง)</div>}
+                {addLens && lensPrice > 0 && <div style={{ fontSize: 12, color: "#7B61FF", marginTop: 4, fontWeight: 700 }}>รวม Lens ซูม ฿{lensPrice}</div>}
               </div>
 
               <div style={{ ...doodle.card, overflow: "hidden", marginBottom: 16, color: "#1a1a1a" }}>
                 {[
                   { bg: "#003D6B", label: "พร้อมเพย์", num: "081-234-5678", name: "บจก. คอนเสิร์ต เรนทัล", val: "0812345678", key: "pp" },
-                  { bg: "#138F2D", label: "KBank", num: "123-4-56789-0", name: "บจก. คอนเสิร์ต เรนทัล", val: "1234567890", key: "bk" },
+                  { bg: "#138F2D", label: "KBank",     num: "123-4-56789-0", name: "บจก. คอนเสิร์ต เรนทัล", val: "1234567890", key: "bk" },
                 ].map(({ bg, label, num, name, val, key }, i) => (
                   <div key={key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderBottom: i === 0 ? "2px dashed #eee" : "none" }}>
                     <div style={{ width: 42, height: 42, background: bg, borderRadius: 12, border: "2px solid #1a1a1a", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 900, textAlign: "center", lineHeight: 1.2, flexShrink: 0 }}>{label}</div>
@@ -642,11 +703,12 @@ export default function PhoneRentalHome() {
                   </div>
                 </div>
                 {[
-                  ["👤 ชื่อ", renterName || "-"],
-                  ["🎫 คอนเสิร์ต", selectedConcert?.title || "-"],
-                  ["⏰ รอบ", selectedSession ? `${selectedSession.note ?? "รอบ"} • ${formatThaiDateTime(selectedSession.start_at)}` : "-"],
-                  ["📱 มือถือ", selectedPhone?.model_name || "-"],
-                  ["💰 ยอดชำระ", `฿${totalAmount}`],
+                  ["👤 ชื่อ",        renterName || "-"],
+                  ["🎫 คอนเสิร์ต",   selectedConcert?.title || "-"],
+                  ["⏰ รอบ",          selectedSession ? `${selectedSession.note ?? "รอบ"} • ${formatThaiDateTime(selectedSession.start_at)}` : "-"],
+                  ["📱 มือถือ",       selectedPhone?.model_name || "-"],
+                  ...(addLens && lensPrice > 0 ? [["🔭 Lens ซูม", `฿${lensPrice}`]] : []),
+                  ["💰 ยอดชำระ",     `฿${totalAmount}`],
                 ].map(([k, v]) => (
                   <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
                     <span style={{ color: "#888" }}>{k}</span>

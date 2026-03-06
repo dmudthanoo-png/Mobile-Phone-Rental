@@ -26,7 +26,7 @@ function verifySessionJWT(token: string, secret: string) {
     "base64"
   ).toString("utf8");
 
-  const payload = JSON.parse(payloadJson) as { exp?: number; [k: string]: any };
+  const payload = JSON.parse(payloadJson) as { exp?: number; [k: string]: unknown };
   const now = Math.floor(Date.now() / 1000);
   if (payload.exp && now > payload.exp) return null;
   return payload;
@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
     .from("bookings")
     .select(`
       id, created_at, renter_name, renter_phone, total_amount, slip_url, ref_number, status,
+      add_lens, lens_price,
       concert_sessions:session_id (
         id, start_at, end_at, note,
         concerts:concert_id ( id, title, venue_name, poster_url )
@@ -80,7 +81,6 @@ export async function GET(req: NextRequest) {
       phones:phone_id ( id, model_name, image_url, price )
     `)
     .eq("user_id", userId)
-    // ✅ ดึงทุก status ที่ควรโชว์ในประวัติ
     .in("status", ["pending", "confirmed", "rejected", "waiting_review"])
     .order("created_at", { ascending: false });
 

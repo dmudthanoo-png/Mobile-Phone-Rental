@@ -21,10 +21,10 @@ export async function GET(
 
     const supabase = createClient(url, serviceKey);
 
-    // 1) ดึงมือถือทั้งหมดที่ active
+    // 1) ดึงมือถือทั้งหมดที่ active (เพิ่ม lens_addon_price)
     const { data: phoneRows, error: phoneErr } = await supabase
       .from("phones")
-      .select("id, model_name, image_url, price, deposit, qty")
+      .select("id, model_name, image_url, price, deposit, qty, lens_addon_price")
       .eq("active", true)
       .order("model_name");
 
@@ -34,7 +34,6 @@ export async function GET(
     }
 
     // 2) นับ booking ที่กิน stock อยู่ (confirmed + pending)
-    //    stock เดียวกันทุก session/concert ไม่แยกรอบ
     const { data: bookedRows, error: bkErr } = await supabase
       .from("bookings")
       .select("phone_id")
@@ -49,22 +48,26 @@ export async function GET(
       bookedCount[r.phone_id] = (bookedCount[r.phone_id] || 0) + 1;
     }
 
-    // 4) คำนวณ remaining แต่ละรุ่น
-    const phones = phoneRows.map((p) => ({
-      phone_id: String(p.id),
-      model_name: String(p.model_name ?? ""),
-      image_url: p.image_url ?? null,
-      price: Number(p.price ?? 0),
-      deposit: Number(p.deposit ?? 0),
-      remaining: Math.max(0, Number(p.qty ?? 0) - (bookedCount[String(p.id)] ?? 0)),
-    })).sort((a, b) => b.remaining - a.remaining);
+    // 4) คำนวณ remaining + ส่ง lens_addon_price กลับ
+    const phones = phoneRows
+      .map((p) => ({
+        phone_id: String(p.id),
+        model_name: String(p.model_name ?? ""),
+        image_url: p.image_url ?? null,
+        price: Number(p.price ?? 0),
+        deposit: Number(p.deposit ?? 0),
+        lens_addon_price: p.lens_addon_price != null ? Number(p.lens_addon_price) : null,
+        remaining: Math.max(0, Number(p.qty ?? 0) - (bookedCount[String(p.id)] ?? 0)),
+      }))
+      .sort((a, b) => b.remaining - a.remaining);
 
     return NextResponse.json(
       { phones },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "server_error";
     console.error("GET /api/sessions/[id]/phones error:", err);
-    return NextResponse.json({ error: err?.message || "server_error" }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

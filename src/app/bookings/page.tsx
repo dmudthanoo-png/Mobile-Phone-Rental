@@ -12,6 +12,8 @@ type Booking = {
   slip_url: string | null;
   ref_number: string | null;
   status: "confirmed" | "rejected" | "pending" | "waiting_review" | string;
+  add_lens?: boolean;      // ← เพิ่ม
+  lens_price?: number;     // ← เพิ่ม
   concert_sessions?: {
     id: string;
     start_at: string;
@@ -33,10 +35,10 @@ type Booking = {
 };
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string; border: string }> = {
-  confirmed:     { label: "✅ ยืนยันแล้ว",  bg: "#F0FFF4", color: "#065f46", border: "#6EE7B7" },
-  rejected:      { label: "❌ ไม่อนุมัติ",  bg: "#FFF1F2", color: "#9f1239", border: "#FDA4AF" },
-  pending:       { label: "⏳ รอตรวจสอบ",   bg: "#FFF9E6", color: "#92400e", border: "#FCD34D" },
-  waiting_review:{ label: "🔍 รอแอดมิน",   bg: "#EFF6FF", color: "#1e40af", border: "#93C5FD" },
+  confirmed:      { label: "✅ ยืนยันแล้ว", bg: "#F0FFF4", color: "#065f46", border: "#6EE7B7" },
+  rejected:       { label: "❌ ไม่อนุมัติ",  bg: "#FFF1F2", color: "#9f1239", border: "#FDA4AF" },
+  pending:        { label: "⏳ รอตรวจสอบ",   bg: "#FFF9E6", color: "#92400e", border: "#FCD34D" },
+  waiting_review: { label: "🔍 รอแอดมิน",   bg: "#EFF6FF", color: "#1e40af", border: "#93C5FD" },
 };
 const DEFAULT_STATUS = { label: "❓ ไม่ทราบสถานะ", bg: "#F5F5F5", color: "#555", border: "#ccc" };
 
@@ -51,7 +53,6 @@ function formatSessionStart(startAt?: string | null) {
   return d.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
 }
 
-// ✅ Toast component
 function Toast({ message, type, onClose }: { message: string; type: "success" | "error"; onClose: () => void }) {
   useEffect(() => {
     const t = setTimeout(onClose, 3000);
@@ -83,7 +84,6 @@ export default function BookingsPage() {
   const [loading, setLoading] = useState(true);
   const [slipModal, setSlipModal] = useState<string | null>(null);
 
-  // ✅ Toast state
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   const [updateSlipBookingId, setUpdateSlipBookingId] = useState<string | null>(null);
@@ -105,18 +105,16 @@ export default function BookingsPage() {
       if (!res.ok) {
         const errMsg = out?.message || out?.error || "เปลี่ยนสลิปไม่สำเร็จ";
         setUpdateSlipError(errMsg);
-        // ✅ toast error
         setToast({ message: errMsg, type: "error" });
         return;
       }
-      // ✅ toast success
       setToast({ message: "เปลี่ยนสลิปสำเร็จแล้ว รอแอดมินตรวจสอบครับ", type: "success" });
       setUpdateSlipBookingId(null);
       setUpdateSlipFile(null);
       setUpdateSlipPreview(null);
       await loadMyBookings();
-    } catch (e: any) {
-      const errMsg = e?.message || "เกิดข้อผิดพลาด";
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : "เกิดข้อผิดพลาด";
       setUpdateSlipError(errMsg);
       setToast({ message: errMsg, type: "error" });
     } finally {
@@ -127,9 +125,8 @@ export default function BookingsPage() {
   const loadMyBookings = async () => {
     const res = await fetch("/api/bookings/my-v2", { cache: "no-store" });
     const raw = await res.text();
-    let out: any = null;
-    try { out = raw ? JSON.parse(raw) : null; }
-    catch { throw new Error("API not json"); }
+    let out: { bookings?: Booking[]; error?: string } | null = null;
+    try { out = raw ? JSON.parse(raw) : null; } catch { throw new Error("API not json"); }
     if (!res.ok) throw new Error(out?.error || "failed to load bookings");
     setBookings((out?.bookings ?? []) as Booking[]);
   };
@@ -138,7 +135,7 @@ export default function BookingsPage() {
     const run = async () => {
       const meRes = await fetch("/api/me", { cache: "no-store" });
       const meRaw = await meRes.text();
-      let me: any = null;
+      let me: { user?: unknown } | null = null;
       try { me = meRaw ? JSON.parse(meRaw) : null; } catch { router.push("/login"); return; }
       if (!me?.user) { router.push("/login"); return; }
       try { await loadMyBookings(); }
@@ -186,15 +183,16 @@ export default function BookingsPage() {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 4, color: "#1a1a1a" }}>
             {bookings.map((b) => {
-              const st = STATUS_CONFIG[b.status] ?? DEFAULT_STATUS;
+              const st           = STATUS_CONFIG[b.status] ?? DEFAULT_STATUS;
               const concertTitle = b.concert_sessions?.concerts?.title ?? "คอนเสิร์ต";
-              const venueName = b.concert_sessions?.concerts?.venue_name ?? "-";
-              const phoneModel = b.phones?.model_name ?? "-";
+              const venueName    = b.concert_sessions?.concerts?.venue_name ?? "-";
+              const phoneModel   = b.phones?.model_name ?? "-";
               const sessionLabel = formatSessionStart(b.concert_sessions?.start_at);
 
               return (
                 <div key={b.id} style={{ ...doodle.card, padding: 18 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  {/* Title row */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                     <div>
                       <div style={{ fontWeight: 900, fontSize: 16 }}>{concertTitle}</div>
                       <div style={{ fontSize: 12, color: "#888", fontWeight: 600, marginTop: 2 }}>
@@ -206,15 +204,24 @@ export default function BookingsPage() {
                     </span>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 12px", fontSize: 13, marginBottom: 14 }}>
+                  {/* ── Lens badge ── */}
+                  {b.add_lens && (
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#f5f3ff", border: "1.5px solid #a78bfa", borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 700, color: "#6d28d9", marginBottom: 10 }}>
+                      🔭 Lens ซูม +฿{(b.lens_price ?? 0).toLocaleString()}
+                    </div>
+                  )}
+
+                  {/* Info grid */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", fontSize: 13, marginBottom: 14 }}>
                     {[
-                      ["🗓️", sessionLabel],
-                      ["📍", venueName],
-                      ["💰", `฿${b.total_amount.toLocaleString()}`],
-                      ["🕐", new Date(b.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })],
-                    ].map(([icon, val]) => (
-                      <div key={`${b.id}-${icon}`} style={{ display: "flex", alignItems: "center", gap: 6, color: "#444", fontWeight: 600 }}>
-                        <span>{icon}</span><span>{val}</span>
+                      ["🗓️", "วันเวลาคอนเสิร์ต", sessionLabel],
+                      ["📍", "สถานที่",            venueName],
+                      ["💰", "ยอดชำระ",            `฿${b.total_amount.toLocaleString()}`],
+                      ["🕐", "วันที่จอง",          new Date(b.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })],
+                    ].map(([icon, label, val]) => (
+                      <div key={`${b.id}-${label}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "#888" }}>{icon} {label}</div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "#1a1a1a" }}>{val}</div>
                       </div>
                     ))}
                   </div>
@@ -260,7 +267,7 @@ export default function BookingsPage() {
         </div>
       </div>
 
-      {/* ✅ Toast */}
+      {/* Toast */}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       {/* Update Slip Modal */}

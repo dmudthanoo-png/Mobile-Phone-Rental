@@ -31,7 +31,7 @@ function verifySessionJWT(token: string, secret: string) {
     "base64"
   ).toString("utf8");
 
-  const payload = JSON.parse(payloadJson) as { exp?: number; [k: string]: any };
+  const payload = JSON.parse(payloadJson) as { exp?: number; [k: string]: unknown };
   const now = Math.floor(Date.now() / 1000);
   if (payload.exp && now > payload.exp) return null;
 
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
 
     const supabaseAdmin = createClient(url, serviceKey);
 
-    // ✅ หา user_id
+    // หา user_id
     let user_id = payload?.app_user_id as string | undefined;
 
     if (!user_id) {
@@ -84,10 +84,11 @@ export async function POST(req: NextRequest) {
     // 2) parse form-data
     const form = await req.formData();
 
-    const session_id = String(form.get("session_id") ?? "").trim();
-    const phone_id = String(form.get("phone_id") ?? "").trim();
-    const renter_name = String(form.get("renter_name") ?? "").trim();
+    const session_id   = String(form.get("session_id")   ?? "").trim();
+    const phone_id     = String(form.get("phone_id")     ?? "").trim();
+    const renter_name  = String(form.get("renter_name")  ?? "").trim();
     const renter_phone = String(form.get("renter_phone") ?? "").trim();
+    const add_lens     = form.get("add_lens") === "true";
 
     let amount = Number(form.get("total_amount") ?? 0);
     if (!Number.isFinite(amount)) amount = 0;
@@ -95,27 +96,47 @@ export async function POST(req: NextRequest) {
 
     const slip = form.get("slip");
 
-    if (!session_id) return NextResponse.json({ error: "missing session_id" }, { status: 400 });
-    if (!phone_id) return NextResponse.json({ error: "missing phone_id" }, { status: 400 });
-    if (!renter_name) return NextResponse.json({ error: "missing renter_name" }, { status: 400 });
-    if (!renter_phone) return NextResponse.json({ error: "missing renter_phone" }, { status: 400 });
+    if (!session_id)    return NextResponse.json({ error: "missing session_id" },    { status: 400 });
+    if (!phone_id)      return NextResponse.json({ error: "missing phone_id" },      { status: 400 });
+    if (!renter_name)   return NextResponse.json({ error: "missing renter_name" },   { status: 400 });
+    if (!renter_phone)  return NextResponse.json({ error: "missing renter_phone" },  { status: 400 });
     if (!(slip instanceof File)) {
       return NextResponse.json({ error: "missing slip file" }, { status: 400 });
     }
-
     if (slip.size > 8 * 1024 * 1024) {
       return NextResponse.json({ error: "file_too_large" }, { status: 400 });
     }
-
     const allowed = ["image/jpeg", "image/png", "image/jpg", "image/webp"];
     if (!allowed.includes(slip.type)) {
-      return NextResponse.json(
-        { error: `unsupported file type: ${slip.type}` },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: `unsupported file type: ${slip.type}` }, { status: 400 });
     }
 
-    // 3) rate limit — เบอร์เดิม pending อยู่แล้วไม่ให้จองซ้ำ
+    // 3) verify lens_addon_price จาก DB (ไม่เชื่อ client)
+    const { data: phoneRow, error: phoneErr } = await supabaseAdmin
+      .from("phones")
+      .select("price, deposit, lens_addon_price")
+      .eq("id", phone_id)
+      .maybeSingle();
+
+    if (phoneErr) return NextResponse.json({ error: phoneErr.message }, { status: 500 });
+    if (!phoneRow) return NextResponse.json({ error: "phone not found" }, { status: 404 });
+
+    const basePrice    = Number(phoneRow.price   ?? 0);
+    const deposit      = Number(phoneRow.deposit ?? 0);
+    const lensPrice    = phoneRow.lens_addon_price != null ? Number(phoneRow.lens_addon_price) : null;
+
+    // ถ้า client บอกว่าจะเอา lens แต่รุ่นนี้ไม่มี option → reject
+    if (add_lens && lensPrice === null) {
+      return NextResponse.json({ error: "lens addon not available for this phone" }, { status: 400 });
+    }
+
+    // คำนวณ expected amount ฝั่ง server
+    const expectedAmount = basePrice + deposit + (add_lens && lensPrice ? lensPrice : 0);
+
+    // ถ้า amount ที่ client ส่งมาไม่ตรง → ใช้ค่าจาก server แทน (ป้องกัน tamper)
+    const verifiedAmount = expectedAmount;
+
+    // 4) rate limit
     const { count: pendingCount, error: pendingErr } = await supabaseAdmin
       .from("bookings")
       .select("*", { count: "exact", head: true })
@@ -131,23 +152,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4) upload slip
+    // 5) upload slip
     const ext =
-      slip.type === "image/png" ? "png" :
+      slip.type === "image/png"  ? "png"  :
       slip.type === "image/webp" ? "webp" : "jpg";
 
     const fileName = `bookings/${user_id}/${session_id}/${phone_id}/${Date.now()}.${ext}`;
-    const buffer = Buffer.from(await slip.arrayBuffer());
+    const buffer   = Buffer.from(await slip.arrayBuffer());
 
     const { error: upErr } = await supabaseAdmin.storage
       .from("slips")
       .upload(fileName, buffer, { contentType: slip.type, upsert: true });
 
     if (upErr) {
-      return NextResponse.json(
-        { error: `upload failed: ${upErr.message}` },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
     }
 
     const { data: pub } = supabaseAdmin.storage.from("slips").getPublicUrl(fileName);
@@ -158,16 +176,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "cannot_get_public_url" }, { status: 500 });
     }
 
-    // 5) สร้าง booking แบบ atomic (กัน oversell) → pending
+    // 6) สร้าง booking แบบ atomic → pending
     const rpc = await supabaseAdmin.rpc("create_pending_booking_if_available", {
-      p_user_id: user_id,
-      p_session_id: session_id,
-      p_phone_id: phone_id,
-      p_renter_name: renter_name,
+      p_user_id:      user_id,
+      p_session_id:   session_id,
+      p_phone_id:     phone_id,
+      p_renter_name:  renter_name,
       p_renter_phone: renter_phone,
-      p_total_amount: amount,
-      p_slip_url: slip_url,
-      p_ref_number: null,
+      p_total_amount: verifiedAmount,
+      p_slip_url:     slip_url,
+      p_ref_number:   null,
     });
 
     if (rpc.error) {
@@ -186,12 +204,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "rpc_no_result" }, { status: 500 });
     }
 
+    // 7) บันทึก lens ลง booking
+    if (add_lens && lensPrice) {
+      const { error: lensErr } = await supabaseAdmin
+        .from("bookings")
+        .update({ add_lens: true, lens_price: lensPrice })
+        .eq("id", row.booking_id);
+
+      if (lensErr) {
+        console.error("lens update failed:", lensErr.message);
+        // ไม่ return error — booking สร้างสำเร็จแล้ว แค่ log ไว้
+      }
+    }
+
     return NextResponse.json(
       {
-        ok: true,
+        ok:         true,
         booking_id: row.booking_id,
         ref_number: row.ref_number ?? null,
         slip_url,
+        add_lens,
+        lens_price: add_lens && lensPrice ? lensPrice : 0,
       },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );

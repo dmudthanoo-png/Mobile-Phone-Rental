@@ -18,7 +18,7 @@ function getImageExt(mimeType: string): string {
   return "jpg";
 }
 
-// GET /api/admin/phones — ดูมือถือทั้งหมด
+// GET /api/admin/phones
 export async function GET(req: NextRequest) {
   const admin = await requireAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from("phones")
-    .select("id, model_name, image_url, price, deposit, qty")
+    .select("id, model_name, image_url, price, deposit, qty, lens_addon_price") // ← เพิ่ม
     .order("model_name", { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ phones: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
 }
 
-// POST /api/admin/phones — เพิ่มมือถือใหม่ (FormData: model_name, price, qty, image?)
+// POST /api/admin/phones — เพิ่มมือถือใหม่
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -44,20 +44,28 @@ export async function POST(req: NextRequest) {
   const form = await req.formData();
 
   const model_name = (form.get("model_name") as string | null)?.trim();
-  const price = Number(form.get("price") ?? 0);
-  const qty = Number(form.get("qty") ?? 0);
-  const imageFile = form.get("image");
+  const price      = Number(form.get("price")   ?? 0);
+  const deposit    = Number(form.get("deposit") ?? 0);
+  const qty        = Number(form.get("qty")      ?? 0);
+  const imageFile  = form.get("image");
+
+  // lens_addon_price: ถ้าไม่ได้ส่งมาหรือว่าง = null (ไม่มี option)
+  const lensRaw         = (form.get("lens_addon_price") as string | null)?.trim();
+  const lens_addon_price = lensRaw ? Number(lensRaw) : null;
 
   if (!model_name) return NextResponse.json({ error: "model_name is required" }, { status: 400 });
   if (!price || price <= 0) return NextResponse.json({ error: "price must be > 0" }, { status: 400 });
   if (qty < 0) return NextResponse.json({ error: "qty must be >= 0" }, { status: 400 });
+  if (lens_addon_price !== null && lens_addon_price < 0) {
+    return NextResponse.json({ error: "lens_addon_price must be >= 0" }, { status: 400 });
+  }
 
   let image_url: string | null = null;
 
   if (imageFile instanceof File && imageFile.size > 0) {
-    const ext = getImageExt(imageFile.type);
+    const ext      = getImageExt(imageFile.type);
     const fileName = `phone_${model_name.replace(/\s+/g, "_")}_${Date.now()}.${ext}`;
-    const buffer = Buffer.from(await imageFile.arrayBuffer());
+    const buffer   = Buffer.from(await imageFile.arrayBuffer());
 
     const { error: upErr } = await supabase.storage
       .from("phones")
@@ -71,8 +79,8 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase
     .from("phones")
-    .insert({ model_name, price, image_url, qty })
-    .select("id, model_name, image_url, price, deposit, qty")
+    .insert({ model_name, price, deposit, image_url, qty, lens_addon_price }) // ← เพิ่ม deposit + lens
+    .select("id, model_name, image_url, price, deposit, qty, lens_addon_price")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -80,7 +88,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, phone: data }, { status: 201 });
 }
 
-// PATCH /api/admin/phones — แก้ข้อมูลมือถือ (FormData: id, model_name?, price?, deposit?, qty?, image?)
+// PATCH /api/admin/phones — แก้ข้อมูลมือถือ
 export async function PATCH(req: NextRequest) {
   const admin = await requireAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -94,10 +102,16 @@ export async function PATCH(req: NextRequest) {
   const updates: Record<string, unknown> = {};
 
   const model_name = (form.get("model_name") as string | null)?.trim();
-  const price = form.get("price");
-  const deposit = form.get("deposit");
-  const qty = form.get("qty");
-  const imageFile = form.get("image");
+  const price      = form.get("price");
+  const deposit    = form.get("deposit");
+  const qty        = form.get("qty");
+  const imageFile  = form.get("image");
+
+  // lens_addon_price: ว่างเปล่า = ลบ option (null), มีค่า = ตั้งราคาใหม่
+  const lensRaw = form.get("lens_addon_price") as string | null;
+  if (lensRaw !== null) {
+    updates.lens_addon_price = lensRaw.trim() ? Number(lensRaw.trim()) : null;
+  }
 
   if (model_name) updates.model_name = model_name;
   if (price !== null && price !== "") {
@@ -113,9 +127,9 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (imageFile instanceof File && imageFile.size > 0) {
-    const ext = getImageExt(imageFile.type);
+    const ext      = getImageExt(imageFile.type);
     const fileName = `phone_${id}_${Date.now()}.${ext}`;
-    const buffer = Buffer.from(await imageFile.arrayBuffer());
+    const buffer   = Buffer.from(await imageFile.arrayBuffer());
 
     const { error: upErr } = await supabase.storage
       .from("phones")
@@ -137,7 +151,7 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
-// DELETE /api/admin/phones?id=xxx — ลบมือถือพร้อม inventory
+// DELETE /api/admin/phones?id=xxx
 export async function DELETE(req: NextRequest) {
   const admin = await requireAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -147,7 +161,6 @@ export async function DELETE(req: NextRequest) {
 
   const supabase = getSupabase();
 
-  // ลบ inventory ก่อน แล้วค่อยลบ phone (foreign key safety)
   const { error: invErr } = await supabase
     .from("session_phone_inventory")
     .delete()

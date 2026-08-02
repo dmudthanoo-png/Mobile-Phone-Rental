@@ -51,6 +51,17 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
 
   const supabase = getSupabase();
 
+  // 0) เช็คว่าแอดมินปิดการตรวจสอบอัตโนมัติไว้ไหม (เช่น โควต้า SlipOK หมด)
+  const { data: settings } = await supabase
+    .from("app_settings")
+    .select("slipok_enabled")
+    .eq("id", true)
+    .maybeSingle();
+
+  if (settings?.slipok_enabled === false) {
+    return { ok: false, error: "slipok_disabled_by_admin" };
+  }
+
   // 1) ดึงข้อมูล booking + มัดจำต่อเครื่องของรุ่นนั้น (ยอดที่ควรจะโอนมา = มัดจำ x จำนวนเครื่อง)
   const { data: bookingRaw, error: bErr } = await supabase
     .from("bookings")

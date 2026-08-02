@@ -175,7 +175,7 @@ export default function AdminPage() {
     setIsAuthed(false); setBookings([]); setConcerts([]); setPhones([]);
   };
 
-  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchAnnouncement(); };
+  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchAnnouncement(); fetchSettings(); };
 
   // ── bookings ──
   const fetchBookings = async () => {
@@ -220,6 +220,30 @@ export default function AdminPage() {
     } finally {
       setVerifyingId(null);
     }
+  };
+
+  // ── toggle เปิด/ปิดตรวจสอบสลิปอัตโนมัติ (เผื่อโควต้า SlipOK หมด) ──
+  const [slipOkEnabled, setSlipOkEnabled] = useState(true);
+  const fetchSettings = async () => {
+    const res = await fetch("/api/admin/settings", { cache:"no-store" });
+    if (res.ok) {
+      const out = await res.json();
+      setSlipOkEnabled(out.slipok_enabled ?? true);
+    }
+  };
+  const toggleSlipOk = async () => {
+    const next = !slipOkEnabled;
+    setSlipOkEnabled(next); // optimistic update
+    const res = await fetch("/api/admin/settings", {
+      method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify({ slipok_enabled: next }), cache:"no-store",
+    });
+    if (!res.ok) {
+      setSlipOkEnabled(!next); // revert ถ้าพลาด
+      showMsg("เปลี่ยนการตั้งค่าไม่สำเร็จ", false);
+      return;
+    }
+    showMsg(next ? "✅ เปิดตรวจสอบสลิปอัตโนมัติแล้ว" : "⏸️ ปิดตรวจสอบสลิปอัตโนมัติแล้ว");
   };
 
   // ── concerts ──
@@ -549,7 +573,18 @@ export default function AdminPage() {
             <div style={{ fontSize:24, fontWeight:700, color:UI.accent }}>หน้าต่างแอดมิน</div>
             <div style={{ fontSize:12, color:UI.muted, fontWeight:800 }}>ระบบเช่ามือถือ</div>
           </div>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+            <button
+              onClick={toggleSlipOk}
+              style={{
+                ...btnStyle("white"),
+                border: `1px solid ${slipOkEnabled ? "#B7EFC5" : "#F9C7D1"}`,
+                background: slipOkEnabled ? "#F0FFF4" : "#FFF1F2",
+                color: slipOkEnabled ? "#0F9D4E" : "#C43D5C",
+              }}
+            >
+              {slipOkEnabled ? "🟢 SlipOK: เปิดตรวจสอบอัตโนมัติ" : "⏸️ SlipOK: ปิดอยู่ (กดเพื่อเปิด)"}
+            </button>
             <button onClick={loadAll} style={btnStyle("white")}>🔄 รีเฟรช</button>
             <button onClick={handleLogout} style={btnStyle("dark")}>ออกจากระบบ</button>
           </div>

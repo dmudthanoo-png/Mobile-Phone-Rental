@@ -16,7 +16,15 @@ export async function POST(req: NextRequest) {
   if (!bookingId) return NextResponse.json({ error: "missing booking_id" }, { status: 400 });
 
   const result = await verifySlipForBooking(bookingId);
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 500 });
+  if (!result.ok) {
+    if (result.error === "slipok_disabled_by_admin") {
+      return NextResponse.json(
+        { error: "ปิดการตรวจสอบสลิปอัตโนมัติไว้อยู่ กรุณาเปิดใช้งานก่อน (ปุ่มด้านบนของหน้ารายการจอง)" },
+        { status: 400 }
+      );
+    }
+    return NextResponse.json({ error: result.error }, { status: 500 });
+  }
 
   return NextResponse.json(result);
 }

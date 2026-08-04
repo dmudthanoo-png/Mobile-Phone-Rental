@@ -164,7 +164,7 @@ export default function PhoneRentalHome() {
   const [pageError, setPageError] = useState<string>("");
 
   // ── จับเวลาทำรายการ (step 3 เป็นต้นไป) + ยินยอมข้อตกลง ──
-  const STEP3_TIME_LIMIT = 15 * 60; // 15 นาที
+  const STEP3_TIME_LIMIT = 10 * 60; // 10 นาที
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
@@ -832,9 +832,18 @@ export default function PhoneRentalHome() {
           {/* STEP 4 */}
           {step === 4 && (
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-                <span style={{ width: 26, height: 26, borderRadius: 8, background: "#F1EDFC", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>💳</span>
-                <span style={{ fontWeight: 700, fontSize: 17, color: ink }}>ชำระเงิน</span>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 26, height: 26, borderRadius: 8, background: "#F1EDFC", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>💳</span>
+                  <span style={{ fontWeight: 700, fontSize: 17, color: ink }}>ชำระเงิน</span>
+                </div>
+                {timeLeft !== null && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, background: timeLeft <= 60 ? "#FFF1F2" : accentSoft, borderRadius: 999, padding: "5px 12px" }}>
+                    <span style={{ fontSize: 13 }}>⏱</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: timeLeft <= 60 ? "#C43D5C" : accent }}>{formatCountdown(timeLeft)}</span>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: sub }}>เวลาทำรายการ</span>
+                  </div>
+                )}
               </div>
 
               <div style={{ ...doodle.cardPink, padding: "20px 16px", textAlign: "center", marginBottom: 16 }}>

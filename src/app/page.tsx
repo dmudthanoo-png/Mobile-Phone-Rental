@@ -922,7 +922,7 @@ export default function PhoneRentalHome() {
         </div>
 
         {/* Bottom Nav */}
-        {step < 5 && (
+        {step < 5 && !(step === 1 && !selectedConcertId) && (
           <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, display: "flex", justifyContent: "center", padding: "16px 32px 24px", background: "linear-gradient(to top, #FFFBF7 65%, transparent)" }}>
             <div style={{ width: "100%", maxWidth: 760, display: "flex", gap: 12 }}>
               {step > 1 && (

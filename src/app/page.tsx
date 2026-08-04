@@ -163,11 +163,10 @@ export default function PhoneRentalHome() {
   const [submitted, setSubmitted] = useState(false);
   const [pageError, setPageError] = useState<string>("");
 
-  // ── จับเวลาทำรายการ (step 3 เป็นต้นไป) + ยินยอมข้อตกลง ──
-  // ใช้ "เวลาหมดอายุแบบ timestamp คงที่" แทนตัวเลขนับถอยหลังตรงๆ
-  // เพื่อไม่ให้การกดสลับ step (3 ↔ 4) ไปรีเซ็ต interval จนเวลาไม่ลดลง
-  const STEP3_TIME_LIMIT = 10 * 60; // 10 นาที
+  // ── จับเวลาทำรายการแยกต่อ step: step 3 ได้ 5 นาที, step 4 ได้อีก 5 นาที (แยกกัน ไม่ต่อเนื่อง) ──
+  const STEP_TIME_LIMIT = 5 * 60; // 5 นาทีต่อ step
   const [timerExpiresAt, setTimerExpiresAt] = useState<number | null>(null);
+  const [timerStepKey, setTimerStepKey] = useState<number | null>(null); // step ไหนที่ตัวจับเวลานี้ผูกอยู่
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
@@ -270,31 +269,53 @@ export default function PhoneRentalHome() {
   };
 
   // ── ตัวจับเวลาเดินตลอด ไม่ผูกกับ step เพื่อไม่ให้การสลับ step รีเซ็ต interval ──
+  // Poll ทุก 250ms (ไม่ใช่ 1000ms) เผื่อ browser/webview บางตัว throttle timer
+  // ให้ delay ยาวกว่าปกติ — poll ถี่ขึ้นลดโอกาสพลาดจนดูเหมือนค้าง
   useEffect(() => {
-    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    const id = setInterval(() => {
+      const t = Date.now();
+      setNowTick(t);
+      if (typeof window !== "undefined") (window as unknown as { __lastTick?: number }).__lastTick = t;
+    }, 250);
     return () => clearInterval(id);
   }, []);
 
-  // ── เริ่ม/ยกเลิกช่วงเวลาทำรายการ ตามการเข้า-ออก step 3+ (ตั้งค่า timestamp คงที่ ไม่ใช่ตัวเลขนับถอย) ──
+  // ── กันเหนียวเพิ่ม: sync เวลาให้ตรงทันทีเมื่อกลับมาที่แท็บ/หน้าต่างนี้ ──
+  // (บางเบราว์เซอร์/อุปกรณ์หยุด setInterval ตอนพับหน้าจอ/สลับแอพ แล้วไม่รีบไล่ตามให้)
   useEffect(() => {
-    if (step === 3 && timerExpiresAt === null) {
-      setTimerExpiresAt(Date.now() + STEP3_TIME_LIMIT * 1000);
+    const resync = () => setNowTick(Date.now());
+    document.addEventListener("visibilitychange", resync);
+    window.addEventListener("focus", resync);
+    return () => {
+      document.removeEventListener("visibilitychange", resync);
+      window.removeEventListener("focus", resync);
+    };
+  }, []);
+
+  // ── เริ่ม/ยกเลิกช่วงเวลาทำรายการ: step 3 ได้ 5 นาทีของตัวเอง, พอไป step 4 ได้ 5 นาทีใหม่แยกกัน ──
+  useEffect(() => {
+    setNowTick(Date.now()); // sync ทุกครั้งที่สลับ step กันเวลาค้างจากรอบก่อน
+    if ((step === 3 || step === 4) && timerStepKey !== step) {
+      setTimerExpiresAt(Date.now() + STEP_TIME_LIMIT * 1000);
+      setTimerStepKey(step);
     }
-    if (step < 3 && timerExpiresAt !== null) {
-      setTimerExpiresAt(null);
+    if (step !== 3 && step !== 4) {
+      if (timerExpiresAt !== null) setTimerExpiresAt(null);
+      if (timerStepKey !== null) setTimerStepKey(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
   // ── เช็คว่าหมดเวลาหรือยัง (ดูจาก timeLeft ที่คำนวณจาก timestamp ด้านบน) ──
   useEffect(() => {
-    if (timerExpiresAt === null || timeLeft === null || step < 3 || step >= 5) return;
+    if (timerExpiresAt === null || timeLeft === null || (step !== 3 && step !== 4)) return;
     if (timeLeft <= 0) {
       alert("หมดเวลาทำรายการ กรุณาเริ่มทำรายการใหม่อีกครั้งครับ");
       setSelectedConcertId(null);
       resetBelowConcert();
       setAgreedTerms(false);
       setTimerExpiresAt(null);
+      setTimerStepKey(null);
       setStep(1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -731,24 +731,51 @@ export default function PhoneRentalHome() {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${line}` }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: ink }}>จำนวนเลนส์</span>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <button
-                          onClick={() => setLensQty((q) => Math.max(1, q - 1))}
-                          style={{ width: 26, height: 26, borderRadius: "50%", border: `1px solid ${line}`, background: "#fff", fontWeight: 700, cursor: "pointer", color: ink }}
-                        >
-                          −
-                        </button>
-                        <span style={{ fontSize: 14, fontWeight: 700, minWidth: 16, textAlign: "center", color: ink }}>{lensQty}</span>
-                        <button
-                          onClick={() => setLensQty((q) => Math.min(phoneQty, selectedLens.remaining, q + 1))}
-                          style={{ width: 26, height: 26, borderRadius: "50%", border: `1px solid ${line}`, background: "#fff", fontWeight: 700, cursor: "pointer", color: ink }}
-                        >
-                          +
-                        </button>
+                        {(() => {
+                          const maxLensQty = Math.max(1, Math.min(phoneQty, selectedLens.remaining));
+                          const atMin = lensQty <= 1;
+                          const atMax = lensQty >= maxLensQty;
+                          return (
+                            <>
+                              <button
+                                disabled={atMin}
+                                onClick={() => setLensQty((q) => Math.max(1, q - 1))}
+                                style={{
+                                  width: 26, height: 26, borderRadius: "50%",
+                                  border: `1px solid ${line}`,
+                                  background: atMin ? "#F5F4F2" : "#fff",
+                                  fontWeight: 700,
+                                  cursor: atMin ? "not-allowed" : "pointer",
+                                  color: atMin ? "#C7C4BE" : ink,
+                                }}
+                              >
+                                −
+                              </button>
+                              <span style={{ fontSize: 14, fontWeight: 700, minWidth: 16, textAlign: "center", color: ink }}>{lensQty}</span>
+                              <button
+                                disabled={atMax}
+                                onClick={() => setLensQty((q) => Math.min(maxLensQty, q + 1))}
+                                style={{
+                                  width: 26, height: 26, borderRadius: "50%",
+                                  border: `1px solid ${line}`,
+                                  background: atMax ? "#F5F4F2" : "#fff",
+                                  fontWeight: 700,
+                                  cursor: atMax ? "not-allowed" : "pointer",
+                                  color: atMax ? "#C7C4BE" : ink,
+                                }}
+                              >
+                                +
+                              </button>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
                   <div style={{ fontSize: 10, fontWeight: 500, color: sub, marginTop: 8 }}>
-                    เลือกจำนวนเลนส์ได้อิสระ ไม่จำเป็นต้องเท่ากับจำนวนมือถือ (สูงสุด {Math.min(phoneQty, selectedLens?.remaining ?? 0)} ชิ้น)
+                    {phoneQty <= 1
+                      ? "จำกัดสูงสุด 1 ชิ้น เพราะเช่ามือถือ 1 เครื่อง (เพิ่มจำนวนเครื่องที่ step ก่อนหน้าถ้าต้องการเลนส์มากกว่านี้)"
+                      : `เลือกจำนวนเลนส์ได้อิสระ ไม่จำเป็นต้องเท่ากับจำนวนมือถือ (สูงสุด ${Math.min(phoneQty, selectedLens?.remaining ?? 0)} ชิ้น)`}
                   </div>
                 </div>
               )}

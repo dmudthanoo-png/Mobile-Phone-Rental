@@ -164,10 +164,15 @@ export default function PhoneRentalHome() {
   const [pageError, setPageError] = useState<string>("");
 
   // ── จับเวลาทำรายการ (step 3 เป็นต้นไป) + ยินยอมข้อตกลง ──
+  // ใช้ "เวลาหมดอายุแบบ timestamp คงที่" แทนตัวเลขนับถอยหลังตรงๆ
+  // เพื่อไม่ให้การกดสลับ step (3 ↔ 4) ไปรีเซ็ต interval จนเวลาไม่ลดลง
   const STEP3_TIME_LIMIT = 10 * 60; // 10 นาที
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [timerExpiresAt, setTimerExpiresAt] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
+
+  const timeLeft = timerExpiresAt !== null ? Math.max(0, Math.round((timerExpiresAt - nowTick) / 1000)) : null;
 
   const selectedConcert = useMemo(() => concerts.find((c) => c.id === selectedConcertId) || null, [concerts, selectedConcertId]);
   const selectedSession = useMemo(() => sessions.find((s) => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
@@ -264,33 +269,36 @@ export default function PhoneRentalHome() {
     setBookingId(null); resetSlip();
   };
 
-  // ── เริ่มจับเวลาทำรายการตอนเข้า step 3 (ยกเลิกถ้าถอยกลับไปก่อน step 3) ──
+  // ── ตัวจับเวลาเดินตลอด ไม่ผูกกับ step เพื่อไม่ให้การสลับ step รีเซ็ต interval ──
   useEffect(() => {
-    if (step === 3 && timeLeft === null) {
-      setTimeLeft(STEP3_TIME_LIMIT);
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ── เริ่ม/ยกเลิกช่วงเวลาทำรายการ ตามการเข้า-ออก step 3+ (ตั้งค่า timestamp คงที่ ไม่ใช่ตัวเลขนับถอย) ──
+  useEffect(() => {
+    if (step === 3 && timerExpiresAt === null) {
+      setTimerExpiresAt(Date.now() + STEP3_TIME_LIMIT * 1000);
     }
-    if (step < 3 && timeLeft !== null) {
-      setTimeLeft(null);
+    if (step < 3 && timerExpiresAt !== null) {
+      setTimerExpiresAt(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
-  // ── นับถอยหลังทุกวินาที ระหว่าง step 3-4 ──
+  // ── เช็คว่าหมดเวลาหรือยัง (ดูจาก timeLeft ที่คำนวณจาก timestamp ด้านบน) ──
   useEffect(() => {
-    if (timeLeft === null || step < 3 || step >= 5) return;
+    if (timerExpiresAt === null || timeLeft === null || step < 3 || step >= 5) return;
     if (timeLeft <= 0) {
       alert("หมดเวลาทำรายการ กรุณาเริ่มทำรายการใหม่อีกครั้งครับ");
       setSelectedConcertId(null);
       resetBelowConcert();
       setAgreedTerms(false);
-      setTimeLeft(null);
+      setTimerExpiresAt(null);
       setStep(1);
-      return;
     }
-    const t = setTimeout(() => setTimeLeft((s) => (s !== null ? s - 1 : s)), 1000);
-    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft, step]);
+  }, [timeLeft, step, timerExpiresAt]);
 
   const formatCountdown = (sec: number) => {
     const m = Math.floor(sec / 60);

@@ -58,43 +58,60 @@ export default function Navbar({
         fontFamily: navFont,
       }}
     >
+      {/* Responsive: ซ่อนลิงก์กลางแล้วยุบเป็น 2 คอลัมน์บนมือถือ กัน logo/นาว ทับกัน */}
+      <style>{`
+        .navbar-grid { grid-template-columns: 1fr auto 1fr; }
+        .navbar-center-links { display: flex; }
+        .navbar-history-label { display: inline; }
+        @media (max-width: 640px) {
+          .navbar-grid { grid-template-columns: auto 1fr !important; gap: 8px !important; padding: 10px 16px !important; }
+          .navbar-center-links { display: none !important; }
+          .navbar-logo-img { width: 36px !important; height: 36px !important; }
+          .navbar-logo-text { font-size: 18px !important; }
+          .navbar-history-label { display: none !important; }
+          .navbar-history-icon { display: inline !important; }
+        }
+      `}</style>
+
       <div
+        className="navbar-grid"
         style={{
           maxWidth: 1100,
           margin: "0 auto",
           padding: "12px 24px",
           display: "grid",
-          gridTemplateColumns: "1fr auto 1fr",
           alignItems: "center",
           gap: 12,
+          overflow: "hidden",
         }}
       >
         {/* Left: Logo */}
         <div
           onClick={() => router.push("/")}
-          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", justifySelf: "start" }}
+          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", justifySelf: "start", minWidth: 0 }}
         >
           <img
             src="/crabby-logo.png"
             alt="Crabby"
-            style={{ width: 52, height: 52, objectFit: "contain" }}
+            className="navbar-logo-img"
+            style={{ width: 52, height: 52, objectFit: "contain", flexShrink: 0 }}
           />
-          <span style={{ fontWeight: 700, fontSize: 25, color: linkColor, letterSpacing: -0.2 }}>
+          <span className="navbar-logo-text" style={{ fontWeight: 700, fontSize: 25, color: linkColor, letterSpacing: -0.2, whiteSpace: "nowrap" }}>
             Crabby
           </span>
         </div>
 
-        {/* Center: nav links */}
-        <div style={{ display: "flex", alignItems: "center", gap: 28, justifySelf: "center" }}>
+        {/* Center: nav links (ซ่อนบนมือถือ) */}
+        <div className="navbar-center-links" style={{ alignItems: "center", gap: 28, justifySelf: "center" }}>
           <NavLink href="/#events">อีเว่นต์</NavLink>
           <NavLink href="/#how-to-book">วิธีการจอง</NavLink>
           <NavLink href="/#reviews">รีวิว</NavLink>
         </div>
 
         {/* Right: user info */}
-        <div style={{ justifySelf: "end" }}>
+        <div style={{ justifySelf: "end", minWidth: 0, overflow: "hidden" }}>
           {user ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <button
                 onClick={() => router.push("/bookings")}
                 onMouseEnter={() => setHistoryHover(true)}
@@ -109,17 +126,19 @@ export default function Navbar({
                   whiteSpace: "nowrap",
                   transition: "color .15s",
                   fontFamily: navFont,
+                  padding: 0,
                 }}
               >
-                ประวัติการจอง
+                <span className="navbar-history-label">ประวัติการจอง</span>
+                <span style={{ display: "none" }} className="navbar-history-icon">📋</span>
               </button>
-              <div style={{ width: 1, height: 16, background: "#EFE7DF" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 1, height: 16, background: "#EFE7DF", flexShrink: 0 }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                 {user.picture ? (
                   <img
                     src={user.picture}
                     alt="profile"
-                    style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover" }}
+                    style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
                   />
                 ) : (
                   <div
@@ -154,6 +173,7 @@ export default function Navbar({
                     whiteSpace: "nowrap",
                     transition: "color .15s",
                     fontFamily: navFont,
+                    padding: 0,
                   }}
                 >
                   ออกจากระบบ
@@ -174,6 +194,7 @@ export default function Navbar({
                 cursor: "pointer",
                 boxShadow: "0 4px 12px rgba(242,103,158,0.3)",
                 fontFamily: navFont,
+                whiteSpace: "nowrap",
               }}
             >
               เข้าสู่ระบบ

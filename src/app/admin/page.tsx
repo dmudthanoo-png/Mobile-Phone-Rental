@@ -95,6 +95,14 @@ const card: React.CSSProperties = {
   boxShadow: UI.shadow, overflow: "hidden",
 };
 
+const TAB_ITEMS = [
+  { key: "bookings" as const, icon: "📋", label: "จัดการการจอง" },
+  { key: "concerts" as const, icon: "🎫", label: "คอนเสิร์ต & รอบ" },
+  { key: "phones" as const, icon: "📱", label: "มือถือ & Inventory" },
+  { key: "lenses" as const, icon: "🔭", label: "เลนส์" },
+  { key: "announcement" as const, icon: "📣", label: "ประกาศ" },
+];
+
 // ── InfoCell: label + value ──
 function InfoCell({ label, value }: { label: string; value: string }) {
   return (
@@ -110,6 +118,7 @@ export default function AdminPage() {
   const [isAuthed, setIsAuthed] = useState(false);
   const [password, setPassword] = useState("");
   const [tab, setTab] = useState<"bookings"|"concerts"|"phones"|"lenses"|"announcement">("bookings");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // bookings
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -563,8 +572,84 @@ export default function AdminPage() {
   );
 
   // ─────────── main ───────────
+  const sidebarW = sidebarCollapsed ? 68 : 216;
+
   return (
-    <div style={{ minHeight:"100vh", background:UI.bg, padding:"14px 16px", fontFamily:UI.font, color:UI.ink }}>
+    <div style={{ minHeight:"100vh", background:UI.bg, fontFamily:UI.font, color:UI.ink, display:"flex" }}>
+
+      {/* ═══════════════ SIDEBAR ═══════════════ */}
+      <div style={{
+        width: sidebarW, flexShrink: 0, background:"#fff", borderRight:`1px solid ${UI.border}`,
+        display:"flex", flexDirection:"column", position:"sticky", top:0, height:"100vh",
+        transition:"width .18s ease", overflow:"hidden",
+      }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, padding: sidebarCollapsed ? "16px 12px" : "16px 18px", borderBottom:`1px solid ${UI.border}` }}>
+          <img src="/crabby-logo.png" alt="Crabby" style={{ width:36, height:36, objectFit:"contain", borderRadius:10, flexShrink:0 }} />
+          {!sidebarCollapsed && (
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontWeight:700, fontSize:15, whiteSpace:"nowrap" }}>Crabby</div>
+              <div style={{ fontSize:11, color:UI.muted, fontWeight:600, whiteSpace:"nowrap" }}>เช่ามือถือ · แอดมิน</div>
+            </div>
+          )}
+        </div>
+
+        <nav style={{ flex:1, padding:"14px 10px", display:"flex", flexDirection:"column", gap:3, overflowY:"auto" }}>
+          {TAB_ITEMS.map(item => {
+            const active = tab === item.key;
+            const badge = item.key === "bookings" ? summary.pending : 0;
+            return (
+              <button
+                key={item.key}
+                onClick={() => setTab(item.key)}
+                title={sidebarCollapsed ? item.label : undefined}
+                style={{
+                  display:"flex", alignItems:"center", gap:10,
+                  justifyContent: sidebarCollapsed ? "center" : "flex-start",
+                  padding: sidebarCollapsed ? "10px 0" : "10px 12px",
+                  borderRadius:12, border:"none", cursor:"pointer",
+                  background: active ? UI.accentSoft : "transparent",
+                  color: active ? UI.accent2 : UI.ink,
+                  fontWeight: active ? 700 : 600, fontSize:13.5, fontFamily:UI.font,
+                  textAlign:"left", width:"100%", position:"relative",
+                }}
+              >
+                <span style={{ fontSize:16, flexShrink:0 }}>{item.icon}</span>
+                {!sidebarCollapsed && <span style={{ whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.label}</span>}
+                {badge > 0 && (
+                  <span style={{
+                    position: sidebarCollapsed ? "absolute" : "static",
+                    top: sidebarCollapsed ? 4 : undefined,
+                    right: sidebarCollapsed ? 10 : undefined,
+                    marginLeft: sidebarCollapsed ? 0 : "auto",
+                    background:"#EF4463", color:"#fff", fontSize:10.5, fontWeight:700,
+                    borderRadius:999, minWidth:18, height:18, display:"flex", alignItems:"center", justifyContent:"center",
+                    padding:"0 5px", flexShrink:0,
+                  }}>
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div style={{ borderTop:`1px solid ${UI.border}`, padding:"10px 12px" }}>
+          <button
+            onClick={() => setSidebarCollapsed(v => !v)}
+            style={{
+              display:"flex", alignItems:"center", justifyContent: sidebarCollapsed ? "center" : "flex-start",
+              gap:8, width:"100%", border:"none", background:"transparent", cursor:"pointer",
+              color:UI.muted, fontWeight:600, fontSize:12.5, fontFamily:UI.font, padding:"8px 6px",
+            }}
+          >
+            <span>{sidebarCollapsed ? "»" : "«"}</span>
+            {!sidebarCollapsed && <span>ย่อเมนู</span>}
+          </button>
+        </div>
+      </div>
+
+      {/* ═══════════════ MAIN CONTENT ═══════════════ */}
+      <div style={{ flex:1, minWidth:0, padding:"14px 16px", overflowY:"auto", height:"100vh" }}>
       <div style={{ maxWidth:1100, margin:"0 auto" }}>
 
         {/* Header */}
@@ -614,18 +699,6 @@ export default function AdminPage() {
               <div style={{ fontWeight:700, fontSize:20 }}>{s.val}</div>
               <div style={{ fontSize:11, fontWeight:800, color:UI.muted }}>{s.label}</div>
             </div>
-          ))}
-        </div>
-
-        {/* Tabs */}
-        <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
-          {(["bookings","concerts","phones","lenses","announcement"] as const).map(t => (
-            <button key={t} onClick={()=>setTab(t)} style={{
-              ...btnStyle("white"), background: tab===t ? UI.accent : "#fff",
-              boxShadow: tab===t ? UI.shadow : UI.shadowSm,
-            }}>
-              {t==="bookings"?"📋 จัดการการจอง": t==="concerts"?"🎫 คอนเสิร์ต & รอบ": t==="phones"?"📱 มือถือ & Inventory": t==="lenses"?"🔭 เลนส์":"📣 ประกาศ"}
-            </button>
           ))}
         </div>
 
@@ -1139,6 +1212,7 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

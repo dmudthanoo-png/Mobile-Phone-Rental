@@ -2,11 +2,15 @@
 
 import React, { useState } from "react";
 
-const accent = "#F2679E";
-const accent2 = "#7A57D1";
-const ink = "#332E2C";
-const sub = "#A39A93";
-const line = "#F0E9E2";
+const accent = "#F2467E";
+const accent2 = "#8354E8";
+const ink = "#241F1C";
+const sub = "#7A6D61";
+const glassBorder = "rgba(255,255,255,0.65)";
+const glass = "rgba(255,255,255,0.55)";
+const glassBlur = "blur(14px) saturate(160%)";
+const accentSoft = "#FFE3EE";
+const violetSoft = "#EFE6FF";
 
 const steps = [
   { icon: "🎫", title: "เลือกคอนเสิร์ต", desc: "เลือกงานที่จะไปดู" },
@@ -43,8 +47,10 @@ export default function HowToBookAndFaq() {
               key={i}
               style={{
                 borderRadius: 14,
-                border: `1px solid ${line}`,
-                background: "#fff",
+                border: `1px solid ${glassBorder}`,
+                background: glass,
+                backdropFilter: glassBlur,
+                WebkitBackdropFilter: glassBlur,
                 padding: "14px 12px",
               }}
             >
@@ -53,7 +59,7 @@ export default function HowToBookAndFaq() {
                   width: 32,
                   height: 32,
                   borderRadius: 10,
-                  background: i % 2 === 0 ? "#FDF0F5" : "#F1EDFC",
+                  background: i % 2 === 0 ? accentSoft : violetSoft,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -82,8 +88,10 @@ export default function HowToBookAndFaq() {
               key={i}
               style={{
                 borderRadius: 14,
-                border: `1px solid ${line}`,
-                background: "#fff",
+                border: `1px solid ${glassBorder}`,
+                background: glass,
+                backdropFilter: glassBlur,
+                WebkitBackdropFilter: glassBlur,
                 padding: "16px 14px",
               }}
             >
@@ -113,8 +121,10 @@ export default function HowToBookAndFaq() {
                 key={i}
                 style={{
                   borderRadius: 14,
-                  border: `1px solid ${open ? accent : line}`,
-                  background: "#fff",
+                  border: `1px solid ${open ? accent : glassBorder}`,
+                  background: glass,
+                  backdropFilter: glassBlur,
+                  WebkitBackdropFilter: glassBlur,
                   overflow: "hidden",
                 }}
               >

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Itim } from "next/font/google";
+import { Geist, Geist_Mono, Noto_Sans_Thai, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,10 +12,16 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const itim = Itim({
-  weight: "400",
+const notoSansThai = Noto_Sans_Thai({
+  weight: ["400", "500", "600", "700", "800"],
   subsets: ["thai", "latin"],
-  variable: "--font-itim",
+  variable: "--font-noto-thai",
+});
+
+const plexMono = IBM_Plex_Mono({
+  weight: ["400", "500", "600"],
+  subsets: ["latin"],
+  variable: "--font-plex-mono",
 });
 
 export const metadata: Metadata = {
@@ -31,7 +37,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${itim.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${notoSansThai.variable} ${plexMono.variable} antialiased`}
       >
         {children}
       </body>

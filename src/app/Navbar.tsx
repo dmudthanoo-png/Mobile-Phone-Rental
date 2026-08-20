@@ -10,9 +10,34 @@ type MeUser = {
   picture?: string | null;
 };
 
-const navFont = "var(--font-itim), 'Kanit', sans-serif";
-const linkColor = "#332E2C";
-const linkHoverColor = "#F2679E";
+const navFont = "var(--font-noto-thai), 'Segoe UI', 'Leelawadee UI', -apple-system, system-ui, Roboto, sans-serif";
+const linkColor = "#241F1C";
+const linkHoverColor = "#F2467E";
+const accentStrong = "#D81F5E";
+const accent2 = "#8354E8";
+const accentGlow = "rgba(242,70,126,0.40)";
+const glassStrong = "rgba(255,255,255,0.8)";
+const glassBorder = "rgba(255,255,255,0.65)";
+
+function HistoryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 12a8 8 0 1 0 2.6-5.9" />
+      <polyline points="4,4 4,8.4 8.4,8.4" />
+      <polyline points="12,7.5 12,12.3 15.3,14" />
+    </svg>
+  );
+}
+
+function LogoutIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M13.5 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5.5a2 2 0 0 0 2-2v-2" />
+      <line x1="9.5" y1="12" x2="21" y2="12" />
+      <polyline points="17.3,8.3 21,12 17.3,15.7" />
+    </svg>
+  );
+}
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   const [hover, setHover] = useState(false);
@@ -22,8 +47,8 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        fontSize: 17,
-        fontWeight: 700,
+        fontSize: 14,
+        fontWeight: 600,
         color: hover ? linkHoverColor : linkColor,
         textDecoration: "none",
         whiteSpace: "nowrap",
@@ -55,9 +80,11 @@ export default function Navbar({
         position: "sticky",
         top: 0,
         zIndex: 20,
-        background: "rgba(255,251,247,0.92)",
-        backdropFilter: "blur(8px)",
-        borderBottom: "1px solid #F0E9E2",
+        background: glassStrong,
+        backdropFilter: "blur(20px) saturate(160%)",
+        WebkitBackdropFilter: "blur(20px) saturate(160%)",
+        borderBottom: `1px solid ${glassBorder}`,
+        boxShadow: `0 2px 10px -6px ${accentGlow}`,
         fontFamily: navFont,
       }}
     >
@@ -66,14 +93,13 @@ export default function Navbar({
         .navbar-grid { grid-template-columns: 1fr auto 1fr; }
         .navbar-center-links { display: flex; }
         .navbar-desktop-user { display: flex; }
-        .navbar-hamburger-btn { display: none; }
+        .navbar-hamburger-btn { display: none; align-items: center; justify-content: center; }
         @media (max-width: 640px) {
-          .navbar-grid { grid-template-columns: auto 1fr !important; gap: 8px !important; padding: 10px 16px !important; }
+          .navbar-grid { grid-template-columns: auto 1fr !important; gap: 8px !important; padding: 8px 16px !important; }
           .navbar-center-links { display: none !important; }
           .navbar-desktop-user { display: none !important; }
           .navbar-hamburger-btn { display: flex !important; }
-          .navbar-logo-img { width: 36px !important; height: 36px !important; }
-          .navbar-logo-text { font-size: 18px !important; }
+          .navbar-logo-img { width: 38px !important; height: 38px !important; }
         }
       `}</style>
 
@@ -82,7 +108,7 @@ export default function Navbar({
         style={{
           maxWidth: 1100,
           margin: "0 auto",
-          padding: "12px 24px",
+          padding: "9px 20px",
           display: "grid",
           alignItems: "center",
           gap: 12,
@@ -98,15 +124,12 @@ export default function Navbar({
             src="/crabby-logo.png"
             alt="Crabby"
             className="navbar-logo-img"
-            style={{ width: 52, height: 52, objectFit: "contain", flexShrink: 0 }}
+            style={{ width: 48, height: 48, objectFit: "contain", flexShrink: 0, filter: `drop-shadow(0 2px 4px ${accentGlow})` }}
           />
-          <span className="navbar-logo-text" style={{ fontWeight: 700, fontSize: 25, color: linkColor, letterSpacing: -0.2, whiteSpace: "nowrap" }}>
-            Crabby
-          </span>
         </div>
 
         {/* Center: nav links (ซ่อนบนมือถือ) */}
-        <div className="navbar-center-links" style={{ alignItems: "center", gap: 28, justifySelf: "center" }}>
+        <div className="navbar-center-links" style={{ alignItems: "center", gap: 22, justifySelf: "center" }}>
           <NavLink href="/#events">อีเวนต์</NavLink>
           <NavLink href="/#how-to-book">วิธีการจอง</NavLink>
           <NavLink href="/#reviews">รีวิว</NavLink>
@@ -115,7 +138,7 @@ export default function Navbar({
         {/* Right: user info (เดสก์ท็อป) */}
         <div className="navbar-desktop-user" style={{ justifySelf: "end", minWidth: 0, overflow: "hidden" }}>
           {user ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <button
                 onClick={() => router.push("/bookings")}
                 onMouseEnter={() => setHistoryHover(true)}
@@ -124,38 +147,43 @@ export default function Navbar({
                   border: "none",
                   background: "transparent",
                   cursor: "pointer",
-                  fontSize: 16,
-                  fontWeight: 700,
+                  fontSize: 13,
+                  fontWeight: 600,
                   color: historyHover ? linkHoverColor : linkColor,
                   whiteSpace: "nowrap",
                   transition: "color .15s",
                   fontFamily: navFont,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
                 }}
               >
+                <HistoryIcon />
                 ประวัติการจอง
               </button>
-              <div style={{ width: 1, height: 16, background: "#EFE7DF" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 1, height: 14, background: glassBorder }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 {user.picture ? (
                   <img
                     src={user.picture}
                     alt="profile"
-                    style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover" }}
+                    style={{ width: 24, height: 24, borderRadius: "50%", objectFit: "cover" }}
                   />
                 ) : (
                   <div
                     style={{
-                      width: 26,
-                      height: 26,
+                      width: 24,
+                      height: 24,
                       borderRadius: "50%",
-                      background: "linear-gradient(135deg, #F2679E, #7A57D1)",
+                      background: `linear-gradient(135deg, ${linkHoverColor}, ${accent2})`,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: 12,
+                      fontSize: 10.5,
                       fontWeight: 700,
                       color: "#fff",
                       flexShrink: 0,
+                      boxShadow: `0 2px 6px -2px ${accentGlow}`,
                     }}
                   >
                     {((user.name ?? "U")[0] ?? "U").toUpperCase()}
@@ -169,14 +197,18 @@ export default function Navbar({
                     border: "none",
                     background: "transparent",
                     cursor: "pointer",
-                    fontSize: 16,
-                    fontWeight: 700,
+                    fontSize: 13,
+                    fontWeight: 600,
                     color: signOutHover ? linkHoverColor : linkColor,
                     whiteSpace: "nowrap",
                     transition: "color .15s",
                     fontFamily: navFont,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
                   }}
                 >
+                  <LogoutIcon />
                   ออกจากระบบ
                 </button>
               </div>
@@ -187,13 +219,13 @@ export default function Navbar({
               style={{
                 border: "none",
                 borderRadius: 999,
-                background: "linear-gradient(135deg, #F2679E, #E1477F)",
+                background: `linear-gradient(135deg, ${linkHoverColor}, ${accentStrong})`,
                 color: "#fff",
-                padding: "8px 18px",
-                fontSize: 16,
-                fontWeight: 700,
+                padding: "6px 14px",
+                fontSize: 13,
+                fontWeight: 600,
                 cursor: "pointer",
-                boxShadow: "0 4px 12px rgba(242,103,158,0.3)",
+                boxShadow: `0 3px 10px -4px ${accentGlow}`,
                 fontFamily: navFont,
                 whiteSpace: "nowrap",
               }}
@@ -210,12 +242,15 @@ export default function Navbar({
           aria-label="เมนู"
           style={{
             justifySelf: "end",
+            width: 32,
+            height: 32,
+            borderRadius: "50%",
             border: "none",
-            background: "transparent",
+            background: "rgba(242,70,126,0.10)",
             cursor: "pointer",
-            fontSize: 24,
+            fontSize: 17,
             color: linkColor,
-            padding: 4,
+            padding: 0,
             lineHeight: 1,
           }}
         >
@@ -227,8 +262,10 @@ export default function Navbar({
       {menuOpen && (
         <div
           style={{
-            borderTop: "1px solid #F0E9E2",
-            background: "#FFFBF7",
+            borderTop: `1px solid ${glassBorder}`,
+            background: glassStrong,
+            backdropFilter: "blur(20px) saturate(160%)",
+            WebkitBackdropFilter: "blur(20px) saturate(160%)",
             padding: "8px 16px 16px",
             display: "flex",
             flexDirection: "column",
@@ -241,16 +278,16 @@ export default function Navbar({
               ) : (
                 <div
                   style={{
-                    width: 32, height: 32, borderRadius: "50%",
-                    background: "linear-gradient(135deg, #F2679E, #7A57D1)",
+                    width: 28, height: 28, borderRadius: "50%",
+                    background: `linear-gradient(135deg, ${linkHoverColor}, ${accent2})`,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 14, fontWeight: 700, color: "#fff", flexShrink: 0,
+                    fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0,
                   }}
                 >
                   {((user.name ?? "U")[0] ?? "U").toUpperCase()}
                 </div>
               )}
-              <span style={{ fontWeight: 700, fontSize: 15, color: linkColor }}>{user.name ?? "ผู้ใช้"}</span>
+              <span style={{ fontWeight: 700, fontSize: 13, color: linkColor }}>{user.name ?? "ผู้ใช้"}</span>
             </div>
           )}
 
@@ -265,12 +302,12 @@ export default function Navbar({
               href={item.href}
               onClick={closeMenu}
               style={{
-                padding: "12px 4px",
-                fontSize: 16,
-                fontWeight: 700,
+                padding: "10px 4px",
+                fontSize: 14,
+                fontWeight: 600,
                 color: linkColor,
                 textDecoration: "none",
-                borderBottom: "1px solid #F0E9E2",
+                borderBottom: `1px solid ${glassBorder}`,
               }}
             >
               {item.label}
@@ -286,9 +323,9 @@ export default function Navbar({
                 background: "transparent",
                 textAlign: "left",
                 padding: "10px 4px",
-                fontSize: 15,
-                fontWeight: 700,
-                color: "#C15E85",
+                fontSize: 13,
+                fontWeight: 600,
+                color: accentStrong,
                 cursor: "pointer",
                 fontFamily: navFont,
               }}
@@ -302,10 +339,10 @@ export default function Navbar({
                 marginTop: 12,
                 border: "none",
                 borderRadius: 999,
-                background: "linear-gradient(135deg, #F2679E, #E1477F)",
+                background: `linear-gradient(135deg, ${linkHoverColor}, ${accentStrong})`,
                 color: "#fff",
-                padding: "10px 0",
-                fontSize: 15,
+                padding: "9px 0",
+                fontSize: 13,
                 fontWeight: 700,
                 cursor: "pointer",
                 fontFamily: navFont,

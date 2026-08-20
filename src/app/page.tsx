@@ -46,57 +46,82 @@ type PhoneOption = {
   lens_options: LensOption[];
 };
 
-// ── Clean, minimal design tokens ──────────────────────────────
-const ink = "#332E2C";
-const sub = "#A39A93";
-const accent = "#F2679E";
-const accent2 = "#7A57D1";
-const accentSoft = "#FDF0F5";
-const line = "#F0E9E2";
+// ── Design tokens — glass / vibrant ──────────────────────────────
+const ink = "#241F1C";
+const sub = "#7A6D61";
+const muted = "#AB9C8D";
+const accent = "#F2467E";
+const accentStrong = "#D81F5E";
+const accent2 = "#8354E8"; // violet
+const accentSoft = "#FFE3EE";
+const violetSoft = "#EFE6FF";
+const good = "#14B866";
+const goodSoft = "#E1FAEC";
+const warningSoft = "#FFF3D6";
+const critical = "#EF4463";
+const criticalSoft = "#FFE4E9";
+const line = "#F2E4D6";
+const borderStrong = "#E2CDB6";
+
+const glass = "rgba(255,255,255,0.55)";
+const glassStrong = "rgba(255,255,255,0.8)";
+const glassBorder = "rgba(255,255,255,0.65)";
+const glassHighlight = "rgba(255,255,255,0.55)";
+const glassBlur = "blur(18px) saturate(170%)";
+const accentGlow = "rgba(242,70,126,0.40)";
+const lineGlow = "rgba(6,199,85,0.35)";
+const uiFont = "var(--font-noto-thai), 'Segoe UI', 'Leelawadee UI', -apple-system, system-ui, Roboto, sans-serif";
 
 const doodle = {
   card: {
     borderRadius: "16px",
-    border: `1px solid ${line}`,
-    boxShadow: "0 1px 2px rgba(20,20,20,0.04)",
-    background: "#fff",
+    border: `1px solid ${glassBorder}`,
+    boxShadow: `0 1px 2px rgba(35,32,31,0.04), 0 8px 24px -14px rgba(35,32,31,0.16), inset 0 1px 0 ${glassHighlight}`,
+    background: glass,
+    backdropFilter: glassBlur,
+    WebkitBackdropFilter: glassBlur,
   } as React.CSSProperties,
   cardPink: {
     borderRadius: "16px",
     border: `1px solid ${accent}`,
-    boxShadow: `0 0 0 3px ${accentSoft}`,
-    background: "#fff",
+    boxShadow: `0 0 0 3px ${accentSoft}, 0 10px 26px -10px ${accentGlow}`,
+    background: glass,
+    backdropFilter: glassBlur,
+    WebkitBackdropFilter: glassBlur,
   } as React.CSSProperties,
   cardYellow: {
     borderRadius: "16px",
-    border: "1px solid #F3E3B8",
-    boxShadow: "none",
-    background: "#FFFBEF",
+    border: `1px solid ${glassBorder}`,
+    boxShadow: `inset 0 1px 0 ${glassHighlight}`,
+    background: `linear-gradient(120deg, ${accentSoft} 0%, ${warningSoft} 100%)`,
+    backdropFilter: "blur(16px) saturate(160%)",
+    WebkitBackdropFilter: "blur(16px) saturate(160%)",
   } as React.CSSProperties,
   btn: {
     borderRadius: "999px",
-    border: `1px solid ${line}`,
+    border: `1px solid ${glassBorder}`,
     boxShadow: "none",
     fontWeight: 600,
     cursor: "pointer",
     transition: "all .15s",
+    background: glassStrong,
   } as React.CSSProperties,
   btnPrimary: {
     borderRadius: "999px",
     border: "none",
-    boxShadow: "0 4px 14px rgba(232,85,143,0.3)",
+    boxShadow: `0 10px 26px -10px ${accentGlow}, inset 0 1px 0 rgba(255,255,255,0.35)`,
     fontWeight: 700,
     cursor: "pointer",
-    background: `linear-gradient(135deg, ${accent}, #E1477F)`,
+    background: `linear-gradient(135deg, ${accent}, ${accentStrong})`,
     color: "#fff",
   } as React.CSSProperties,
   btnGreen: {
     borderRadius: "999px",
     border: "none",
-    boxShadow: "0 4px 14px rgba(6,199,85,0.25)",
+    boxShadow: `0 10px 24px -10px ${lineGlow}, inset 0 1px 0 rgba(255,255,255,0.3)`,
     fontWeight: 700,
     cursor: "pointer",
-    background: "#06C755",
+    background: "linear-gradient(135deg, #06C755, #05A648)",
     color: "#fff",
   } as React.CSSProperties,
   btnGray: {
@@ -105,14 +130,14 @@ const doodle = {
     boxShadow: "none",
     fontWeight: 700,
     cursor: "not-allowed",
-    background: "#F1F0EE",
-    color: "#B4B6BC",
+    background: glass,
+    color: muted,
   } as React.CSSProperties,
   input: {
     borderRadius: "12px",
-    border: `1px solid ${line}`,
+    border: `1px solid ${borderStrong}`,
     padding: "10px 14px",
-    fontSize: 14,
+    fontSize: 16,
     outline: "none",
     width: "100%",
     background: "#fff",
@@ -120,6 +145,25 @@ const doodle = {
     boxSizing: "border-box",
   } as React.CSSProperties,
 };
+
+// Fixed ambient glow layer behind all page content (glassmorphism backdrop)
+function AmbientGlow() {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 0,
+        pointerEvents: "none",
+        background:
+          "radial-gradient(60vw 60vw circle at 12% 0%, rgba(242,70,126,0.30), rgba(242,70,126,0) 70%)," +
+          "radial-gradient(55vw 55vw circle at 100% 15%, rgba(131,84,232,0.26), rgba(131,84,232,0) 70%)," +
+          "radial-gradient(60vw 60vw circle at 82% 100%, rgba(35,201,214,0.22), rgba(35,201,214,0) 72%)",
+      }}
+    />
+  );
+}
 
 function formatThaiDateTime(iso: string) {
   return new Intl.DateTimeFormat("th-TH", {
@@ -452,7 +496,7 @@ export default function PhoneRentalHome() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#FFFBF7", fontFamily: "var(--font-itim), 'Kanit', sans-serif", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
+      <div style={{ minHeight: "100vh", background: "#FFF9F3", fontFamily: uiFont, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
         <img src="/crabby-logo.png" alt="Crabby" style={{ width: 56, height: "auto" }} />
         <div style={{ fontSize: 13, fontWeight: 600, color: sub }}>กำลังโหลด...</div>
       </div>
@@ -460,7 +504,8 @@ export default function PhoneRentalHome() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#FFFBF7", fontFamily: "var(--font-itim), 'Kanit', 'Segoe UI', sans-serif", display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: 100 }}>
+    <div style={{ minHeight: "100vh", background: "#FFF9F3", fontFamily: uiFont, display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: 100, position: "relative", isolation: "isolate" }}>
+      <AmbientGlow />
       <div style={{ width: "100%" }}>
         <Navbar user={meUser} onSignOut={handleSignOut} />
       </div>
@@ -473,7 +518,7 @@ export default function PhoneRentalHome() {
         />
 
         {/* Header */}
-        <div style={{ padding: "28px 32px 16px", background: "#FFFBF7" }}>
+        <div style={{ padding: "28px 32px 16px", background: "transparent" }}>
           <div style={{ textAlign: "center", marginBottom: 22 }}>
             <div style={{ fontSize: 32, fontWeight: 800 }}>
               <span style={{ color: ink }}>เช่ามือถือ</span>{" "}
@@ -498,18 +543,19 @@ export default function PhoneRentalHome() {
                       justifyContent: "center",
                       fontSize: 13,
                       fontWeight: 700,
-                      background: step > i + 1 ? `linear-gradient(135deg, ${accent}, ${accent2})` : step === i + 1 ? "#fff" : "#F1F0EE",
-                      color: step > i + 1 ? "#fff" : step === i + 1 ? accent : "#B4B6BC",
+                      background: step > i + 1 ? `linear-gradient(135deg, ${accent}, ${accent2})` : glassStrong,
+                      color: step > i + 1 ? "#fff" : step === i + 1 ? accent : muted,
                       border: step === i + 1 ? `2px solid ${accent}` : "none",
+                      boxShadow: step === i + 1 ? `0 0 0 4px ${accentSoft}, 0 0 18px -3px ${accentGlow}` : "none",
                       transition: "all .2s",
                     }}
                   >
                     {step > i + 1 ? "✓" : i + 1}
                   </div>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: step === i + 1 ? accent : "#B4B6BC", whiteSpace: "nowrap" }}>{l}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: step === i + 1 ? accent : muted, whiteSpace: "nowrap" }}>{l}</span>
                 </div>
                 {i < stepLabels.length - 1 && (
-                  <div style={{ flex: 1, minWidth: 24, height: 2, background: step > i + 1 ? accent : "#EDEBE8", marginBottom: 16, borderRadius: 2 }} />
+                  <div style={{ flex: 1, minWidth: 24, height: 2, background: step > i + 1 ? `linear-gradient(90deg, ${accent}, ${accent2})` : line, marginBottom: 16, borderRadius: 2 }} />
                 )}
               </React.Fragment>
             ))}
@@ -569,7 +615,7 @@ export default function PhoneRentalHome() {
           {step === 2 && (
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <span style={{ width: 26, height: 26, borderRadius: 8, background: "#F1EDFC", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>📱</span>
+                <span style={{ width: 26, height: 26, borderRadius: 8, background: violetSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>📱</span>
                 <span style={{ fontWeight: 700, fontSize: 17, color: ink }}>เลือกรอบ & มือถือ</span>
               </div>
               {selectedConcert && (
@@ -634,18 +680,18 @@ export default function PhoneRentalHome() {
                             style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}
                           >
                             <div style={{ width: 52, height: 52, borderRadius: 12, border: `1px solid ${line}`, overflow: "hidden", background: "#fafafa", flexShrink: 0 }}>
-                              {p.image_url ? <img src={p.image_url} alt={p.model_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#C7C9CE", fontSize: 18 }}>📱</div>}
+                              {p.image_url ? <img src={p.image_url} alt={p.model_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: muted, fontSize: 18 }}>📱</div>}
                             </div>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 700, fontSize: 14 }}>{p.model_name}</div>
                               <div style={{ fontSize: 12, fontWeight: 700, color: accent }}>ค่าเช่า ฿{p.price}</div>
                               {p.deposit > 0 && <div style={{ fontSize: 11, fontWeight: 500, color: sub }}>มัดจำ ฿{p.deposit}</div>}
                               {p.lens_options.length > 0 && (
-                                <div style={{ fontSize: 11, fontWeight: 600, color: "#6D5EF0" }}>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: accent2 }}>
                                   🔭 เลือกเลนส์ได้: {p.lens_options.map((l) => l.name).join(" / ")}
                                 </div>
                               )}
-                              <div style={{ fontSize: 11, fontWeight: 500, color: "#6E7178" }}>เหลือ {p.remaining} เครื่อง</div>
+                              <div style={{ fontSize: 11, fontWeight: 500, color: sub }}>เหลือ {p.remaining} เครื่อง</div>
                             </div>
                             <div style={{ fontSize: 16, color: accent }}>{sel ? "✓" : ""}</div>
                           </div>
@@ -693,9 +739,9 @@ export default function PhoneRentalHome() {
                   <span style={{ fontWeight: 700, fontSize: 17, color: ink }}>ข้อมูลผู้เช่า</span>
                 </div>
                 {timeLeft !== null && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, background: timeLeft <= 60 ? "#FFF1F2" : accentSoft, borderRadius: 999, padding: "5px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, background: timeLeft <= 60 ? criticalSoft : accentSoft, borderRadius: 999, padding: "5px 12px" }}>
                     <span style={{ fontSize: 13 }}>⏱</span>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: timeLeft <= 60 ? "#C43D5C" : accent }}>{formatCountdown(timeLeft)}</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: timeLeft <= 60 ? critical : accent }}>{formatCountdown(timeLeft)}</span>
                     <span style={{ fontSize: 11, fontWeight: 500, color: sub }}>เวลาทำรายการ</span>
                   </div>
                 )}
@@ -739,18 +785,18 @@ export default function PhoneRentalHome() {
                             gap: 10,
                             padding: "10px 12px",
                             borderRadius: 12,
-                            border: `1px solid ${sel ? accent : line}`,
-                            background: sel ? accentSoft : soldOut ? "#F7F6F4" : "#fff",
+                            border: `1px solid ${sel ? accent2 : line}`,
+                            background: sel ? violetSoft : soldOut ? "#F7F6F4" : "#fff",
                             cursor: soldOut ? "not-allowed" : "pointer",
                             opacity: soldOut ? 0.55 : 1,
                           }}
                         >
                           <div>
                             <div style={{ fontWeight: 700, fontSize: 13, color: ink }}>{l.name}</div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: "#6D5EF0" }}>+฿{l.price} / ชิ้น</div>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: accent2 }}>+฿{l.price} / ชิ้น</div>
                             <div style={{ fontSize: 10, fontWeight: 500, color: sub }}>{soldOut ? "เลนส์นี้เต็มแล้ว" : `เหลือ ${l.remaining} ชิ้น`}</div>
                           </div>
-                          <div style={{ fontSize: 16, color: accent }}>{sel ? "✓" : ""}</div>
+                          <div style={{ fontSize: 16, color: accent2 }}>{sel ? "✓" : ""}</div>
                         </div>
                       );
                     })}
@@ -775,7 +821,7 @@ export default function PhoneRentalHome() {
                                   background: atMin ? "#F5F4F2" : "#fff",
                                   fontWeight: 700,
                                   cursor: atMin ? "not-allowed" : "pointer",
-                                  color: atMin ? "#C7C4BE" : ink,
+                                  color: atMin ? muted : ink,
                                 }}
                               >
                                 −
@@ -790,7 +836,7 @@ export default function PhoneRentalHome() {
                                   background: atMax ? "#F5F4F2" : "#fff",
                                   fontWeight: 700,
                                   cursor: atMax ? "not-allowed" : "pointer",
-                                  color: atMax ? "#C7C4BE" : ink,
+                                  color: atMax ? muted : ink,
                                 }}
                               >
                                 +
@@ -810,7 +856,7 @@ export default function PhoneRentalHome() {
               )}
 
               <div style={{ ...doodle.cardYellow, padding: 16, color: ink }}>
-                <div style={{ fontWeight: 700, fontSize: 12, color: "#8A6D2F", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>สรุปการจอง</div>
+                <div style={{ fontWeight: 700, fontSize: 12, color: sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>สรุปการจอง</div>
                 {[
                   ["คอนเสิร์ต",  selectedConcert?.title || "-"],
                   ["รอบ",         selectedSession ? `${selectedSession.note ?? "รอบ"} • ${formatThaiDateTime(selectedSession.start_at)}` : "-"],
@@ -818,8 +864,8 @@ export default function PhoneRentalHome() {
                   ["ค่าเช่า",     selectedPhone ? `฿${selectedPhone.price} x ${phoneQty} = ฿${selectedPhone.price * phoneQty}` : "-"],
                   ...(selectedLens && lensQty > 0 ? [["เลนส์เสริม", `${selectedLens.name} x${lensQty} = ฿${lensPrice}`]] : []),
                 ].map(([k, v]) => (
-                  <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600, marginBottom: 8, paddingBottom: 8, borderBottom: "1px dashed #E5D9AF" }}>
-                    <span style={{ color: "#8A6D2F" }}>{k}</span>
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600, marginBottom: 8, paddingBottom: 8, borderBottom: `1px dashed ${borderStrong}` }}>
+                    <span style={{ color: sub }}>{k}</span>
                     <span style={{ color: ink }}>{v}</span>
                   </div>
                 ))}
@@ -827,11 +873,11 @@ export default function PhoneRentalHome() {
                   <span>ยอดเช่ารวมทั้งหมด</span>
                   <span>฿{totalAmount}</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15, marginTop: 8, paddingTop: 8, borderTop: "1px dashed #E5D9AF", color: ink }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15, marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${borderStrong}`, color: ink }}>
                   <span>โอนตอนนี้ (มัดจำ)</span>
                   <span style={{ color: accent, fontSize: 18 }}>฿{transferAmount}</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 500, marginTop: 4, color: "#8A6D2F" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 500, marginTop: 4, color: sub }}>
                   <span>ชำระส่วนที่เหลือตอนรับเครื่อง</span>
                   <span>฿{balanceDue}</span>
                 </div>
@@ -863,13 +909,13 @@ export default function PhoneRentalHome() {
             <div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 26, height: 26, borderRadius: 8, background: "#F1EDFC", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>💳</span>
+                  <span style={{ width: 26, height: 26, borderRadius: 8, background: violetSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>💳</span>
                   <span style={{ fontWeight: 700, fontSize: 17, color: ink }}>ชำระเงิน</span>
                 </div>
                 {timeLeft !== null && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, background: timeLeft <= 60 ? "#FFF1F2" : accentSoft, borderRadius: 999, padding: "5px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, background: timeLeft <= 60 ? criticalSoft : accentSoft, borderRadius: 999, padding: "5px 12px" }}>
                     <span style={{ fontSize: 13 }}>⏱</span>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: timeLeft <= 60 ? "#C43D5C" : accent }}>{formatCountdown(timeLeft)}</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: timeLeft <= 60 ? critical : accent }}>{formatCountdown(timeLeft)}</span>
                     <span style={{ fontSize: 11, fontWeight: 500, color: sub }}>เวลาทำรายการ</span>
                   </div>
                 )}
@@ -909,7 +955,7 @@ export default function PhoneRentalHome() {
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{num}</div>
                       <div style={{ fontSize: 11, color: sub, fontWeight: 500 }}>{name}</div>
                     </div>
-                    <button onClick={() => handleCopy(val, key)} style={{ ...doodle.btn, padding: "6px 12px", fontSize: 11, background: copiedType === key ? "#E9F9EE" : "#fff", color: copiedType === key ? "#0F9D4E" : ink, flexShrink: 0 }}>
+                    <button onClick={() => handleCopy(val, key)} style={{ ...doodle.btn, padding: "6px 12px", fontSize: 11, background: copiedType === key ? goodSoft : "#fff", color: copiedType === key ? good : ink, flexShrink: 0 }}>
                       {copiedType === key ? "✓ แล้ว!" : "คัดลอก"}
                     </button>
                   </div>
@@ -917,11 +963,11 @@ export default function PhoneRentalHome() {
               </div>
 
               <label style={{ cursor: "pointer", display: "block" }}>
-                <div style={{ border: `1.5px dashed ${slipPreview ? "#8FD4A8" : "#D8D5CE"}`, borderRadius: 16, padding: 20, textAlign: "center", background: slipPreview ? "#F3FBF5" : "#fff", transition: "all .2s" }}>
+                <div style={{ border: `1.5px dashed ${slipPreview ? good : borderStrong}`, borderRadius: 16, padding: 20, textAlign: "center", background: slipPreview ? goodSoft : "#fff", transition: "all .2s" }}>
                   {slipPreview ? (
                     <div>
                       <img src={slipPreview} alt="slip" style={{ maxHeight: 140, borderRadius: 10, objectFit: "contain", margin: "0 auto", display: "block" }} />
-                      <p style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: "#0F9D4E" }}>แนบสลิปแล้ว แตะเพื่อเปลี่ยน</p>
+                      <p style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: good }}>แนบสลิปแล้ว แตะเพื่อเปลี่ยน</p>
                     </div>
                   ) : (
                     <div>
@@ -948,8 +994,8 @@ export default function PhoneRentalHome() {
                 ระบบยืนยันการจองแล้ว พบกันที่คอนเสิร์ต 🎶
               </p>
               <div style={{ ...doodle.cardYellow, padding: 16, marginBottom: 16, textAlign: "left", color: ink }}>
-                <div style={{ textAlign: "center", marginBottom: 12, paddingBottom: 12, borderBottom: "1px dashed #E5D9AF" }}>
-                  <div style={{ fontSize: 12, color: "#8A6D2F", fontWeight: 600 }}>หมายเลขการจอง</div>
+                <div style={{ textAlign: "center", marginBottom: 12, paddingBottom: 12, borderBottom: `1px dashed ${borderStrong}` }}>
+                  <div style={{ fontSize: 12, color: sub, fontWeight: 600 }}>หมายเลขการจอง</div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: accent, letterSpacing: 2, marginTop: 4 }}>
                     {refNumber ?? bookingId ?? "-"}
                   </div>
@@ -965,7 +1011,7 @@ export default function PhoneRentalHome() {
                   ["ชำระตอนรับเครื่อง", `฿${balanceDue}`],
                 ].map(([k, v]) => (
                   <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-                    <span style={{ color: "#8A6D2F" }}>{k}</span>
+                    <span style={{ color: sub }}>{k}</span>
                     <span style={{ color: ink }}>{v}</span>
                   </div>
                 ))}
@@ -988,7 +1034,7 @@ export default function PhoneRentalHome() {
 
         {/* Bottom Nav */}
         {step < 5 && !(step === 1 && !selectedConcertId) && (
-          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, display: "flex", justifyContent: "center", padding: "16px 32px 24px", background: "linear-gradient(to top, #FFFBF7 65%, transparent)" }}>
+          <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 20, display: "flex", justifyContent: "center", padding: "16px 32px calc(24px + env(safe-area-inset-bottom, 0px))", background: glassStrong, backdropFilter: "blur(24px) saturate(160%)", WebkitBackdropFilter: "blur(24px) saturate(160%)", borderTop: `1px solid ${glassBorder}` }}>
             <div style={{ width: "100%", maxWidth: 760, display: "flex", gap: 12 }}>
               {step > 1 && (
                 <button onClick={handleBack} style={{ ...doodle.btn, flex: "0 0 90px", padding: "13px 0", background: "#fff", color: ink, fontSize: 14 }}>
@@ -1007,7 +1053,7 @@ export default function PhoneRentalHome() {
       {showTermsModal && (
         <div
           onClick={() => setShowTermsModal(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(51,46,44,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}
+          style={{ position: "fixed", inset: 0, background: "rgba(36,31,28,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}
         >
           <div
             onClick={(e) => e.stopPropagation()}

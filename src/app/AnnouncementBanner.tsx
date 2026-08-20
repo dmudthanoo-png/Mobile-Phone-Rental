@@ -52,7 +52,7 @@ export default function AnnouncementBanner({
   // ── โหมดรูปภาพ: แอดมินอัปโหลด banner รูปมาแทนข้อความ ──
   if (imageUrl) {
     return (
-      <div style={{ margin: "16px 32px 0", borderRadius: 18, overflow: "hidden", border: "1px solid #FBD9E6" }}>
+      <div style={{ margin: "16px 32px 0", borderRadius: 18, overflow: "hidden", border: "1px solid rgba(255,255,255,0.65)" }}>
         <img src={imageUrl} alt={displayTitle || "ประกาศ"} style={{ width: "100%", height: "auto", display: "block" }} />
       </div>
     );
@@ -70,8 +70,11 @@ export default function AnnouncementBanner({
         display: "flex",
         alignItems: "center",
         gap: 14,
-        background: "linear-gradient(135deg, #FFE3EF 0%, #FFF3E0 100%)",
-        border: "1px solid #FBD9E6",
+        background: "linear-gradient(120deg, #FFE3EE 0%, #FFF3D6 100%)",
+        border: "1px solid rgba(255,255,255,0.65)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.55)",
+        backdropFilter: "blur(16px) saturate(160%)",
+        WebkitBackdropFilter: "blur(16px) saturate(160%)",
         position: "relative",
         overflow: "hidden",
       }}
@@ -93,9 +96,9 @@ export default function AnnouncementBanner({
         {displayEmoji}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 700, fontSize: 14, color: "#332E2C", lineHeight: 1.3 }}>{displayTitle}</div>
+        <div style={{ fontWeight: 700, fontSize: 14, color: "#241F1C", lineHeight: 1.3 }}>{displayTitle}</div>
         {displaySubtitle && (
-          <div style={{ fontSize: 12, color: "#9C7A6E", fontWeight: 500, marginTop: 2, lineHeight: 1.4 }}>
+          <div style={{ fontSize: 12, color: "#7A6D61", fontWeight: 500, marginTop: 2, lineHeight: 1.4 }}>
             {displaySubtitle}
           </div>
         )}

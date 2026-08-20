@@ -9,15 +9,6 @@ const sub = "#7A6D61";
 const glassBorder = "rgba(255,255,255,0.65)";
 const glass = "rgba(255,255,255,0.55)";
 const glassBlur = "blur(14px) saturate(160%)";
-const accentSoft = "#FFE3EE";
-const violetSoft = "#EFE6FF";
-
-const steps = [
-  { icon: "🎫", title: "เลือกคอนเสิร์ต", desc: "เลือกงานที่จะไปดู" },
-  { icon: "📱", title: "จองมือถือ", desc: "เลือกรอบและรุ่นที่ต้องการ" },
-  { icon: "💳", title: "โอนเงิน", desc: "แนบสลิปยืนยันการจอง" },
-  { icon: "🎉", title: "รับเครื่อง", desc: "ไปรับที่หน้างานแล้วถ่ายให้ปัง" },
-];
 
 const faqs = [
   { q: "ต้องจองล่วงหน้ากี่วัน?", a: "แนะนำให้จองล่วงหน้าอย่างน้อย 3-5 วันก่อนงาน เพราะมือถือแต่ละรุ่นมีจำนวนจำกัด" },
@@ -37,47 +28,6 @@ export default function HowToBookAndFaq() {
 
   return (
     <div style={{ marginTop: 36 }}>
-      {/* How to book */}
-      <div id="how-to-book" style={{ scrollMarginTop: 90, marginBottom: 36 }}>
-        <div style={{ fontWeight: 700, fontSize: 16, color: ink, marginBottom: 4 }}>วิธีการจอง</div>
-        <div style={{ fontSize: 12, color: sub, fontWeight: 500, marginBottom: 14 }}>ง่ายๆ แค่ 4 ขั้นตอน</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
-          {steps.map((s, i) => (
-            <div
-              key={i}
-              style={{
-                borderRadius: 14,
-                border: `1px solid ${glassBorder}`,
-                background: glass,
-                backdropFilter: glassBlur,
-                WebkitBackdropFilter: glassBlur,
-                padding: "14px 12px",
-              }}
-            >
-              <div
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 10,
-                  background: i % 2 === 0 ? accentSoft : violetSoft,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 15,
-                  marginBottom: 8,
-                }}
-              >
-                {s.icon}
-              </div>
-              <div style={{ fontWeight: 700, fontSize: 12, color: ink, marginBottom: 2 }}>
-                {i + 1}. {s.title}
-              </div>
-              <div style={{ fontSize: 11, color: sub, fontWeight: 500, lineHeight: 1.4 }}>{s.desc}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Reviews */}
       <div id="reviews" style={{ scrollMarginTop: 90, marginBottom: 36 }}>
         <div style={{ fontWeight: 700, fontSize: 16, color: ink, marginBottom: 4 }}>รีวิวจากลูกค้า</div>

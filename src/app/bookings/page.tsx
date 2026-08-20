@@ -3,6 +3,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "../Navbar";
+import Footer from "../Footer";
 
 type MeUser = {
   line_sub: string;
@@ -41,28 +42,77 @@ type Booking = {
   } | null;
 };
 
-// ── shared design tokens (same as homepage) ──────────────────────
-const ink = "#332E2C";
-const sub = "#A39A93";
-const accent = "#F2679E";
-const accent2 = "#7A57D1";
-const line = "#F0E9E2";
-const navFont = "var(--font-itim), 'Kanit', 'Segoe UI', sans-serif";
+// ── shared design tokens (same as homepage / how-to-book) ──────────────────────
+const ink = "#241F1C";
+const sub = "#7A6D61";
+const accent = "#F2467E";
+const accentStrong = "#D81F5E";
+const accent2 = "#8354E8";
+const line = "#F2E4D6";
+const good = "#14B866";
+const goodSoft = "#E1FAEC";
+const goodBorder = "#B7EFC5";
+const critical = "#EF4463";
+const criticalSoft = "#FFE4E9";
+const criticalBorder = "#F9C7D1";
+const warningSoft = "#FFF3D6";
+const warningBorder = "#F3E3B8";
+const warningText = "#8A6D2F";
+const violetSoft = "#EFE6FF";
+const violetBorder = "#DCD2F5";
+
+const glass = "rgba(255,255,255,0.55)";
+const glassBorder = "rgba(255,255,255,0.65)";
+const glassHighlight = "rgba(255,255,255,0.55)";
+const glassBlur = "blur(18px) saturate(170%)";
+const accentGlow = "rgba(242,70,126,0.40)";
+const uiFont = "var(--font-noto-thai), 'Segoe UI', 'Leelawadee UI', -apple-system, system-ui, Roboto, sans-serif";
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string; border: string }> = {
-  confirmed:      { label: "✅ ยืนยันแล้ว", bg: "#F0FFF4", color: "#0F9D4E", border: "#B7EFC5" },
-  rejected:       { label: "❌ ไม่อนุมัติ",  bg: "#FFF1F2", color: "#C43D5C", border: "#F9C7D1" },
-  pending:        { label: "⏳ รอตรวจสอบ",   bg: "#FFFBEF", color: "#8A6D2F", border: "#F3E3B8" },
-  waiting_review: { label: "🔍 รอแอดมิน",   bg: "#F1EDFC", color: "#6A4FC0", border: "#DCD2F5" },
+  confirmed:      { label: "✅ ยืนยันแล้ว", bg: goodSoft, color: good, border: goodBorder },
+  rejected:       { label: "❌ ไม่อนุมัติ",  bg: criticalSoft, color: critical, border: criticalBorder },
+  pending:        { label: "⏳ รอตรวจสอบ",   bg: warningSoft, color: warningText, border: warningBorder },
+  waiting_review: { label: "🔍 รอแอดมิน",   bg: violetSoft, color: accent2, border: violetBorder },
 };
 const DEFAULT_STATUS = { label: "❓ ไม่ทราบสถานะ", bg: "#F5F5F5", color: sub, border: line };
 
 const card: CSSProperties = {
   borderRadius: 16,
-  border: `1px solid ${line}`,
-  boxShadow: "0 1px 2px rgba(20,20,20,0.04)",
-  background: "#fff",
+  border: `1px solid ${glassBorder}`,
+  boxShadow: `0 1px 2px rgba(35,32,31,0.04), 0 8px 24px -14px rgba(35,32,31,0.16), inset 0 1px 0 ${glassHighlight}`,
+  background: glass,
+  backdropFilter: glassBlur,
+  WebkitBackdropFilter: glassBlur,
 };
+
+const btnPrimary: CSSProperties = {
+  border: "none",
+  borderRadius: 999,
+  boxShadow: `0 10px 26px -10px ${accentGlow}, inset 0 1px 0 rgba(255,255,255,0.35)`,
+  fontWeight: 700,
+  cursor: "pointer",
+  background: `linear-gradient(135deg, ${accent}, ${accentStrong})`,
+  color: "#fff",
+  fontFamily: uiFont,
+};
+
+function AmbientGlow() {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 0,
+        pointerEvents: "none",
+        background:
+          "radial-gradient(60vw 60vw circle at 12% 0%, rgba(242,70,126,0.30), rgba(242,70,126,0) 70%)," +
+          "radial-gradient(55vw 55vw circle at 100% 15%, rgba(131,84,232,0.26), rgba(131,84,232,0) 70%)," +
+          "radial-gradient(60vw 60vw circle at 82% 100%, rgba(35,201,214,0.22), rgba(35,201,214,0) 72%)",
+      }}
+    />
+  );
+}
 
 function formatSessionStart(startAt?: string | null) {
   if (!startAt) return "-";
@@ -81,14 +131,14 @@ function Toast({ message, type, onClose }: { message: string; type: "success" | 
     <div style={{
       position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
       zIndex: 9999, maxWidth: 340, width: "calc(100% - 40px)",
-      background: type === "success" ? "#F0FFF4" : "#FFF1F2",
-      border: `1px solid ${type === "success" ? "#B7EFC5" : "#F9C7D1"}`,
+      background: type === "success" ? goodSoft : criticalSoft,
+      border: `1px solid ${type === "success" ? goodBorder : criticalBorder}`,
       borderRadius: 16, padding: "12px 16px",
-      boxShadow: "0 8px 24px rgba(20,20,20,0.12)",
+      boxShadow: "0 8px 24px rgba(35,32,31,0.14)",
       display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-      fontFamily: navFont,
+      fontFamily: uiFont,
     }}>
-      <span style={{ fontWeight: 700, fontSize: 13, color: type === "success" ? "#0F9D4E" : "#C43D5C" }}>
+      <span style={{ fontWeight: 700, fontSize: 13, color: type === "success" ? good : critical }}>
         {type === "success" ? "✅" : "⚠️"} {message}
       </span>
       <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 16, color: sub, flexShrink: 0 }}>✕</button>
@@ -172,7 +222,7 @@ export default function BookingsPage() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#FFFBF7", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12, fontFamily: navFont }}>
+      <div style={{ minHeight: "100vh", background: "#FFF9F3", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12, fontFamily: uiFont }}>
         <img src="/crabby-logo.png" alt="Crabby" style={{ width: 56, height: "auto" }} />
         <div style={{ fontSize: 13, fontWeight: 600, color: sub }}>กำลังโหลด...</div>
       </div>
@@ -180,22 +230,23 @@ export default function BookingsPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#FFFBF7", fontFamily: navFont, display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: 40 }}>
+    <div style={{ minHeight: "100vh", background: "#FFF9F3", fontFamily: uiFont, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", isolation: "isolate" }}>
+      <AmbientGlow />
       <div style={{ width: "100%" }}>
         <Navbar user={meUser} onSignOut={handleSignOut} />
       </div>
 
-      <div style={{ width: "100%", maxWidth: 640 }}>
+      <div style={{ width: "100%", maxWidth: 760 }}>
 
         {/* Header */}
-        <div style={{ padding: "28px 24px 16px" }}>
+        <div style={{ padding: "28px 32px 16px" }}>
           <button
             onClick={() => router.push("/")}
-            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, color: accent2, padding: 0, marginBottom: 10 }}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, color: accent2, padding: 0, marginBottom: 10, fontFamily: uiFont }}
           >
             ← กลับไปหน้าเลือกคอนเสิร์ต
           </button>
-          <div style={{ fontSize: 26, fontWeight: 700 }}>
+          <div style={{ fontSize: 26, fontWeight: 800 }}>
             <span style={{ color: ink }}>ประวัติ</span>{" "}
             <span
               style={{
@@ -211,27 +262,13 @@ export default function BookingsPage() {
           <div style={{ fontSize: 13, color: sub, fontWeight: 500, marginTop: 2 }}>รายการจองทั้งหมดของคุณ</div>
         </div>
 
-        <div style={{ padding: "0 24px" }}>
+        <div style={{ padding: "0 32px" }}>
           {bookings.length === 0 && (
             <div style={{ ...card, padding: 40, textAlign: "center", marginTop: 8 }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>📭</div>
               <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, color: ink }}>ยังไม่มีประวัติการจอง</div>
               <p style={{ fontSize: 13, color: sub, fontWeight: 500, marginBottom: 20 }}>เมื่อคุณชำระเงินแล้ว รายการจะมาแสดงที่นี่ครับ</p>
-              <button
-                onClick={() => router.push("/")}
-                style={{
-                  border: "none",
-                  borderRadius: 999,
-                  background: `linear-gradient(135deg, ${accent}, #E1477F)`,
-                  color: "#fff",
-                  padding: "10px 24px",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  cursor: "pointer",
-                  boxShadow: "0 4px 14px rgba(232,85,143,0.3)",
-                  fontFamily: "inherit",
-                }}
-              >
+              <button onClick={() => router.push("/")} style={{ ...btnPrimary, padding: "10px 24px", fontSize: 14 }}>
                 จองเลย 📱
               </button>
             </div>
@@ -262,7 +299,7 @@ export default function BookingsPage() {
 
                   {/* Lens badge */}
                   {b.add_lens && (
-                    <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#F1EDFC", border: `1px solid #DCD2F5`, borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 700, color: accent2, marginBottom: 10 }}>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: violetSoft, border: `1px solid ${violetBorder}`, borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 700, color: accent2, marginBottom: 10 }}>
                       🔭 Lens ซูม +฿{(b.lens_price ?? 0).toLocaleString()}
                     </div>
                   )}
@@ -283,29 +320,29 @@ export default function BookingsPage() {
                   </div>
 
                   {b.status === "confirmed" && (
-                    <div style={{ background: "#F0FFF4", border: "1px dashed #B7EFC5", borderRadius: 12, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#0F9D4E" }}>
+                    <div style={{ background: goodSoft, border: `1px dashed ${goodBorder}`, borderRadius: 12, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: good }}>
                       ✅ การจองได้รับการยืนยันแล้ว! กรุณามารับมือถือก่อนคอนเสิร์ตครับ
                     </div>
                   )}
                   {b.status === "rejected" && (
-                    <div style={{ background: "#FFF1F2", border: "1px dashed #F9C7D1", borderRadius: 12, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#C43D5C" }}>
+                    <div style={{ background: criticalSoft, border: `1px dashed ${criticalBorder}`, borderRadius: 12, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: critical }}>
                       ❌ การจองถูกปฏิเสธ กรุณาเปลี่ยนสลิปหรือติดต่อ LINE OA ครับ
                     </div>
                   )}
                   {(b.status === "pending" || b.status === "waiting_review") && (
-                    <div style={{ background: "#FFFBEF", border: "1px dashed #F3E3B8", borderRadius: 12, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#8A6D2F" }}>
+                    <div style={{ background: warningSoft, border: `1px dashed ${warningBorder}`, borderRadius: 12, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: warningText }}>
                       ⏳ รอแอดมินตรวจสอบสลิป กรุณารอสักครู่ครับ
                     </div>
                   )}
 
                   <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                     {b.slip_url && (
-                      <button onClick={() => setSlipModal(b.slip_url!)} style={{ background: "#FFFBEF", border: `1px solid #F3E3B8`, color: "#8A6D2F", borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      <button onClick={() => setSlipModal(b.slip_url!)} style={{ background: warningSoft, border: `1px solid ${warningBorder}`, color: warningText, borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: uiFont }}>
                         🧾 ดูสลิป
                       </button>
                     )}
                     {(b.status === "pending" || b.status === "rejected") && (
-                      <button onClick={() => { setUpdateSlipBookingId(b.id); setUpdateSlipFile(null); setUpdateSlipPreview(null); setUpdateSlipError(""); }} style={{ background: "#F1EDFC", border: `1px solid #DCD2F5`, color: accent2, borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      <button onClick={() => { setUpdateSlipBookingId(b.id); setUpdateSlipFile(null); setUpdateSlipPreview(null); setUpdateSlipError(""); }} style={{ background: violetSoft, border: `1px solid ${violetBorder}`, color: accent2, borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: uiFont }}>
                         🔄 เปลี่ยนสลิป
                       </button>
                     )}
@@ -316,27 +353,15 @@ export default function BookingsPage() {
           </div>
 
           {bookings.length > 0 && (
-            <button
-              onClick={() => router.push("/")}
-              style={{
-                marginTop: 20,
-                width: "100%",
-                border: "none",
-                borderRadius: 999,
-                background: `linear-gradient(135deg, ${accent}, #E1477F)`,
-                color: "#fff",
-                padding: "13px 0",
-                fontWeight: 700,
-                fontSize: 15,
-                cursor: "pointer",
-                boxShadow: "0 4px 14px rgba(232,85,143,0.3)",
-                fontFamily: "inherit",
-              }}
-            >
+            <button onClick={() => router.push("/")} style={{ ...btnPrimary, marginTop: 20, width: "100%", padding: "13px 0", fontSize: 15 }}>
               + จองเพิ่ม 📱
             </button>
           )}
         </div>
+      </div>
+
+      <div style={{ width: "100%" }}>
+        <Footer />
       </div>
 
       {/* Toast */}
@@ -344,24 +369,24 @@ export default function BookingsPage() {
 
       {/* Update Slip Modal */}
       {updateSlipBookingId && (
-        <div onClick={() => setUpdateSlipBookingId(null)} style={{ position: "fixed", inset: 0, background: "rgba(51,46,44,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, border: `1px solid ${line}`, maxWidth: 380, width: "100%", overflow: "hidden", fontFamily: navFont }}>
-            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${line}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div onClick={() => setUpdateSlipBookingId(null)} style={{ position: "fixed", inset: 0, background: "rgba(36,31,28,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, border: `1px solid ${line}`, maxWidth: 380, width: "100%", overflow: "hidden", fontFamily: uiFont }}>
+            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${line}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 700, color: ink }}>🔄 เปลี่ยนสลิป</span>
               <button onClick={() => setUpdateSlipBookingId(null)} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: sub }}>✕</button>
             </div>
             <div style={{ padding: 16 }}>
               {updateSlipError && (
-                <div style={{ background: "#FFF1F2", border: "1px solid #F9C7D1", borderRadius: 10, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: "#C43D5C", marginBottom: 12 }}>
+                <div style={{ background: criticalSoft, border: `1px solid ${criticalBorder}`, borderRadius: 10, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: critical, marginBottom: 12 }}>
                   ⚠️ {updateSlipError}
                 </div>
               )}
               <label style={{ cursor: "pointer", display: "block" }}>
-                <div style={{ border: `1.5px dashed ${updateSlipPreview ? "#8FD4A8" : "#D8D5CE"}`, borderRadius: 14, padding: 16, textAlign: "center", background: updateSlipPreview ? "#F3FBF5" : "#fff" }}>
+                <div style={{ border: `1.5px dashed ${updateSlipPreview ? goodBorder : "#D8D5CE"}`, borderRadius: 14, padding: 16, textAlign: "center", background: updateSlipPreview ? goodSoft : "#fff" }}>
                   {updateSlipPreview ? (
                     <div>
                       <img src={updateSlipPreview} alt="slip" style={{ maxHeight: 160, borderRadius: 10, objectFit: "contain", margin: "0 auto", display: "block" }} />
-                      <p style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: "#0F9D4E" }}>เลือกแล้ว แตะเพื่อเปลี่ยน</p>
+                      <p style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: good }}>เลือกแล้ว แตะเพื่อเปลี่ยน</p>
                     </div>
                   ) : (
                     <div>
@@ -380,17 +405,14 @@ export default function BookingsPage() {
                 onClick={handleUpdateSlip}
                 disabled={!updateSlipFile || updateSlipSubmitting}
                 style={{
+                  ...btnPrimary,
                   marginTop: 12,
                   width: "100%",
-                  border: "none",
-                  borderRadius: 999,
-                  background: !updateSlipFile || updateSlipSubmitting ? "#F1F0EE" : `linear-gradient(135deg, ${accent}, #E1477F)`,
-                  color: !updateSlipFile || updateSlipSubmitting ? "#B4B6BC" : "#fff",
                   padding: "11px 0",
-                  fontWeight: 700,
                   fontSize: 14,
-                  cursor: !updateSlipFile || updateSlipSubmitting ? "not-allowed" : "pointer",
-                  fontFamily: "inherit",
+                  ...(!updateSlipFile || updateSlipSubmitting
+                    ? { background: "#F1F0EE", color: "#B4B6BC", cursor: "not-allowed", boxShadow: "none" }
+                    : {}),
                 }}
               >
                 {updateSlipSubmitting ? "กำลังส่ง..." : "✓ ยืนยันเปลี่ยนสลิป"}
@@ -402,9 +424,9 @@ export default function BookingsPage() {
 
       {/* Slip Modal */}
       {slipModal && (
-        <div onClick={() => setSlipModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(51,46,44,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, border: `1px solid ${line}`, overflow: "hidden", maxWidth: 380, width: "100%", fontFamily: navFont }}>
-            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${line}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div onClick={() => setSlipModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(36,31,28,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, border: `1px solid ${line}`, overflow: "hidden", maxWidth: 380, width: "100%", fontFamily: uiFont }}>
+            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${line}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 700, color: ink }}>🧾 สลิปการโอน</span>
               <button onClick={() => setSlipModal(null)} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: sub }}>✕</button>
             </div>

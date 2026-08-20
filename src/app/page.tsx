@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Navbar from "./Navbar";
 import AnnouncementBanner from "./AnnouncementBanner";
 import HowToBookAndFaq from "./HowToBookAndFaq";
+import Footer from "./Footer";
 
 type MeUser = {
   line_sub: string;
@@ -503,8 +504,10 @@ export default function PhoneRentalHome() {
     );
   }
 
+  const showBottomNav = step < 5 && !(step === 1 && !selectedConcertId);
+
   return (
-    <div style={{ minHeight: "100vh", background: "#FFF9F3", fontFamily: uiFont, display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: 100, position: "relative", isolation: "isolate" }}>
+    <div style={{ minHeight: "100vh", background: "#FFF9F3", fontFamily: uiFont, display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: showBottomNav ? 100 : 0, position: "relative", isolation: "isolate" }}>
       <AmbientGlow />
       <div style={{ width: "100%" }}>
         <Navbar user={meUser} onSignOut={handleSignOut} />
@@ -1020,7 +1023,7 @@ export default function PhoneRentalHome() {
                 ไปหน้าประวัติการจอง
               </button>
               <div style={{ height: 12 }} />
-              <a href="https://line.me/R/ti/p/@your_oa_id" style={{ textDecoration: "none" }}>
+              <a href="https://line.me/R/ti/p/@CRABBY4RENT" style={{ textDecoration: "none" }}>
                 <div style={{ ...doodle.btnGreen, padding: "14px 0", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%" }}>
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="white">
                     <path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.036 9.608.391.084.922.258 1.057.592.114.281.072.717.035.922-.047.251-.301 1.488-.363 1.831-.107.575-.515 2.059 1.802 1.082 2.316-.976 12.433-7.311 12.433-14.035z" />
@@ -1033,7 +1036,7 @@ export default function PhoneRentalHome() {
         </div>
 
         {/* Bottom Nav */}
-        {step < 5 && !(step === 1 && !selectedConcertId) && (
+        {showBottomNav && (
           <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 20, display: "flex", justifyContent: "center", padding: "16px 32px calc(24px + env(safe-area-inset-bottom, 0px))", background: glassStrong, backdropFilter: "blur(24px) saturate(160%)", WebkitBackdropFilter: "blur(24px) saturate(160%)", borderTop: `1px solid ${glassBorder}` }}>
             <div style={{ width: "100%", maxWidth: 760, display: "flex", gap: 12 }}>
               {step > 1 && (
@@ -1048,6 +1051,12 @@ export default function PhoneRentalHome() {
           </div>
         )}
       </div>
+
+      {step === 1 && !selectedConcertId && (
+        <div style={{ width: "100%" }}>
+          <Footer />
+        </div>
+      )}
 
       {/* Terms & Conditions Modal */}
       {showTermsModal && (

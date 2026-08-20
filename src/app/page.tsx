@@ -622,9 +622,18 @@ export default function PhoneRentalHome() {
                 <span style={{ fontWeight: 700, fontSize: 17, color: ink }}>เลือกรอบ & มือถือ</span>
               </div>
               {selectedConcert && (
-                <div style={{ ...doodle.cardYellow, padding: 12, marginBottom: 12, color: ink }}>
-                  <div style={{ fontWeight: 700 }}>{selectedConcert.title}</div>
-                  {selectedConcert.venue_name && <div style={{ fontSize: 12, color: sub, fontWeight: 500 }}>📍 {selectedConcert.venue_name}</div>}
+                <div style={{ ...doodle.cardYellow, padding: 14, marginBottom: 12, color: ink, display: "flex", gap: 14, alignItems: "center" }}>
+                  <div style={{ width: 100, aspectRatio: "3/4", borderRadius: 14, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", flexShrink: 0 }}>
+                    {selectedConcert.poster_url ? (
+                      <img src={selectedConcert.poster_url} alt={selectedConcert.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    ) : (
+                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>🎫</div>
+                    )}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{selectedConcert.title}</div>
+                    {selectedConcert.venue_name && <div style={{ fontSize: 12, color: sub, fontWeight: 500, marginTop: 4 }}>📍 {selectedConcert.venue_name}</div>}
+                  </div>
                 </div>
               )}
               <div style={{ ...doodle.card, padding: 14, marginBottom: 12, color: ink }}>

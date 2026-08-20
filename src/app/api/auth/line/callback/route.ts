@@ -18,7 +18,7 @@ function base64url(input: Buffer | string) {
 }
 
 // สร้าง JWT แบบ HS256 ง่าย ๆ (session ของเราเอง)
-function signSessionJWT(payload: Record<string, any>, secret: string, expiresInSec: number) {
+function signSessionJWT(payload: Record<string, unknown>, secret: string, expiresInSec: number) {
   const header = { alg: "HS256", typ: "JWT" };
   const now = Math.floor(Date.now() / 1000);
 

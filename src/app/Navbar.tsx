@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 
 type MeUser = {
   line_sub: string;
@@ -12,7 +13,9 @@ type MeUser = {
 
 const navFont = "var(--font-noto-thai), 'Segoe UI', 'Leelawadee UI', -apple-system, system-ui, Roboto, sans-serif";
 const linkColor = "#241F1C";
-const linkHoverColor = "#F2467E";
+// Text-safe hover color: accentStrong (#D81F5E) passes 4.91:1 on our glass/cream
+// surfaces at normal text sizes; the raw "accent" (#F2467E) only hits 3.53:1 and
+// fails 4.5:1 for text this small, so it is intentionally not used for text.
 const accentStrong = "#D81F5E";
 const accent2 = "#8354E8";
 const accentGlow = "rgba(242,70,126,0.40)";
@@ -49,7 +52,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
       style={{
         fontSize: 14,
         fontWeight: 600,
-        color: hover ? linkHoverColor : linkColor,
+        color: hover ? accentStrong : linkColor,
         textDecoration: "none",
         whiteSpace: "nowrap",
         transition: "color .15s",
@@ -116,17 +119,26 @@ export default function Navbar({
         }}
       >
         {/* Left: Logo */}
-        <div
-          onClick={() => router.push("/")}
-          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", justifySelf: "start", minWidth: 0 }}
+        <Link
+          href="/"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            justifySelf: "start",
+            minWidth: 44,
+            minHeight: 44,
+          }}
         >
-          <img
+          <Image
             src="/crabby-logo.png"
             alt="Crabby"
+            width={48}
+            height={48}
             className="navbar-logo-img"
-            style={{ width: 48, height: 48, objectFit: "contain", flexShrink: 0, filter: `drop-shadow(0 2px 4px ${accentGlow})` }}
+            style={{ objectFit: "contain", flexShrink: 0, filter: `drop-shadow(0 2px 4px ${accentGlow})` }}
           />
-        </div>
+        </Link>
 
         {/* Center: nav links (ซ่อนบนมือถือ) */}
         <div className="navbar-center-links" style={{ alignItems: "center", gap: 22, justifySelf: "center" }}>
@@ -149,7 +161,7 @@ export default function Navbar({
                   cursor: "pointer",
                   fontSize: 13,
                   fontWeight: 600,
-                  color: historyHover ? linkHoverColor : linkColor,
+                  color: historyHover ? accentStrong : linkColor,
                   whiteSpace: "nowrap",
                   transition: "color .15s",
                   fontFamily: navFont,
@@ -175,7 +187,7 @@ export default function Navbar({
                       width: 24,
                       height: 24,
                       borderRadius: "50%",
-                      background: `linear-gradient(135deg, ${linkHoverColor}, ${accent2})`,
+                      background: `linear-gradient(135deg, ${accentStrong}, ${accent2})`,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -199,7 +211,7 @@ export default function Navbar({
                     cursor: "pointer",
                     fontSize: 13,
                     fontWeight: 600,
-                    color: signOutHover ? linkHoverColor : linkColor,
+                    color: signOutHover ? accentStrong : linkColor,
                     whiteSpace: "nowrap",
                     transition: "color .15s",
                     fontFamily: navFont,
@@ -219,7 +231,10 @@ export default function Navbar({
               style={{
                 border: "none",
                 borderRadius: 999,
-                background: `linear-gradient(135deg, ${linkHoverColor}, ${accentStrong})`,
+                // Solid accentStrong (not a gradient into accent) so the 13px bold
+                // label keeps >=4.5:1 contrast everywhere on the button, not just
+                // at the accentStrong end.
+                background: accentStrong,
                 color: "#fff",
                 padding: "6px 14px",
                 fontSize: 13,
@@ -242,8 +257,8 @@ export default function Navbar({
           aria-label="เมนู"
           style={{
             justifySelf: "end",
-            width: 32,
-            height: 32,
+            width: 44,
+            height: 44,
             borderRadius: "50%",
             border: "none",
             background: "rgba(242,70,126,0.10)",
@@ -279,7 +294,7 @@ export default function Navbar({
                 <div
                   style={{
                     width: 28, height: 28, borderRadius: "50%",
-                    background: `linear-gradient(135deg, ${linkHoverColor}, ${accent2})`,
+                    background: `linear-gradient(135deg, ${accentStrong}, ${accent2})`,
                     display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0,
                   }}
@@ -308,6 +323,9 @@ export default function Navbar({
                 color: linkColor,
                 textDecoration: "none",
                 borderBottom: `1px solid ${glassBorder}`,
+                minHeight: 44,
+                display: "flex",
+                alignItems: "center",
               }}
             >
               {item.label}
@@ -328,6 +346,9 @@ export default function Navbar({
                 color: accentStrong,
                 cursor: "pointer",
                 fontFamily: navFont,
+                minHeight: 44,
+                display: "flex",
+                alignItems: "center",
               }}
             >
               ออกจากระบบ
@@ -339,13 +360,19 @@ export default function Navbar({
                 marginTop: 12,
                 border: "none",
                 borderRadius: 999,
-                background: `linear-gradient(135deg, ${linkHoverColor}, ${accentStrong})`,
+                // Solid accentStrong instead of a gradient into accent — same
+                // small-bold-label contrast fix as the desktop login button.
+                background: accentStrong,
                 color: "#fff",
                 padding: "9px 0",
                 fontSize: 13,
                 fontWeight: 700,
                 cursor: "pointer",
                 fontFamily: navFont,
+                minHeight: 44,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
               เข้าสู่ระบบ

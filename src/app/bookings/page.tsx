@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import Navbar from "../Navbar";
 import Footer from "../Footer";
 
@@ -91,9 +92,16 @@ const btnPrimary: CSSProperties = {
   boxShadow: `0 10px 26px -10px ${accentGlow}, inset 0 1px 0 rgba(255,255,255,0.35)`,
   fontWeight: 700,
   cursor: "pointer",
-  background: `linear-gradient(135deg, ${accent}, ${accentStrong})`,
+  // Gradient stops biased so accentStrong (#D81F5E, 4.91:1 on white text) covers the
+  // center where the label sits; accent (#F2467E, 3.53:1) only shows at the far edge.
+  // Keeps the brand gradient look while fixing sub-19px bold white label contrast.
+  background: `linear-gradient(135deg, ${accentStrong}, ${accentStrong} 55%, ${accent})`,
   color: "#fff",
   fontFamily: uiFont,
+  minHeight: 44,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
 };
 
 function AmbientGlow() {
@@ -141,7 +149,11 @@ function Toast({ message, type, onClose }: { message: string; type: "success" | 
       <span style={{ fontWeight: 700, fontSize: 13, color: type === "success" ? good : critical }}>
         {type === "success" ? "✅" : "⚠️"} {message}
       </span>
-      <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 16, color: sub, flexShrink: 0 }}>✕</button>
+      <button
+        onClick={onClose}
+        aria-label="ปิดการแจ้งเตือน"
+        style={{ border: "none", background: "none", cursor: "pointer", fontSize: 16, color: sub, flexShrink: 0, minWidth: 44, minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+      >✕</button>
     </div>
   );
 }
@@ -162,8 +174,13 @@ export default function BookingsPage() {
   const [updateSlipError, setUpdateSlipError] = useState<string>("");
 
   const handleSignOut = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      router.push("/login");
+    }
   };
 
   const handleUpdateSlip = async () => {
@@ -223,7 +240,7 @@ export default function BookingsPage() {
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: "#FFF9F3", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12, fontFamily: uiFont }}>
-        <img src="/crabby-logo.png" alt="Crabby" style={{ width: 56, height: "auto" }} />
+        <Image src="/crabby-logo.png" alt="Crabby" width={835} height={771} style={{ width: 56, height: "auto" }} priority />
         <div style={{ fontSize: 13, fontWeight: 600, color: sub }}>กำลังโหลด...</div>
       </div>
     );
@@ -242,7 +259,7 @@ export default function BookingsPage() {
         <div style={{ padding: "28px 32px 16px" }}>
           <button
             onClick={() => router.push("/")}
-            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, color: accent2, padding: 0, marginBottom: 10, fontFamily: uiFont }}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, color: accent2, padding: "10px 0", marginBottom: 2, marginTop: -10, fontFamily: uiFont, display: "inline-flex", alignItems: "center", minHeight: 44 }}
           >
             ← กลับไปหน้าเลือกคอนเสิร์ต
           </button>
@@ -337,12 +354,12 @@ export default function BookingsPage() {
 
                   <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                     {b.slip_url && (
-                      <button onClick={() => setSlipModal(b.slip_url!)} style={{ background: warningSoft, border: `1px solid ${warningBorder}`, color: warningText, borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: uiFont }}>
+                      <button onClick={() => setSlipModal(b.slip_url!)} style={{ background: warningSoft, border: `1px solid ${warningBorder}`, color: warningText, borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: uiFont, minHeight: 44, display: "inline-flex", alignItems: "center" }}>
                         🧾 ดูสลิป
                       </button>
                     )}
                     {(b.status === "pending" || b.status === "rejected") && (
-                      <button onClick={() => { setUpdateSlipBookingId(b.id); setUpdateSlipFile(null); setUpdateSlipPreview(null); setUpdateSlipError(""); }} style={{ background: violetSoft, border: `1px solid ${violetBorder}`, color: accent2, borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: uiFont }}>
+                      <button onClick={() => { setUpdateSlipBookingId(b.id); setUpdateSlipFile(null); setUpdateSlipPreview(null); setUpdateSlipError(""); }} style={{ background: violetSoft, border: `1px solid ${violetBorder}`, color: accent2, borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: uiFont, minHeight: 44, display: "inline-flex", alignItems: "center" }}>
                         🔄 เปลี่ยนสลิป
                       </button>
                     )}
@@ -369,11 +386,15 @@ export default function BookingsPage() {
 
       {/* Update Slip Modal */}
       {updateSlipBookingId && (
-        <div onClick={() => setUpdateSlipBookingId(null)} style={{ position: "fixed", inset: 0, background: "rgba(36,31,28,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, border: `1px solid ${line}`, maxWidth: 380, width: "100%", overflow: "hidden", fontFamily: uiFont }}>
+        <div onClick={() => setUpdateSlipBookingId(null)} style={{ position: "fixed", inset: 0, background: "rgba(36,31,28,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20, cursor: "pointer" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, border: `1px solid ${line}`, maxWidth: 380, width: "100%", overflow: "hidden", fontFamily: uiFont, cursor: "default" }}>
             <div style={{ padding: "14px 18px", borderBottom: `1px solid ${line}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 700, color: ink }}>🔄 เปลี่ยนสลิป</span>
-              <button onClick={() => setUpdateSlipBookingId(null)} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: sub }}>✕</button>
+              <button
+                onClick={() => setUpdateSlipBookingId(null)}
+                aria-label="ปิดหน้าต่างเปลี่ยนสลิป"
+                style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: sub, minWidth: 44, minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+              >✕</button>
             </div>
             <div style={{ padding: 16 }}>
               {updateSlipError && (
@@ -392,7 +413,7 @@ export default function BookingsPage() {
                     <div>
                       <div style={{ fontSize: 32, marginBottom: 4 }}>📎</div>
                       <p style={{ fontSize: 13, fontWeight: 700, margin: 0, color: ink }}>เลือกสลิปใหม่</p>
-                      <p style={{ fontSize: 11, color: "#B4B6BC", margin: "4px 0 0", fontWeight: 500 }}>JPG, PNG, WEBP</p>
+                      <p style={{ fontSize: 11, color: sub, margin: "4px 0 0", fontWeight: 500 }}>JPG, PNG, WEBP</p>
                     </div>
                   )}
                 </div>
@@ -424,15 +445,19 @@ export default function BookingsPage() {
 
       {/* Slip Modal */}
       {slipModal && (
-        <div onClick={() => setSlipModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(36,31,28,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, border: `1px solid ${line}`, overflow: "hidden", maxWidth: 380, width: "100%", fontFamily: uiFont }}>
+        <div onClick={() => setSlipModal(null)} style={{ position: "fixed", inset: 0, background: "rgba(36,31,28,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20, cursor: "pointer" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, border: `1px solid ${line}`, overflow: "hidden", maxWidth: 380, width: "100%", fontFamily: uiFont, cursor: "default" }}>
             <div style={{ padding: "14px 18px", borderBottom: `1px solid ${line}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 700, color: ink }}>🧾 สลิปการโอน</span>
-              <button onClick={() => setSlipModal(null)} style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: sub }}>✕</button>
+              <button
+                onClick={() => setSlipModal(null)}
+                aria-label="ปิดหน้าต่างดูสลิป"
+                style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: sub, minWidth: 44, minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+              >✕</button>
             </div>
             <img src={slipModal} alt="slip" style={{ width: "100%", display: "block" }} />
             <div style={{ padding: "10px 16px" }}>
-              <a href={slipModal} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: accent2, fontWeight: 600 }}>เปิดในแท็บใหม่ ↗</a>
+              <a href={slipModal} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: accent2, fontWeight: 600, display: "inline-block", padding: "8px 0" }}>เปิดในแท็บใหม่ ↗</a>
             </div>
           </div>
         </div>

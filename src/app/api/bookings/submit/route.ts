@@ -27,7 +27,7 @@ function verifySessionJWT(token: string, secret: string) {
     "base64"
   ).toString("utf8");
 
-  const payload = JSON.parse(payloadJson) as { exp?: number; [k: string]: any };
+  const payload = JSON.parse(payloadJson) as { exp?: number; [k: string]: unknown };
   const now = Math.floor(Date.now() / 1000);
   if (payload.exp && now > payload.exp) return null;
 
@@ -173,8 +173,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true, ref_number }, { status: 200 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("submit booking fatal error:", err);
-    return NextResponse.json({ error: err?.message || "server_error" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "server_error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

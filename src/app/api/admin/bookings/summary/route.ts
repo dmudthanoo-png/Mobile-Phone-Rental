@@ -50,7 +50,8 @@ export async function GET(req: NextRequest) {
 
   const revenue =
     (confirmedAmounts.data ?? []).reduce(
-      (acc: number, row: any) => acc + (Number(row.total_amount) || 0),
+      (acc: number, row: { total_amount: number | string | null }) =>
+        acc + (Number(row.total_amount) || 0),
       0
     );
 

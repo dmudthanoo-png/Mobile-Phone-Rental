@@ -22,7 +22,7 @@ function verifySessionJWT(token: string, secret: string) {
     "base64"
   ).toString("utf8");
 
-  const payload = JSON.parse(payloadJson) as { exp?: number; [k: string]: any };
+  const payload = JSON.parse(payloadJson) as { exp?: number; [k: string]: unknown };
   const now = Math.floor(Date.now() / 1000);
   if (payload.exp && now > payload.exp) return null;
   return payload;

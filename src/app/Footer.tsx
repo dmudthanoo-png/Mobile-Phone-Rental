@@ -2,10 +2,14 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 const ink = "#241F1C";
 const sub = "#7A6D61";
-const accent = "#F2467E";
+// accentStrong (#D81F5E), not the raw brand "accent" (#F2467E) — the raw accent
+// only hits 3.53:1 on our light/glass surfaces and fails 4.5:1 for text this
+// small (12px). accentStrong passes at 4.91:1.
+const accentStrong = "#D81F5E";
 const lineGreen = "#06C755";
 const glass = "rgba(255,255,255,0.55)";
 const glassBorder = "rgba(255,255,255,0.65)";
@@ -28,10 +32,14 @@ function FooterLink({ href, children }: { href: string; children: React.ReactNod
       style={{
         fontSize: 12,
         fontWeight: 600,
-        color: hover ? accent : ink,
+        color: hover ? accentStrong : ink,
         textDecoration: "none",
         whiteSpace: "nowrap",
         transition: "color .15s",
+        display: "inline-flex",
+        alignItems: "center",
+        minHeight: 44,
+        padding: "0 4px",
       }}
     >
       {children}
@@ -81,6 +89,7 @@ function ContactLink({
         alignItems: "center",
         gap: 6,
         padding: "6px 13px",
+        minHeight: 44,
         borderRadius: 999,
         background: hover ? hoverBg : bg,
         color: "#fff",
@@ -122,7 +131,7 @@ export default function Footer() {
           textAlign: "center",
         }}
       >
-        <img src="/crabby-logo.png" alt="Crabby" style={{ width: 80, height: 80, objectFit: "contain" }} />
+        <Image src="/crabby-logo.png" alt="Crabby" width={80} height={80} style={{ objectFit: "contain" }} />
 
         <div style={{ display: "flex", gap: 18, justifyContent: "center", flexWrap: "wrap" }}>
           {quickLinks.map((l) => (

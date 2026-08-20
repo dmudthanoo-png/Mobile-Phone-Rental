@@ -24,17 +24,24 @@ export async function GET(_req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    type BookingCalendarRow = {
+      rental_date: string | null;
+      package_id: string | null;
+      status: string | null;
+    };
+
     const counts: Record<string, Record<string, number>> = {};
-    for (const row of data ?? []) {
-      const date = String((row as any).rental_date);
-      const pkg = String((row as any).package_id);
+    for (const row of (data ?? []) as BookingCalendarRow[]) {
+      const date = String(row.rental_date);
+      const pkg = String(row.package_id);
       if (!counts[date]) counts[date] = {};
       counts[date][pkg] = (counts[date][pkg] || 0) + 1;
     }
 
     return NextResponse.json({ counts }, { status: 200 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("calendar route error:", err);
-    return NextResponse.json({ error: err?.message || "server_error" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "server_error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

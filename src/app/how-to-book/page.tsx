@@ -89,6 +89,7 @@ function StepCard({ n, image, title, desc }: { n: number; image: string; title: 
           alignItems: "center",
           justifyContent: "center",
           boxShadow: `0 4px 10px -3px ${accentGlow}`,
+          textShadow: "0 1px 1.5px rgba(0,0,0,0.45)",
         }}
       >
         {n}
@@ -180,10 +181,11 @@ export default function HowToBookPage() {
               boxShadow: `0 10px 26px -10px ${accentGlow}, inset 0 1px 0 rgba(255,255,255,0.35)`,
               fontWeight: 700,
               cursor: "pointer",
-              background: `linear-gradient(135deg, ${accent}, ${accentStrong})`,
+              background: accentStrong,
               color: "#fff",
               padding: "13px 32px",
               fontSize: 15,
+              minHeight: 44,
               fontFamily: uiFont,
             }}
           >

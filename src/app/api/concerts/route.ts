@@ -36,8 +36,9 @@ export async function GET(_req: NextRequest) {
       { concerts: data ?? [] },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("GET /api/concerts error:", err);
-    return NextResponse.json({ error: err?.message || "server_error" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "server_error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

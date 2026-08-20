@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 
 const accent = "#F2467E";
+const accentStrong = "#D81F5E";
 const accent2 = "#8354E8";
 const ink = "#241F1C";
 const sub = "#7A6D61";
@@ -45,9 +46,15 @@ export default function HowToBookAndFaq() {
                 padding: "16px 14px",
               }}
             >
-              <div style={{ color: "#F5B93F", fontSize: 13, marginBottom: 8, letterSpacing: 1 }}>
-                {"★".repeat(r.rating)}
-                <span style={{ color: "#EDE7E1" }}>{"★".repeat(5 - r.rating)}</span>
+              <div
+                role="img"
+                aria-label={`ให้คะแนน ${r.rating} จาก 5 ดาว`}
+                style={{ color: "#F5B93F", fontSize: 13, marginBottom: 8, letterSpacing: 1 }}
+              >
+                <span aria-hidden="true">
+                  {"★".repeat(r.rating)}
+                  <span style={{ color: "#EDE7E1" }}>{"★".repeat(5 - r.rating)}</span>
+                </span>
               </div>
               <div style={{ fontSize: 12, color: ink, fontWeight: 500, lineHeight: 1.5, marginBottom: 10 }}>
                 &ldquo;{r.text}&rdquo;
@@ -80,13 +87,15 @@ export default function HowToBookAndFaq() {
               >
                 <button
                   onClick={() => setOpenIdx(open ? null : i)}
+                  aria-expanded={open}
                   style={{
                     width: "100%",
+                    minHeight: 44,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
                     gap: 10,
-                    padding: "12px 14px",
+                    padding: "14px 14px",
                     background: "transparent",
                     border: "none",
                     cursor: "pointer",
@@ -99,7 +108,7 @@ export default function HowToBookAndFaq() {
                     style={{
                       fontSize: 13,
                       fontWeight: 700,
-                      color: open ? accent : accent2,
+                      color: open ? accentStrong : accent2,
                       transform: open ? "rotate(45deg)" : "none",
                       transition: "transform .2s",
                       flexShrink: 0,

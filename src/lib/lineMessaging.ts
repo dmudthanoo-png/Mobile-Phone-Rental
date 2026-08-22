@@ -149,7 +149,7 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
         cornerRadius: "10px",
         paddingAll: "10px",
         contents: [
-          { type: "text", text: "✅ มัดจำแล้ว", size: "xs", color: BRAND.sub, wrap: true, align: "center" },
+          { type: "text", text: "✅ มัดจำแล้ว", size: "xxs", color: BRAND.sub, wrap: true, align: "center" },
           { type: "text", text: `฿${displayAmount(depositPaid)}`, size: "lg", weight: "bold", color: BRAND.good, margin: "xs", align: "center" },
         ],
       },
@@ -162,7 +162,7 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
         cornerRadius: "10px",
         paddingAll: "10px",
         contents: [
-          { type: "text", text: "🏷️ ค้างชำระ", size: "xs", color: BRAND.sub, wrap: true, align: "center" },
+          { type: "text", text: "🏷️ ชำระตอนรับเครื่อง", size: "xxs", color: BRAND.sub, wrap: true, align: "center" },
           { type: "text", text: `฿${displayAmount(balanceDue)}`, size: "lg", weight: "bold", color: BRAND.gradientText, margin: "xs", align: "center" },
         ],
       },

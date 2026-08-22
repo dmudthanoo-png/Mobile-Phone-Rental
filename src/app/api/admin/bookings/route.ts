@@ -27,6 +27,9 @@ export async function GET(req: NextRequest) {
       id, created_at, renter_name, renter_phone, total_amount,
       slip_url, ref_number, status, qty, add_lens, lens_price,
       slip_verified, slip_verify_message, slip_verify_amount, slip_verify_ref, slip_verified_at,
+      line_message_status, line_message_error, line_message_attempted_at,
+      line_message_sent_at, line_message_attempt_count, line_message_http_status,
+      line_message_error_detail, line_message_request_id,
       concert_sessions:session_id (
         start_at, note,
         concerts:concert_id ( title, venue_name )

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { verifySlipForBooking } from "@/lib/slipOk";
+import { findOrCreateLineUser } from "@/lib/lineSession";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,15 +69,20 @@ export async function POST(req: NextRequest) {
 
   const supabaseAdmin = createClient(url, serviceKey);
 
-  // ✅ หา user_id จาก line_sub
-  let user_id = payload?.app_user_id as string | undefined;
-  if (!user_id) {
-    const { data: ident, error: identErr } = await supabaseAdmin
-      .from("line_identities").select("user_id").eq("line_sub", lineSub).maybeSingle();
-    if (identErr) return NextResponse.json({ error: identErr.message }, { status: 500 });
-    user_id = ident?.user_id ?? undefined;
+  // ซ่อม profile ของผู้ใช้จาก LINE sub ก่อนใช้ user_id ตรวจ ownership
+  // session เก่าบางอันมี app_user_id แต่ไม่มี profiles จึงต้องไม่เชื่อค่าเดิมโดยตรง
+  const displayName = typeof payload?.name === "string" ? payload.name : null;
+  const picture = typeof payload?.picture === "string" ? payload.picture : null;
+  const linkedUser = await findOrCreateLineUser(
+    supabaseAdmin,
+    lineSub,
+    displayName,
+    picture
+  );
+  if ("error" in linkedUser) {
+    return NextResponse.json({ error: linkedUser.error }, { status: 500 });
   }
-  if (!user_id) return NextResponse.json({ error: "user not linked" }, { status: 401 });
+  const user_id = linkedUser.userId;
 
   // ✅ เช็ค ownership ด้วย user_id แทน line_sub
   const { data: bk, error: bkErr } = await supabaseAdmin

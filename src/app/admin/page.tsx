@@ -20,6 +20,14 @@ type Booking = {
   slip_verify_amount?: number | null;
   slip_verify_ref?: string | null;
   slip_verified_at?: string | null;
+  line_message_status?: "sent" | "failed" | "quota_exceeded" | null;
+  line_message_error?: string | null;
+  line_message_attempted_at?: string | null;
+  line_message_sent_at?: string | null;
+  line_message_attempt_count?: number | null;
+  line_message_http_status?: number | null;
+  line_message_error_detail?: string | null;
+  line_message_request_id?: string | null;
   concert_sessions?: {
     start_at: string | null;
     note: string | null;
@@ -34,6 +42,15 @@ type Phone   = { id: string; model_name: string; price: number; deposit: number;
 type Lens    = { id: string; name: string; focal_mm: number | null; price: number; qty: number; active: boolean };
 type Announcement = { id: string; title: string | null; subtitle: string | null; emoji: string | null; image_url: string | null; active: boolean };
 type Summary = { total: number; pending: number; confirmed: number; rejected: number; revenue: number };
+type LineQuota = {
+  status: "loading" | "connected" | "not_configured" | "error";
+  quotaType?: "limited" | "none";
+  used?: number | null;
+  limit?: number | null;
+  remaining?: number | null;
+  refreshedAt?: string;
+  loading?: boolean;
+};
 
 // ─────────────────────────────── helpers ───────────────────────────────
 const money = (n: number | null | undefined) => n != null ? `฿${n.toLocaleString("th-TH")}` : "-";
@@ -55,6 +72,66 @@ const STATUS_META = {
   confirmed: { label: "✅ ยืนยันแล้ว", pillBg: "#F0FFF4", pillBorder: "#B7EFC5", text: "#0F9D4E" },
   rejected:  { label: "❌ ปฏิเสธ",     pillBg: "#FFF1F2", pillBorder: "#F9C7D1", text: "#C43D5C" },
 };
+
+const LINE_MESSAGE_META = {
+  sent: { label: "ส่งสำเร็จ", bg: "#F0FFF4", border: "#B7EFC5", color: "#0F9D4E" },
+  failed: { label: "ส่งไม่สำเร็จ", bg: "#FFF1F2", border: "#F9C7D1", color: "#C43D5C" },
+  quota_exceeded: { label: "โควต้าหมด", bg: "#FFF7E6", border: "#F5D5A7", color: "#B56600" },
+  unknown: { label: "ยังไม่มีข้อมูลการส่ง", bg: "#F7F7F6", border: "#E5E1DD", color: "#776F68" },
+};
+
+function getLineMessageMeta(status: Booking["line_message_status"]) {
+  if (status === "sent") return LINE_MESSAGE_META.sent;
+  if (status === "failed") return LINE_MESSAGE_META.failed;
+  if (status === "quota_exceeded") return LINE_MESSAGE_META.quota_exceeded;
+  return LINE_MESSAGE_META.unknown;
+}
+
+function lineMessageFailureText(reason: string | null | undefined) {
+  switch (reason) {
+    case "not_configured": return "ยังไม่ได้ตั้งค่า Token";
+    case "missing_recipient": return "ไม่พบ LINE ของผู้จอง";
+    case "invalid_recipient": return "LINE ID ไม่ถูกต้อง";
+    case "recipient_unavailable": return "LINE ของผู้จองใช้กับ OA นี้ไม่ได้";
+    case "timed_out": return "LINE ตอบกลับช้าเกินกำหนด";
+    case "quota_exceeded": return "โควต้ารายเดือนเต็ม";
+    case "delivery_failed": return "LINE ปฏิเสธการส่ง";
+    default: return null;
+  }
+}
+
+function lineMessageDiagnostic(booking: Booking) {
+  const parts: string[] = [];
+  const reason = lineMessageFailureText(booking.line_message_error);
+  if (reason) parts.push(reason);
+
+  if (Number.isInteger(booking.line_message_http_status)) {
+    parts.push(`HTTP ${booking.line_message_http_status}`);
+  }
+
+  const detail = booking.line_message_error_detail?.replace(/\s+/g, " ").trim();
+  if (detail) parts.push(detail.slice(0, 180));
+
+  const requestId = booking.line_message_request_id?.trim();
+  if (requestId) parts.push(`Request ID: ${requestId.slice(0, 100)}`);
+
+  return parts.join(" · ");
+}
+
+function lineNotificationDiagnostic(notification: {
+  httpStatus?: unknown;
+  errorDetail?: unknown;
+}) {
+  const parts: string[] = [];
+  if (typeof notification.httpStatus === "number") {
+    parts.push(`HTTP ${notification.httpStatus}`);
+  }
+  if (typeof notification.errorDetail === "string") {
+    const detail = notification.errorDetail.replace(/\s+/g, " ").trim();
+    if (detail) parts.push(detail.slice(0, 120));
+  }
+  return parts.join(" · ");
+}
 
 // ─────────────────────────────── UI tokens ───────────────────────────────
 const UI = {
@@ -126,6 +203,7 @@ export default function AdminPage() {
   const [bQ, setBQ] = useState("");
   const [summary, setSummary] = useState<Summary>({ total:0, pending:0, confirmed:0, rejected:0, revenue:0 });
   const [slipModal, setSlipModal] = useState<string|null>(null);
+  const [lineQuota, setLineQuota] = useState<LineQuota>({ status:"loading", loading:true });
 
   // concerts
   const [concerts, setConcerts] = useState<Concert[]>([]);
@@ -182,9 +260,10 @@ export default function AdminPage() {
   const handleLogout = async () => {
     await fetch("/api/admin/logout", { method:"POST" });
     setIsAuthed(false); setBookings([]); setConcerts([]); setPhones([]);
+    setLineQuota({ status:"loading", loading:true });
   };
 
-  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchAnnouncement(); fetchSettings(); };
+  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchAnnouncement(); fetchSettings(); fetchLineQuota(); };
 
   // ── bookings ──
   const fetchBookings = async () => {
@@ -203,6 +282,21 @@ export default function AdminPage() {
     if (res.ok) setSummary(await res.json());
   };
 
+  const fetchLineQuota = async () => {
+    setLineQuota(current => ({ ...current, loading:true }));
+    try {
+      const res = await fetch("/api/admin/line/message-quota", { cache:"no-store" });
+      const out = await res.json().catch(() => null);
+      if (out?.status) {
+        setLineQuota({ ...out, loading:false });
+      } else {
+        setLineQuota({ status:"error", loading:false });
+      }
+    } catch {
+      setLineQuota({ status:"error", loading:false });
+    }
+  };
+
   const setBookingStatus = async (id: string, status: "confirmed"|"rejected") => {
     const res = await fetch(`/api/admin/bookings/${id}/status`, {
       method:"PATCH", headers:{"content-type":"application/json"},
@@ -210,8 +304,64 @@ export default function AdminPage() {
     });
     const out = await res.json().catch(()=>null);
     if (!res.ok) { showMsg(out?.error || "ไม่สำเร็จ", false); return; }
-    showMsg(status === "confirmed" ? "✅ ยืนยันแล้ว" : "❌ ปฏิเสธแล้ว");
+    if (status === "confirmed") {
+      const lineSent = out?.notification?.sent === true;
+      const lineReason = out?.notification?.reason;
+      const recorded = out?.notification?.recorded !== false;
+      if (lineSent) {
+        showMsg(
+          recorded
+            ? "✅ ยืนยันแล้ว และส่งข้อความแจ้งเตือนผ่าน LINE แล้ว"
+            : "✅ LINE รับข้อความแล้ว แต่บันทึกสถานะการส่งไม่สำเร็จ",
+          recorded
+        );
+      } else if (lineReason === "quota_exceeded") {
+        showMsg("✅ ยืนยันแล้ว แต่ LINE ส่งไม่ผ่าน: โควต้ารายเดือนเต็ม", false);
+      } else {
+        const diagnostic = lineNotificationDiagnostic(out?.notification ?? {});
+        showMsg(
+          `✅ ยืนยันแล้ว แต่ส่งข้อความแจ้งเตือนผ่าน LINE ไม่สำเร็จ${diagnostic ? ` (${diagnostic})` : ""}`,
+          false
+        );
+      }
+    } else {
+      showMsg("❌ ปฏิเสธแล้ว");
+    }
     fetchBookings(); fetchSummary();
+    if (status === "confirmed") fetchLineQuota();
+  };
+
+  const [retryingLineBookingId, setRetryingLineBookingId] = useState<string|null>(null);
+  const retryLineNotification = async (id: string) => {
+    setRetryingLineBookingId(id);
+    try {
+      const res = await fetch(`/api/admin/bookings/${id}/line-notification`, {
+        method:"POST", cache:"no-store",
+      });
+      const out = await res.json().catch(()=>null);
+      if (!res.ok) { showMsg(out?.error || "ส่ง LINE ซ้ำไม่สำเร็จ", false); return; }
+
+      const lineSent = out?.notification?.sent === true;
+      const recorded = out?.notification?.recorded !== false;
+      if (lineSent) {
+        showMsg(
+          recorded
+            ? "✅ ส่งข้อความ LINE ซ้ำสำเร็จ"
+            : "✅ LINE รับข้อความแล้ว แต่บันทึกสถานะการส่งไม่สำเร็จ",
+          recorded
+        );
+      } else if (out?.notification?.reason === "quota_exceeded") {
+        showMsg("⛔ ส่ง LINE ไม่ผ่าน: โควต้ารายเดือนเต็ม", false);
+      } else {
+        const diagnostic = lineNotificationDiagnostic(out?.notification ?? {});
+        showMsg(`🔴 ส่งข้อความ LINE ซ้ำไม่สำเร็จ${diagnostic ? ` (${diagnostic})` : ""}`, false);
+      }
+      fetchBookings(); fetchLineQuota();
+    } catch {
+      showMsg("ส่ง LINE ซ้ำไม่สำเร็จ", false);
+    } finally {
+      setRetryingLineBookingId(null);
+    }
   };
 
   const [verifyingId, setVerifyingId] = useState<string|null>(null);
@@ -550,12 +700,36 @@ export default function AdminPage() {
         fetchSummary();
         fetchConcerts();
         fetchPhones();
+        fetchLineQuota();
       }
     })();
   }, []);
 
   useEffect(() => { if (isAuthed) fetchBookings(); }, [bStatus]);
 
+  const hasLineQuota =
+    lineQuota.status === "connected" &&
+    lineQuota.quotaType === "limited" &&
+    typeof lineQuota.limit === "number";
+  const lineQuotaPercent = hasLineQuota
+    ? lineQuota.limit! > 0
+      ? Math.min(100, Math.round(((lineQuota.used ?? 0) / lineQuota.limit!) * 100))
+      : 100
+    : 0;
+  const lineQuotaColor = lineQuotaPercent >= 90 ? "#C43D5C" : lineQuotaPercent >= 70 ? "#D68A00" : "#06C755";
+  const lineQuotaRemaining = hasLineQuota
+    ? lineQuota.remaining ?? Math.max(lineQuota.limit! - (lineQuota.used ?? 0), 0)
+    : null;
+  const lineQuotaExhausted = hasLineQuota && lineQuotaRemaining === 0;
+  const lineQuotaBadge = lineQuota.loading
+    ? { label:"⏳ กำลังตรวจสอบ", background:"#F2F4F5", border:"#D8DEE2", color:"#59636B" }
+    : lineQuota.status === "connected" && lineQuotaExhausted
+      ? { label:"⛔ โควต้าหมด", background:"#FFF1F2", border:"#F9C7D1", color:"#C43D5C" }
+      : lineQuota.status === "connected"
+        ? { label:"🟢 พร้อมส่ง", background:"#F0FFF4", border:"#B7EFC5", color:"#0F9D4E" }
+        : lineQuota.status === "not_configured"
+          ? { label:"🟡 ยังไม่ได้ตั้งค่า Token", background:"#FFF9E6", border:"#F3E3B8", color:"#8A6D2F" }
+          : { label:"🔴 ติดต่อ LINE ไม่สำเร็จ", background:"#FFF1F2", border:"#F9C7D1", color:"#C43D5C" };
   // ─────────── login screen ───────────
   if (!isAuthed) return (
     <div style={{ minHeight:"100vh", background:UI.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:UI.font, color:UI.ink }}>
@@ -702,6 +876,70 @@ export default function AdminPage() {
           ))}
         </div>
 
+        {/* LINE Messaging API status + current-month quota */}
+        <div style={{ ...card, padding:"14px 16px", marginBottom:14, border:"1px solid #B7EFC5", background:"#FBFFFC" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, flexWrap:"wrap", marginBottom:12 }}>
+            <div>
+              <div style={{ fontWeight:700, fontSize:15, color:UI.ink }}>💬 LINE แจ้งเตือนการอนุมัติ</div>
+              <div style={{ fontSize:11, color:UI.muted, fontWeight:700, marginTop:2 }}>สถานะ Messaging API และโควต้าการส่งข้อความของเดือนนี้</div>
+            </div>
+            <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+              <div style={{
+                borderRadius:999,
+                padding:"5px 10px",
+                fontWeight:800,
+                fontSize:12,
+                background: lineQuotaBadge.background,
+                border: `1px solid ${lineQuotaBadge.border}`,
+                color: lineQuotaBadge.color,
+              }}>
+                {lineQuotaBadge.label}
+              </div>
+              <button onClick={fetchLineQuota} disabled={lineQuota.loading} style={btnStyle("white", Boolean(lineQuota.loading))}>
+                {lineQuota.loading ? "⏳ กำลังโหลด" : "🔄 อัปเดตโควต้า"}
+              </button>
+            </div>
+          </div>
+
+          {hasLineQuota && (
+            <div>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:10, flexWrap:"wrap", marginBottom:7 }}>
+                <div style={{ fontWeight:700, fontSize:16, color:UI.ink }}>
+                  ส่งแล้ว {(lineQuota.used ?? 0).toLocaleString("th-TH")} / {lineQuota.limit!.toLocaleString("th-TH")} ข้อความ
+                </div>
+                <div style={{ fontSize:12, color:lineQuotaColor, fontWeight:800 }}>
+                  เหลือ {(lineQuotaRemaining ?? 0).toLocaleString("th-TH")} ข้อความ
+                </div>
+              </div>
+              <div style={{ height:10, borderRadius:999, overflow:"hidden", background:"#E8EEEA" }} aria-label={`ใช้โควต้า LINE ${lineQuotaPercent}%`}>
+                <div style={{ height:"100%", width:`${lineQuotaPercent}%`, background:lineQuotaColor, borderRadius:999, transition:"width .2s ease" }} />
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", gap:10, flexWrap:"wrap", marginTop:7, fontSize:11, color:UI.muted, fontWeight:700 }}>
+                <span>ใช้ไป {lineQuotaPercent}% ในเดือนนี้</span>
+                {lineQuota.refreshedAt && <span>อัปเดต {fmtDT(lineQuota.refreshedAt)}</span>}
+              </div>
+            </div>
+          )}
+
+          {lineQuota.status === "connected" && lineQuota.quotaType === "none" && (
+            <div style={{ fontSize:13, fontWeight:700, color:"#0F9D4E" }}>
+              🟢 เชื่อมต่อสำเร็จ · ส่งแล้ว {(lineQuota.used ?? 0).toLocaleString("th-TH")} ข้อความในเดือนนี้ · แพ็กเกจนี้ไม่มีเพดานโควต้า
+            </div>
+          )}
+
+          {lineQuota.status === "not_configured" && !lineQuota.loading && (
+            <div style={{ fontSize:13, fontWeight:700, color:"#8A6D2F" }}>
+              เพิ่ม <code>LINE_MESSAGING_CHANNEL_ACCESS_TOKEN</code> ใน Environment Variables ก่อนเริ่มส่งข้อความ
+            </div>
+          )}
+
+          {lineQuota.status === "error" && !lineQuota.loading && (
+            <div style={{ fontSize:13, fontWeight:700, color:"#C43D5C" }}>
+              ตรวจสอบ Token ของ Messaging API และการเชื่อมต่อกับ LINE แล้วกดอัปเดตอีกครั้ง
+            </div>
+          )}
+        </div>
+
         {/* ═══════════════ TAB: BOOKINGS ═══════════════ */}
         {tab === "bookings" && (
           <div>
@@ -730,6 +968,14 @@ export default function AdminPage() {
                 const venue        = b.concert_sessions?.concerts?.venue_name ?? "-";
                 const phoneModel   = b.phones?.model_name ?? "-";
                 const firstChar    = (b.renter_name || "U").trim()[0]?.toUpperCase() ?? "U";
+                const lineMessageMeta = getLineMessageMeta(b.line_message_status);
+                const canRetryLine =
+                  b.status === "confirmed" &&
+                  (b.line_message_status == null || b.line_message_status === "failed" || b.line_message_status === "quota_exceeded");
+                const lineStatusAt = b.line_message_status === "sent"
+                  ? b.line_message_sent_at
+                  : b.line_message_attempted_at;
+                const lineFailure = lineMessageDiagnostic(b);
 
                 return (
                   <div key={b.id} style={card}>
@@ -756,6 +1002,17 @@ export default function AdminPage() {
                           <div style={{ borderRadius:999, border:`1px solid ${meta.pillBorder}`, background:meta.pillBg, padding:"5px 12px", fontWeight:700, color:meta.text, fontSize:12 }}>
                             {meta.label}
                           </div>
+                          {b.status === "confirmed" && (
+                            <div style={{
+                              borderRadius:999, border:`1px solid ${lineMessageMeta.border}`, background:lineMessageMeta.bg,
+                              padding:"5px 12px", fontWeight:700, color:lineMessageMeta.color, fontSize:12,
+                            }}>
+                              💬 LINE: {lineMessageMeta.label}
+                              {b.line_message_attempt_count ? ` · ${b.line_message_attempt_count} ครั้ง` : ""}
+                              {lineStatusAt ? ` · ${fmtDT(lineStatusAt)}` : ""}
+                              {lineFailure ? ` (${lineFailure})` : ""}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -802,6 +1059,25 @@ export default function AdminPage() {
                         </button>
                         <button disabled={!pending||loading} onClick={()=>setBookingStatus(b.id,"confirmed")} style={btnStyle("green",!pending||loading)}>✅ ยืนยัน</button>
                         <button disabled={!pending||loading} onClick={()=>setBookingStatus(b.id,"rejected")} style={btnStyle("red",!pending||loading)}>❌ ปฏิเสธ</button>
+                        {canRetryLine && (
+                          <button
+                            disabled={retryingLineBookingId===b.id}
+                            onClick={() => {
+                              if (
+                                b.line_message_status == null &&
+                                !window.confirm("รายการนี้ไม่มีประวัติการส่ง LINE ต้องการส่งข้อความแจ้งเตือนตอนนี้หรือไม่?")
+                              ) return;
+                              retryLineNotification(b.id);
+                            }}
+                            style={btnStyle("blue", retryingLineBookingId===b.id)}
+                          >
+                            {retryingLineBookingId===b.id
+                              ? "⏳ กำลังส่ง LINE..."
+                              : b.line_message_status == null
+                                ? "✉️ ส่ง LINE ตอนนี้"
+                                : "↻ ส่ง LINE อีกครั้ง"}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

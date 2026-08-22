@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import {
+  sendAndRecordBookingApprovalLineMessage,
+  type BookingLineNotificationResult,
+  type BookingLineNotificationRow,
+} from "@/lib/lineBookingNotification";
 import { syncBookingToSheet } from "@/lib/sheetsSync";
 
 const uuidRe =
@@ -59,35 +64,42 @@ export async function PATCH(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
   } else {
-    const { error } = await supabase
+    // เปลี่ยนได้เฉพาะรายการที่กำลังรอตรวจสอบ เพื่อกันการกดซ้ำแล้วส่ง LINE ซ้ำ
+    const { data: updatedBooking, error } = await supabase
       .from("bookings")
       .update({ status })
-      .eq("id", id);
+      .eq("id", id)
+      .in("status", ["pending", "waiting_review"])
+      .select("id")
+      .maybeSingle();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!updatedBooking) {
+      return NextResponse.json(
+        { error: "booking ไม่ได้อยู่ในสถานะรอตรวจสอบ" },
+        { status: 409 }
+      );
+    }
   }
 
-  // sync สถานะล่าสุดไป Google Sheet แบบ best-effort (ไม่บล็อก response)
-  const { data: bookingRowRaw } = await supabase
+  // ดึงข้อมูลล่าสุดสำหรับ sync Google Sheet และแจ้งผู้จองผ่าน LINE
+  const { data: bookingRowRaw, error: bookingRowError } = await supabase
     .from("bookings")
     .select(
-      "ref_number, renter_name, renter_phone, qty, lens_qty, total_amount, created_at, " +
+      "user_id, line_sub, ref_number, renter_name, renter_phone, qty, lens_qty, total_amount, created_at, line_message_attempt_count, " +
       "phones ( model_name ), lenses ( name ), " +
       "concert_sessions ( start_at, note, concerts ( title ) )"
     )
     .eq("id", id)
     .maybeSingle();
 
-  type BookingSyncRow = {
-    ref_number: string | null;
+  if (bookingRowError) {
+    console.error("booking details lookup failed:", bookingRowError.message);
+  }
+
+  type BookingSyncRow = BookingLineNotificationRow & {
     renter_name: string;
     renter_phone: string;
-    qty: number | null;
-    lens_qty: number | null;
-    total_amount: number | null;
     created_at: string | null;
-    phones: { model_name: string } | null;
-    lenses: { name: string } | null;
-    concert_sessions: { start_at: string | null; note: string | null; concerts: { title: string } | null } | null;
   };
   const bookingRow = bookingRowRaw as unknown as BookingSyncRow | null;
 
@@ -113,6 +125,37 @@ export async function PATCH(
       lens_qty: bookingRow.lens_qty ?? null,
       total_amount: bookingRow.total_amount ?? null,
       created_at: bookingRow.created_at ?? null,
+    });
+  }
+
+  let lineDelivery: BookingLineNotificationResult | undefined;
+  if (status === "confirmed") {
+    if (bookingRow) {
+      lineDelivery = await sendAndRecordBookingApprovalLineMessage(supabase, id, bookingRow);
+    } else {
+      console.error("LINE approval notification skipped: booking details could not be loaded");
+    }
+  }
+
+  if (status === "confirmed") {
+    const notification = lineDelivery?.result ?? {
+      sent: false as const,
+      reason: "delivery_failed" as const,
+    };
+    const recorded = Boolean(lineDelivery && !lineDelivery.recordError);
+
+    return NextResponse.json({
+      ok: true,
+      notification: notification.sent
+        ? { sent: true, recorded }
+        : {
+            sent: false,
+            reason: notification.reason,
+            httpStatus: notification.httpStatus ?? null,
+            errorDetail: notification.errorDetail ?? null,
+            requestId: notification.requestId ?? null,
+            recorded,
+          },
     });
   }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { findOrCreateLineUser } from "@/lib/lineSession";
 
 export const runtime = "nodejs"; // ✅ สำคัญ: crypto ใช้บน node runtime
 export const dynamic = "force-dynamic";
@@ -111,17 +112,18 @@ export async function POST(req: NextRequest) {
 
     const supabaseAdmin = createClient(url, serviceKey);
 
-    // 3) หา profiles.id จาก line_sub => user_id
-    const prof = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .eq("line_sub", lineSub)
-      .maybeSingle();
-
-    if (prof.error) return NextResponse.json({ error: prof.error.message }, { status: 500 });
-
-    const user_id = prof.data?.id as string | undefined;
-    if (!user_id) return NextResponse.json({ error: "profile_not_found" }, { status: 400 });
+    // 3) ซ่อม profiles ที่หายไปจาก session เก่า ก่อนเข้าสู่ขั้นตอนชำระเงิน
+    const displayName = typeof payload?.name === "string" ? payload.name : null;
+    const picture = typeof payload?.picture === "string" ? payload.picture : null;
+    const linkedUser = await findOrCreateLineUser(
+      supabaseAdmin,
+      lineSub,
+      displayName,
+      picture
+    );
+    if ("error" in linkedUser) {
+      return NextResponse.json({ error: linkedUser.error }, { status: 500 });
+    }
 
     // 4) เช็ค inventory.qty ของรอบนี้ + รุ่นนี้
     const inv = await supabaseAdmin

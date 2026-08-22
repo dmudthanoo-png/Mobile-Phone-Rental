@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { findOrCreateLineUser } from "@/lib/lineSession";
 
 function base64urlToBuffer(b64url: string) {
   const b64 =
@@ -59,32 +60,22 @@ export async function POST(req: NextRequest) {
     const lineSub = payload?.line_sub as string | undefined;
     if (!lineSub) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-    // ✅ เอา user_id จาก payload ก่อน (ใหม่)
-    let userId = payload?.app_user_id as string | undefined;
+    // ใช้ LINE sub เป็นตัวตนหลัก และสร้าง/ซ่อม profile สำหรับ session เก่า
+    // ก่อน insert bookings เพื่อผ่าน FK ของ bookings.user_id -> profiles.id
+    const displayName = typeof payload.name === "string" ? payload.name : null;
+    const picture = typeof payload.picture === "string" ? payload.picture : null;
+    const linkedUser = await findOrCreateLineUser(
+      supabaseAdmin,
+      lineSub,
+      displayName,
+      picture
+    );
 
-    // ✅ fallback (รองรับ session เก่า): lookup จาก line_identities
-    if (!userId) {
-      const { data: ident, error: identErr } = await supabaseAdmin
-        .from("line_identities")
-        .select("user_id")
-        .eq("line_sub", lineSub)
-        .maybeSingle();
-
-      if (identErr) {
-        console.error("line_identities lookup error:", identErr);
-        return NextResponse.json({ error: `identity lookup failed: ${identErr.message}` }, { status: 500 });
-      }
-
-      userId = ident?.user_id ?? undefined;
+    if ("error" in linkedUser) {
+      return NextResponse.json({ error: linkedUser.error }, { status: 500 });
     }
 
-    // ถ้ายังไม่มี แสดงว่า user ยังไม่ได้ถูกสร้าง/ผูกจาก callback
-    if (!userId) {
-      return NextResponse.json(
-        { error: "user not linked. please login again." },
-        { status: 401 }
-      );
-    }
+    const userId = linkedUser.userId;
 
     const form = await req.formData();
 

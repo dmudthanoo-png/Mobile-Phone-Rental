@@ -1060,8 +1060,11 @@ export default function PhoneRentalHome() {
               <p style={{ fontSize: 15, color: sub, fontWeight: 500, marginBottom: 8, lineHeight: 1.6 }}>
                 ระบบยืนยันการจองแล้ว พบกันที่คอนเสิร์ต 🎶
               </p>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: violetSoft, borderRadius: 999, padding: "6px 14px", marginBottom: 16, fontSize: 12, fontWeight: 700, color: accent2 }}>
-                💌 เพิ่มเพื่อน LINE OA เพื่อรับการแจ้งเตือนทันทีที่แอดมินยืนยันการจอง
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: violetSoft, border: `1.5px solid ${accent2}`, borderRadius: 16, padding: "14px 18px", marginBottom: 16, boxShadow: "0 6px 18px -8px rgba(131,84,232,0.35)" }}>
+                <span style={{ fontSize: 22, flexShrink: 0 }}>💌</span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: accent2, lineHeight: 1.5, textAlign: "left" }}>
+                  เพิ่มเพื่อน LINE OA เพื่อรับการแจ้งเตือนทันทีที่แอดมินยืนยันการจอง
+                </span>
               </div>
               <div style={{ ...doodle.cardYellow, padding: 16, marginBottom: 16, textAlign: "left", color: ink }}>
                 <div style={{ textAlign: "center", marginBottom: 12, paddingBottom: 12, borderBottom: `1px dashed ${borderStrong}` }}>

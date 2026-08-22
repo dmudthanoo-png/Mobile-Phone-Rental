@@ -130,17 +130,44 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
       ? [flexRow("🔭 เลนส์เสริม", `${displayValue(input.lensName)} × ${lensQty} ชิ้น`, { highlightBg: BRAND.peachSoft })]
       : []),
     flexRow("💰 ยอดเช่ารวม", `฿${displayAmount(totalAmount)}`, { emphasize: true }),
-    flexRow("✅ โอนแล้ว (มัดจำ)", `฿${displayAmount(depositPaid)}`, {
-      emphasize: true,
-      valueColor: BRAND.good,
-      highlightBg: BRAND.goodSoft,
-    }),
-    flexRow("🏷️ ชำระตอนรับเครื่อง", `฿${displayAmount(balanceDue)}`, {
-      emphasize: true,
-      valueColor: BRAND.gradientText,
-      highlightBg: BRAND.peachSoft,
-    }),
   ];
+
+  // กล่องสรุปมัดจำ/ค้างชำระ แยกออกมาเป็น 2 ช่องคู่กัน (ไม่ใช้ label|value แถวเดียว
+  // เพราะป้ายกำกับยาวเกินจนตัดคำภาษาไทยกลางคำตอนห่อบรรทัดในบับเบิลแคบๆ)
+  const paymentSplit = {
+    type: "box",
+    layout: "horizontal",
+    margin: "md",
+    spacing: "sm",
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        alignItems: "center",
+        backgroundColor: BRAND.goodSoft,
+        cornerRadius: "10px",
+        paddingAll: "10px",
+        contents: [
+          { type: "text", text: "✅ มัดจำแล้ว", size: "xs", color: BRAND.sub, wrap: true, align: "center" },
+          { type: "text", text: `฿${displayAmount(depositPaid)}`, size: "lg", weight: "bold", color: BRAND.good, margin: "xs", align: "center" },
+        ],
+      },
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        alignItems: "center",
+        backgroundColor: BRAND.peachSoft,
+        cornerRadius: "10px",
+        paddingAll: "10px",
+        contents: [
+          { type: "text", text: "🏷️ ค้างชำระ", size: "xs", color: BRAND.sub, wrap: true, align: "center" },
+          { type: "text", text: `฿${displayAmount(balanceDue)}`, size: "lg", weight: "bold", color: BRAND.gradientText, margin: "xs", align: "center" },
+        ],
+      },
+    ],
+  };
 
   const origin = resolveAppOrigin();
 
@@ -216,6 +243,7 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
         { type: "text", text: "📋 รายละเอียดการจอง", color: BRAND.gradientText, weight: "bold", size: "sm" },
         { type: "separator", color: BRAND.line, margin: "md" },
         { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: rows },
+        paymentSplit,
         { type: "separator", color: BRAND.line, margin: "md" },
         {
           type: "box",

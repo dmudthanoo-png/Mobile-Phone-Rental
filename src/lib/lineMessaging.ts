@@ -35,6 +35,7 @@ const BRAND = {
   accent: "#F2467E",
   accentStrong: "#D81F5E",
   accent2: "#8354E8",
+  accentSoft: "#FFE3EE",
   ink: "#241F1C",
   sub: "#7A6D61",
   muted: "#AB9C8D",
@@ -113,14 +114,14 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
   const hasLens = Boolean(input.lensName && lensQty > 0);
 
   const rows = [
-    flexRow("งาน", displayValue(input.concertTitle)),
-    ...(input.renterName ? [flexRow("ผู้จอง", displayValue(input.renterName))] : []),
-    flexRow("รอบ", displayValue(input.sessionLabel)),
-    flexRow("มือถือ", `${displayValue(input.phoneModel)} × ${displayQty(input.qty)} เครื่อง`),
+    flexRow("🎫 งาน", displayValue(input.concertTitle)),
+    ...(input.renterName ? [flexRow("👤 ผู้จอง", displayValue(input.renterName))] : []),
+    flexRow("🕐 รอบ", displayValue(input.sessionLabel)),
+    flexRow("📱 มือถือ", `${displayValue(input.phoneModel)} × ${displayQty(input.qty)} เครื่อง`),
     ...(hasLens
-      ? [flexRow("เลนส์เสริม", `${displayValue(input.lensName)} × ${lensQty} ชิ้น`, { highlightBg: BRAND.violetSoft })]
+      ? [flexRow("🔭 เลนส์เสริม", `${displayValue(input.lensName)} × ${lensQty} ชิ้น`, { highlightBg: BRAND.violetSoft })]
       : []),
-    flexRow("ยอดชำระ", `฿${displayAmount(input.totalAmount)}`, { emphasize: true }),
+    flexRow("💰 ยอดชำระ", `฿${displayAmount(input.totalAmount)}`, { emphasize: true, highlightBg: BRAND.accentSoft }),
   ];
 
   const origin = resolveAppOrigin();
@@ -135,7 +136,9 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
         type: "linearGradient",
         angle: "135deg",
         startColor: BRAND.accent,
-        endColor: BRAND.accentStrong,
+        centerColor: BRAND.accentStrong,
+        endColor: BRAND.accent2,
+        centerPosition: "60%",
       },
       contents: [
         {
@@ -160,7 +163,7 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
             },
             {
               type: "text",
-              text: "จองสำเร็จแล้ว",
+              text: "🎉 จองสำเร็จแล้ว",
               color: BRAND.white,
               size: "xl",
               weight: "bold",
@@ -170,12 +173,31 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
         },
       ],
     },
+    ...(origin
+      ? {
+          hero: {
+            type: "box",
+            layout: "vertical",
+            paddingAll: "16px",
+            backgroundColor: BRAND.white,
+            contents: [
+              {
+                type: "image",
+                url: `${origin}/crabby-logo.png`,
+                size: "sm",
+                align: "center",
+                aspectMode: "fit",
+              },
+            ],
+          },
+        }
+      : {}),
     body: {
       type: "box",
       layout: "vertical",
       paddingAll: "20px",
       contents: [
-        { type: "text", text: "รายละเอียดการจอง", color: BRAND.accentStrong, weight: "bold", size: "sm" },
+        { type: "text", text: "📋 รายละเอียดการจอง", color: BRAND.accentStrong, weight: "bold", size: "sm" },
         { type: "separator", color: BRAND.line, margin: "md" },
         { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: rows },
         { type: "separator", color: BRAND.line, margin: "md" },
@@ -184,13 +206,14 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
           layout: "vertical",
           margin: "md",
           alignItems: "center",
+          backgroundColor: BRAND.accentSoft,
           borderWidth: "1px",
           borderColor: BRAND.accent,
           cornerRadius: "12px",
           paddingAll: "12px",
           contents: [
-            { type: "text", text: "เลขที่การจอง", color: BRAND.sub, size: "xs" },
-            { type: "text", text: displayValue(input.refNumber), color: BRAND.ink, size: "lg", weight: "bold", margin: "xs" },
+            { type: "text", text: "🔖 เลขที่การจอง", color: BRAND.sub, size: "xs" },
+            { type: "text", text: displayValue(input.refNumber), color: BRAND.accentStrong, size: "lg", weight: "bold", margin: "xs" },
           ],
         },
       ],
@@ -209,7 +232,7 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
                 color: BRAND.accentStrong,
                 action: {
                   type: "uri",
-                  label: "ดูรายละเอียดการจอง",
+                  label: "📋 ดูรายละเอียดการจอง",
                   uri: `${origin}/bookings`,
                 },
               },
@@ -217,7 +240,7 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
           : []),
         {
           type: "text",
-          text: "ขอบคุณที่ใช้บริการ CRABBY เช่ามือถือ",
+          text: "💌 ขอบคุณที่ใช้บริการ CRABBY เช่ามือถือ",
           size: "xs",
           color: BRAND.muted,
           align: "center",

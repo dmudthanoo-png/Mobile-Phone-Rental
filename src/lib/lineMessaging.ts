@@ -9,6 +9,7 @@ type BookingApprovedLineMessageInput = {
   lensName: string | null;
   lensQty: number | null;
   totalAmount: number | null;
+  depositPaid: number | null;
 };
 
 export type LinePushResult =
@@ -39,6 +40,8 @@ const BRAND = {
   gradientStart: "#FF9966",
   gradientText: "#C1440E",
   peachSoft: "#FFE8D6",
+  good: "#14B866",
+  goodSoft: "#E1FAEC",
   ink: "#241F1C",
   sub: "#7A6D61",
   muted: "#AB9C8D",
@@ -73,7 +76,7 @@ function resolveAppOrigin() {
   }
 }
 
-type FlexRowOptions = { emphasize?: boolean; highlightBg?: string };
+type FlexRowOptions = { emphasize?: boolean; highlightBg?: string; valueColor?: string };
 
 function flexRow(label: string, value: string, opts: FlexRowOptions = {}) {
   return {
@@ -96,7 +99,7 @@ function flexRow(label: string, value: string, opts: FlexRowOptions = {}) {
       {
         type: "text",
         text: value,
-        color: opts.emphasize ? BRAND.accentStrong : BRAND.ink,
+        color: opts.valueColor ?? (opts.emphasize ? BRAND.accentStrong : BRAND.ink),
         size: opts.emphasize ? "md" : "sm",
         weight: opts.emphasize ? "bold" : "regular",
         flex: 3,
@@ -114,6 +117,9 @@ function flexRow(label: string, value: string, opts: FlexRowOptions = {}) {
 function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput) {
   const lensQty = Number.isFinite(input.lensQty) ? Math.max(Number(input.lensQty), 0) : 0;
   const hasLens = Boolean(input.lensName && lensQty > 0);
+  const totalAmount = Number(input.totalAmount ?? 0);
+  const depositPaid = Math.max(0, Number(input.depositPaid ?? 0));
+  const balanceDue = Math.max(0, totalAmount - depositPaid);
 
   const rows = [
     flexRow("🎫 งาน", displayValue(input.concertTitle)),
@@ -123,7 +129,17 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
     ...(hasLens
       ? [flexRow("🔭 เลนส์เสริม", `${displayValue(input.lensName)} × ${lensQty} ชิ้น`, { highlightBg: BRAND.peachSoft })]
       : []),
-    flexRow("💰 ยอดชำระ", `฿${displayAmount(input.totalAmount)}`, { emphasize: true, highlightBg: BRAND.accentSoft }),
+    flexRow("💰 ยอดเช่ารวม", `฿${displayAmount(totalAmount)}`, { emphasize: true }),
+    flexRow("✅ โอนแล้ว (มัดจำ)", `฿${displayAmount(depositPaid)}`, {
+      emphasize: true,
+      valueColor: BRAND.good,
+      highlightBg: BRAND.goodSoft,
+    }),
+    flexRow("🏷️ ชำระตอนรับเครื่อง", `฿${displayAmount(balanceDue)}`, {
+      emphasize: true,
+      valueColor: BRAND.gradientText,
+      highlightBg: BRAND.peachSoft,
+    }),
   ];
 
   const origin = resolveAppOrigin();
@@ -234,7 +250,7 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
               {
                 type: "button",
                 style: "primary",
-                color: BRAND.accentStrong,
+                color: BRAND.gradientText,
                 action: {
                   type: "uri",
                   label: "📋 ดูรายละเอียดการจอง",

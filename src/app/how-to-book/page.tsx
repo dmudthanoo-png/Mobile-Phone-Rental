@@ -60,7 +60,7 @@ const webSteps = [
   { image: "/how-to-book/step-02-select-phone-and-time-v2.png", title: "เลือกรอบ & มือถือ", desc: "เลือกรอบการแสดงและรุ่นมือถือที่ต้องการ" },
   { image: "/how-to-book/step-03-enter-renter-details-v2.png", title: "กรอกข้อมูลผู้เช่า", desc: "กรอกชื่อและเบอร์โทรศัพท์ผู้เช่า" },
   { image: "/how-to-book/step-04-pay-deposit-v2.png", title: "ชำระเงิน (มัดจำ)", desc: "โอนค่ามัดจำแล้วแนบสลิปยืนยัน" },
-  { image: "/how-to-book/step-05-booking-confirmed-v2.png", title: "เสร็จสิ้น รับเลขจอง", desc: "ระบบออกหมายเลขการจองให้ทันที" },
+  { image: "/how-to-book/step-05-booking-confirmed-v2.png", title: "เสร็จสิ้น รับเลขจอง", desc: "ระบบออกหมายเลขการจองให้ทันที อย่าลืมเพิ่มเพื่อน LINE OA เพื่อรับการแจ้งเตือนยืนยันการจอง" },
 ];
 
 const fulfillmentSteps = [

@@ -1057,9 +1057,12 @@ export default function PhoneRentalHome() {
             <div style={{ textAlign: "center", paddingTop: 16 }}>
               <div style={{ fontSize: 48, marginBottom: 8 }}>🎉</div>
               <div style={{ fontWeight: 800, fontSize: 22, marginBottom: 4, color: ink }}>จองสำเร็จแล้ว!</div>
-              <p style={{ fontSize: 15, color: sub, fontWeight: 500, marginBottom: 16, lineHeight: 1.6 }}>
+              <p style={{ fontSize: 15, color: sub, fontWeight: 500, marginBottom: 8, lineHeight: 1.6 }}>
                 ระบบยืนยันการจองแล้ว พบกันที่คอนเสิร์ต 🎶
               </p>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: violetSoft, borderRadius: 999, padding: "6px 14px", marginBottom: 16, fontSize: 12, fontWeight: 700, color: accent2 }}>
+                💌 เพิ่มเพื่อน LINE OA เพื่อรับการแจ้งเตือนทันทีที่แอดมินยืนยันการจอง
+              </div>
               <div style={{ ...doodle.cardYellow, padding: 16, marginBottom: 16, textAlign: "left", color: ink }}>
                 <div style={{ textAlign: "center", marginBottom: 12, paddingBottom: 12, borderBottom: `1px dashed ${borderStrong}` }}>
                   <div style={{ fontSize: 12, color: sub, fontWeight: 600 }}>หมายเลขการจอง</div>

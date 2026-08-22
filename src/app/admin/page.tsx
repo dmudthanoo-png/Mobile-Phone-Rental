@@ -705,7 +705,15 @@ export default function AdminPage() {
     })();
   }, []);
 
-  useEffect(() => { if (isAuthed) fetchBookings(); }, [bStatus]);
+  useEffect(() => { if (isAuthed) { fetchBookings(); fetchSummary(); } }, [bStatus]);
+
+  // ── auto-refresh: ดึงรายการจอง + ตัวเลขสรุปใหม่เป็นระยะ กันหน้าค้างตอนมีลูกค้าจองเข้ามาใหม่ ──
+  useEffect(() => {
+    if (!isAuthed) return;
+    const id = setInterval(() => { fetchBookings(); fetchSummary(); }, 20000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthed, bStatus, bQ]);
 
   const hasLineQuota =
     lineQuota.status === "connected" &&

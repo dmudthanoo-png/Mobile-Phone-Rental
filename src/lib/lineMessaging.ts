@@ -1,9 +1,7 @@
-import { createLineBookingCardUrls } from "@/lib/lineBookingCard";
-
 type BookingApprovedLineMessageInput = {
-  bookingId: string;
   lineUserId: string | null | undefined;
   refNumber: string | null;
+  renterName: string | null;
   concertTitle: string | null;
   sessionLabel: string | null;
   phoneModel: string | null;
@@ -32,6 +30,19 @@ export type LinePushResult =
 
 const lineUserIdRe = /^U[0-9a-f]{32}$/i;
 
+// ── brand tokens (ต้องตรงกับธีมเว็บ: accent ชมพู + accentStrong เข้ม + accent2 ม่วง) ──
+const BRAND = {
+  accent: "#F2467E",
+  accentStrong: "#D81F5E",
+  accent2: "#8354E8",
+  ink: "#241F1C",
+  sub: "#7A6D61",
+  muted: "#AB9C8D",
+  line: "#F2E4D6",
+  violetSoft: "#EFE6FF",
+  white: "#FFFFFF",
+};
+
 function displayValue(value: string | null | undefined, fallback = "-") {
   const normalized = value?.replace(/\s+/g, " ").trim();
   return normalized ? normalized.slice(0, 300) : fallback;
@@ -48,30 +59,177 @@ function displayAmount(value: number | null) {
   );
 }
 
-function buildBookingApprovedText(input: BookingApprovedLineMessageInput) {
-  const lines = [
-    "🎉 การจองของคุณได้รับการยืนยันแล้ว",
-    "",
-    `เลขที่การจอง: ${displayValue(input.refNumber)}`,
-    `งาน: ${displayValue(input.concertTitle)}`,
-    `รอบ: ${displayValue(input.sessionLabel)}`,
-    `มือถือ: ${displayValue(input.phoneModel)} × ${displayQty(input.qty)} เครื่อง`,
+function resolveAppOrigin() {
+  const raw = process.env.APP_BASE_URL?.trim();
+  if (!raw) return null;
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    return new URL(withProtocol).origin;
+  } catch {
+    return null;
+  }
+}
+
+type FlexRowOptions = { emphasize?: boolean; highlightBg?: string };
+
+function flexRow(label: string, value: string, opts: FlexRowOptions = {}) {
+  return {
+    type: "box",
+    layout: "baseline",
+    spacing: "sm",
+    ...(opts.highlightBg
+      ? { backgroundColor: opts.highlightBg, cornerRadius: "8px", paddingAll: "6px" }
+      : {}),
+    contents: [
+      {
+        type: "text",
+        text: label,
+        color: BRAND.sub,
+        size: "sm",
+        weight: "bold",
+        flex: 2,
+        wrap: true,
+      },
+      {
+        type: "text",
+        text: value,
+        color: opts.emphasize ? BRAND.accentStrong : BRAND.ink,
+        size: opts.emphasize ? "md" : "sm",
+        weight: opts.emphasize ? "bold" : "regular",
+        flex: 3,
+        wrap: true,
+      },
+    ],
+  };
+}
+
+/**
+ * สร้าง LINE Flex Message การ์ดยืนยันการจอง — แทนที่การ์ดรูปภาพเดิม (next/og)
+ * ข้อดี: ไม่ต้องพึ่ง public HTTPS origin สำหรับรูป จึงใช้งานได้เหมือนกันทั้ง
+ * local dev และ production, และแก้ไขดีไซน์ได้ทันทีโดยไม่ต้อง deploy รูปใหม่
+ */
+function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput) {
+  const lensQty = Number.isFinite(input.lensQty) ? Math.max(Number(input.lensQty), 0) : 0;
+  const hasLens = Boolean(input.lensName && lensQty > 0);
+
+  const rows = [
+    flexRow("งาน", displayValue(input.concertTitle)),
+    ...(input.renterName ? [flexRow("ผู้จอง", displayValue(input.renterName))] : []),
+    flexRow("รอบ", displayValue(input.sessionLabel)),
+    flexRow("มือถือ", `${displayValue(input.phoneModel)} × ${displayQty(input.qty)} เครื่อง`),
+    ...(hasLens
+      ? [flexRow("เลนส์เสริม", `${displayValue(input.lensName)} × ${lensQty} ชิ้น`, { highlightBg: BRAND.violetSoft })]
+      : []),
+    flexRow("ยอดชำระ", `฿${displayAmount(input.totalAmount)}`, { emphasize: true }),
   ];
 
-  const lensQty = Number.isFinite(input.lensQty)
-    ? Math.max(Number(input.lensQty), 0)
-    : 0;
-  if (input.lensName && lensQty > 0) {
-    lines.push(`เลนส์: ${displayValue(input.lensName)} × ${lensQty} ชิ้น`);
-  }
+  const origin = resolveAppOrigin();
 
-  lines.push(
-    `ยอดชำระ: ฿${displayAmount(input.totalAmount)}`,
-    "",
-    "ดูรายละเอียดได้ที่เมนู ‘ประวัติการจอง’ ในระบบ"
-  );
+  const bubble = {
+    type: "bubble",
+    header: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "20px",
+      background: {
+        type: "linearGradient",
+        angle: "135deg",
+        startColor: BRAND.accent,
+        endColor: BRAND.accentStrong,
+      },
+      contents: [
+        {
+          type: "box",
+          layout: "horizontal",
+          spacing: "md",
+          alignItems: "center",
+          contents: [
+            {
+              type: "box",
+              layout: "vertical",
+              width: "32px",
+              height: "32px",
+              cornerRadius: "16px",
+              borderWidth: "2px",
+              borderColor: "#FFFFFF",
+              justifyContent: "center",
+              alignItems: "center",
+              contents: [
+                { type: "text", text: "✓", color: BRAND.white, size: "md", weight: "bold", align: "center" },
+              ],
+            },
+            {
+              type: "text",
+              text: "จองสำเร็จแล้ว",
+              color: BRAND.white,
+              size: "xl",
+              weight: "bold",
+              wrap: true,
+            },
+          ],
+        },
+      ],
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "20px",
+      contents: [
+        { type: "text", text: "รายละเอียดการจอง", color: BRAND.accentStrong, weight: "bold", size: "sm" },
+        { type: "separator", color: BRAND.line, margin: "md" },
+        { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: rows },
+        { type: "separator", color: BRAND.line, margin: "md" },
+        {
+          type: "box",
+          layout: "vertical",
+          margin: "md",
+          alignItems: "center",
+          borderWidth: "1px",
+          borderColor: BRAND.accent,
+          cornerRadius: "12px",
+          paddingAll: "12px",
+          contents: [
+            { type: "text", text: "เลขที่การจอง", color: BRAND.sub, size: "xs" },
+            { type: "text", text: displayValue(input.refNumber), color: BRAND.ink, size: "lg", weight: "bold", margin: "xs" },
+          ],
+        },
+      ],
+    },
+    footer: {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "16px",
+      spacing: "sm",
+      contents: [
+        ...(origin
+          ? [
+              {
+                type: "button",
+                style: "primary",
+                color: BRAND.accentStrong,
+                action: {
+                  type: "uri",
+                  label: "ดูรายละเอียดการจอง",
+                  uri: `${origin}/bookings`,
+                },
+              },
+            ]
+          : []),
+        {
+          type: "text",
+          text: "ขอบคุณที่ใช้บริการ CRABBY เช่ามือถือ",
+          size: "xs",
+          color: BRAND.muted,
+          align: "center",
+          margin: "sm",
+        },
+      ],
+    },
+  };
 
-  return lines.join("\n");
+  const altText = `🎉 จองสำเร็จ! เลขที่การจอง ${displayValue(input.refNumber)} • ${displayValue(input.concertTitle)}`.slice(0, 400);
+
+  return { type: "flex" as const, altText, contents: bubble };
 }
 
 function normalizeLineErrorMessage(value: unknown) {
@@ -119,7 +277,7 @@ async function checkLineRecipient(
 }
 
 /**
- * ส่งข้อความ Push ผ่าน LINE Messaging API หลังแอดมินยืนยันการจอง
+ * ส่งข้อความ Push (Flex Message) ผ่าน LINE Messaging API หลังแอดมินยืนยันการจอง
  *
  * LINE Login และ Messaging API ต้องอยู่ใต้ Provider เดียวกัน จึงจะใช้
  * LINE user ID เดียวกันได้ และผู้ใช้ต้องเพิ่ม LINE OA เป็นเพื่อนแล้ว
@@ -145,26 +303,6 @@ export async function sendBookingApprovedLineMessage(
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
-  const bookingCardUrls = await createLineBookingCardUrls(input.bookingId);
-
-  // ใน production ส่งบัตรภาพที่มีข้อมูลการจองจริง ส่วน local ที่ LINE เข้าถึง
-  // ไม่ได้ (เช่น APP_BASE_URL = localhost) จะยังส่งข้อความปกติแทน เพื่อไม่ให้
-  // การยืนยันการจองขาดหายระหว่างพัฒนา
-  const messages = bookingCardUrls
-    ? [
-        {
-          type: "image" as const,
-          originalContentUrl: bookingCardUrls.originalContentUrl,
-          previewImageUrl: bookingCardUrls.previewImageUrl,
-        },
-      ]
-    : [{ type: "text" as const, text: buildBookingApprovedText(input) }];
-
-  if (!bookingCardUrls) {
-    console.warn(
-      "LINE approval notification is using text fallback because a public HTTPS booking-card URL is unavailable"
-    );
-  }
 
   try {
     const response = await fetch("https://api.line.me/v2/bot/message/push", {
@@ -175,7 +313,7 @@ export async function sendBookingApprovedLineMessage(
       },
       body: JSON.stringify({
         to: lineUserId,
-        messages,
+        messages: [buildBookingApprovedFlexMessage(input)],
       }),
       signal: controller.signal,
     });

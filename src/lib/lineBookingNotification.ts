@@ -8,6 +8,7 @@ export type BookingLineNotificationRow = {
   user_id: string | null;
   line_sub: string | null;
   ref_number: string | null;
+  renter_name: string | null;
   qty: number | null;
   lens_qty: number | null;
   total_amount: number | null;
@@ -75,9 +76,9 @@ export async function sendAndRecordBookingApprovalLineMessage(
   const attemptedAt = new Date().toISOString();
   const lineUserId = await resolveLineUserId(supabase, booking);
   const result = await sendBookingApprovedLineMessage({
-    bookingId,
     lineUserId,
     refNumber: booking.ref_number,
+    renterName: booking.renter_name,
     concertTitle: booking.concert_sessions?.concerts?.title ?? null,
     sessionLabel: buildSessionLabel(booking),
     phoneModel: booking.phones?.model_name ?? null,

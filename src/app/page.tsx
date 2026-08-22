@@ -212,6 +212,9 @@ export default function PhoneRentalHome() {
   const [submitted, setSubmitted] = useState(false);
   const [pageError, setPageError] = useState<string>("");
 
+  // ── เช็คว่าเพิ่มเพื่อน LINE OA แล้วหรือยัง (ต้องเพิ่มก่อนถึงจะรับ push แจ้งเตือนตอนอนุมัติได้) ──
+  const [lineFriendStatus, setLineFriendStatus] = useState<"idle" | "checking" | "friend" | "not_friend">("idle");
+
   // ── จับเวลาทำรายการแยกต่อ step: step 3 ได้ 5 นาที, step 4 ได้อีก 5 นาที (แยกกัน ไม่ต่อเนื่อง) ──
   const STEP_TIME_LIMIT = 5 * 60; // 5 นาทีต่อ step
   const [timerExpiresAt, setTimerExpiresAt] = useState<number | null>(null);
@@ -244,6 +247,19 @@ export default function PhoneRentalHome() {
     navigator.clipboard.writeText(text);
     setCopiedType(type);
     setTimeout(() => setCopiedType(null), 2000);
+  };
+
+  const checkLineFriendStatus = async () => {
+    setLineFriendStatus("checking");
+    try {
+      const res = await fetch("/api/bookings/line-friend-status", { cache: "no-store" });
+      const out = await res.json().catch(() => null);
+      if (out?.isFriend === true) setLineFriendStatus("friend");
+      else if (out?.isFriend === false) setLineFriendStatus("not_friend");
+      else setLineFriendStatus("idle");
+    } catch {
+      setLineFriendStatus("idle");
+    }
   };
 
   async function safeJson(res: Response) {
@@ -369,6 +385,27 @@ export default function PhoneRentalHome() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeLeft, step, timerExpiresAt]);
+
+  // ── ถึงหน้าจองสำเร็จ (step 5) แล้วเช็คทันทีว่าเพิ่มเพื่อน LINE OA ไว้แล้วหรือยัง ──
+  useEffect(() => {
+    if (step === 5) {
+      setLineFriendStatus("idle");
+      checkLineFriendStatus();
+    }
+  }, [step]);
+
+  // ── กลับมาที่แท็บนี้หลังไปเพิ่มเพื่อนใน LINE แล้ว เช็คสถานะให้อัตโนมัติ ──
+  useEffect(() => {
+    const resync = () => {
+      if (document.visibilityState === "visible" && step === 5) checkLineFriendStatus();
+    };
+    document.addEventListener("visibilitychange", resync);
+    window.addEventListener("focus", resync);
+    return () => {
+      document.removeEventListener("visibilitychange", resync);
+      window.removeEventListener("focus", resync);
+    };
+  }, [step]);
 
   const formatCountdown = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -1049,15 +1086,41 @@ export default function PhoneRentalHome() {
               <button onClick={() => router.push("/bookings")} style={{ ...doodle.btnPrimary, padding: "14px 0", fontSize: 15, width: "100%" }}>
                 ไปหน้าประวัติการจอง
               </button>
-              <div style={{ height: 12 }} />
-              <a href="https://line.me/R/ti/p/@CRABBY4RENT" style={{ textDecoration: "none" }}>
-                <div style={{ ...doodle.btnGreen, padding: "14px 0", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%" }}>
-                  <svg viewBox="0 0 24 24" width="20" height="20" fill="white">
-                    <path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.036 9.608.391.084.922.258 1.057.592.114.281.072.717.035.922-.047.251-.301 1.488-.363 1.831-.107.575-.515 2.059 1.802 1.082 2.316-.976 12.433-7.311 12.433-14.035z" />
-                  </svg>
-                  เพิ่มเพื่อน LINE OA
+              <div style={{ height: 16 }} />
+
+              {lineFriendStatus === "friend" ? (
+                <div style={{ background: goodSoft, border: `1px solid ${good}`, borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: good, fontWeight: 700, fontSize: 14 }}>
+                  ✓ พร้อมรับการแจ้งเตือนแล้ว
                 </div>
-              </a>
+              ) : (
+                <>
+                  <div style={{ background: warningSoft, border: `1px dashed ${borderStrong}`, borderRadius: 14, padding: "12px 14px", marginBottom: 12, textAlign: "left", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ fontSize: 18, flexShrink: 0 }}>🔔</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: ink, lineHeight: 1.5 }}>
+                      <b>อย่าลืมเพิ่มเพื่อน LINE OA!</b> ต้องเพิ่มเพื่อนก่อน ถึงจะได้รับการแจ้งเตือนทันทีที่แอดมินยืนยันการจองของคุณ
+                    </span>
+                  </div>
+                  <a href="https://line.me/R/ti/p/@CRABBY4RENT" style={{ textDecoration: "none" }}>
+                    <div style={{ ...doodle.btnGreen, padding: "14px 0", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%" }}>
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="white">
+                        <path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.036 9.608.391.084.922.258 1.057.592.114.281.072.717.035.922-.047.251-.301 1.488-.363 1.831-.107.575-.515 2.059 1.802 1.082 2.316-.976 12.433-7.311 12.433-14.035z" />
+                      </svg>
+                      เพิ่มเพื่อน LINE OA
+                    </div>
+                  </a>
+                  <button
+                    onClick={checkLineFriendStatus}
+                    disabled={lineFriendStatus === "checking"}
+                    style={{ marginTop: 10, width: "100%", border: "none", background: "transparent", cursor: lineFriendStatus === "checking" ? "default" : "pointer", fontSize: 13, fontWeight: 700, color: accent2, padding: "8px 0", fontFamily: uiFont }}
+                  >
+                    {lineFriendStatus === "checking"
+                      ? "กำลังตรวจสอบ..."
+                      : lineFriendStatus === "not_friend"
+                        ? "ยังไม่พบว่าเพิ่มเพื่อนแล้ว · ตรวจสอบอีกครั้ง"
+                        : "เพิ่มเพื่อนแล้ว? ตรวจสอบอีกครั้ง"}
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>

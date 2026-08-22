@@ -304,6 +304,43 @@ async function checkLineRecipient(
   return response.ok ? null : readLineApiFailure(response);
 }
 
+export type LineFriendshipCheck =
+  | { ok: true; isFriend: boolean }
+  | { ok: false; reason: "not_configured" | "invalid_recipient" | "check_failed" };
+
+/**
+ * เช็คว่า LINE user นี้เพิ่มเพื่อน OA (Messaging API channel) แล้วหรือยัง —
+ * ใช้ endpoint เดียวกับที่ sendBookingApprovedLineMessage ใช้วินิจฉัยตอน push
+ * ล้มเหลว (200 = เป็นเพื่อน/ยังไม่บล็อก, 404 = ยังไม่เพิ่มเพื่อนหรือบล็อกอยู่)
+ * เรียกจากฝั่งลูกค้าได้เองก่อนแอดมินอนุมัติ เพื่อให้มั่นใจว่าจะส่ง push ได้จริง
+ */
+export async function checkLineFriendshipStatus(
+  lineUserId: string
+): Promise<LineFriendshipCheck> {
+  const accessToken = process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN?.trim();
+  if (!accessToken) return { ok: false, reason: "not_configured" };
+  if (!lineUserIdRe.test(lineUserId)) return { ok: false, reason: "invalid_recipient" };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(
+      `https://api.line.me/v2/bot/profile/${encodeURIComponent(lineUserId)}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: controller.signal,
+      }
+    );
+    if (response.status === 404) return { ok: true, isFriend: false };
+    if (response.ok) return { ok: true, isFriend: true };
+    return { ok: false, reason: "check_failed" };
+  } catch {
+    return { ok: false, reason: "check_failed" };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 /**
  * ส่งข้อความ Push (Flex Message) ผ่าน LINE Messaging API หลังแอดมินยืนยันการจอง
  *

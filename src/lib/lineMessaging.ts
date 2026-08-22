@@ -36,11 +36,13 @@ const BRAND = {
   accentStrong: "#D81F5E",
   accent2: "#8354E8",
   accentSoft: "#FFE3EE",
+  gradientStart: "#FF9966",
+  gradientText: "#C1440E",
+  peachSoft: "#FFE8D6",
   ink: "#241F1C",
   sub: "#7A6D61",
   muted: "#AB9C8D",
   line: "#F2E4D6",
-  violetSoft: "#EFE6FF",
   white: "#FFFFFF",
 };
 
@@ -119,7 +121,7 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
     flexRow("🕐 รอบ", displayValue(input.sessionLabel)),
     flexRow("📱 มือถือ", `${displayValue(input.phoneModel)} × ${displayQty(input.qty)} เครื่อง`),
     ...(hasLens
-      ? [flexRow("🔭 เลนส์เสริม", `${displayValue(input.lensName)} × ${lensQty} ชิ้น`, { highlightBg: BRAND.violetSoft })]
+      ? [flexRow("🔭 เลนส์เสริม", `${displayValue(input.lensName)} × ${lensQty} ชิ้น`, { highlightBg: BRAND.peachSoft })]
       : []),
     flexRow("💰 ยอดชำระ", `฿${displayAmount(input.totalAmount)}`, { emphasize: true, highlightBg: BRAND.accentSoft }),
   ];
@@ -135,10 +137,8 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
       background: {
         type: "linearGradient",
         angle: "135deg",
-        startColor: BRAND.accent,
-        centerColor: BRAND.accentStrong,
-        endColor: BRAND.accent2,
-        centerPosition: "60%",
+        startColor: BRAND.gradientStart,
+        endColor: BRAND.accent,
       },
       contents: [
         {
@@ -197,7 +197,7 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
       layout: "vertical",
       paddingAll: "20px",
       contents: [
-        { type: "text", text: "📋 รายละเอียดการจอง", color: BRAND.accentStrong, weight: "bold", size: "sm" },
+        { type: "text", text: "📋 รายละเอียดการจอง", color: BRAND.gradientText, weight: "bold", size: "sm" },
         { type: "separator", color: BRAND.line, margin: "md" },
         { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: rows },
         { type: "separator", color: BRAND.line, margin: "md" },
@@ -206,9 +206,14 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
           layout: "vertical",
           margin: "md",
           alignItems: "center",
-          backgroundColor: BRAND.accentSoft,
+          background: {
+            type: "linearGradient",
+            angle: "135deg",
+            startColor: BRAND.peachSoft,
+            endColor: BRAND.accentSoft,
+          },
           borderWidth: "1px",
-          borderColor: BRAND.accent,
+          borderColor: BRAND.gradientStart,
           cornerRadius: "12px",
           paddingAll: "12px",
           contents: [

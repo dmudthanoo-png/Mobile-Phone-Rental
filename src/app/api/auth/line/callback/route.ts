@@ -1,37 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { findOrCreateLineUser, signSessionJWT } from "@/lib/lineSession";
 
 function getEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env: ${name}`);
   return v;
-}
-
-function base64url(input: Buffer | string) {
-  const buf = typeof input === "string" ? Buffer.from(input) : input;
-  return buf
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
-
-// สร้าง JWT แบบ HS256 ง่าย ๆ (session ของเราเอง)
-function signSessionJWT(payload: Record<string, unknown>, secret: string, expiresInSec: number) {
-  const header = { alg: "HS256", typ: "JWT" };
-  const now = Math.floor(Date.now() / 1000);
-
-  const fullPayload = { ...payload, iat: now, exp: now + expiresInSec };
-
-  const encodedHeader = base64url(JSON.stringify(header));
-  const encodedPayload = base64url(JSON.stringify(fullPayload));
-  const data = `${encodedHeader}.${encodedPayload}`;
-
-  const sig = crypto.createHmac("sha256", secret).update(data).digest();
-  const encodedSig = base64url(sig);
-
-  return `${data}.${encodedSig}`;
 }
 
 export async function GET(req: NextRequest) {
@@ -133,10 +107,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${baseUrl}/login?error=missing_sub`);
   }
 
-  // nonce check — ถ้าเราส่ง nonce ไปตอน login (มี expectedNonce) ID token ที่ verify กลับมาต้องมี
-  // nonce ตรงกันเสมอ ถ้า LINE ไม่ส่ง nonce กลับมาเลยทั้งที่เราคาดหวังไว้ ให้ถือว่าน่าสงสัยแล้วปฏิเสธ
-  // (ไม่ใช่แค่เช็คตอนที่ทั้งสองค่ามีอยู่ ซึ่งจะหลุดผ่านได้ถ้า verified.nonce หายไปเฉยๆ)
-  if (expectedNonce && verified.nonce !== expectedNonce) {
+  // nonce check — บังคับว่าต้องมี nonce cookie ของเราเองอยู่ด้วยเสมอ (route /login ตั้งไว้คู่กับ state
+  // ทุกครั้ง) ไม่ใช่แค่เช็คว่าตรงกันตอนที่ทั้งสองค่ามีอยู่ เพราะถ้า cookie หายไปเฉยๆ (หรือ LINE ไม่ส่ง
+  // nonce กลับมาทั้งที่เราคาดหวังไว้) ควรถือว่าน่าสงสัยแล้วปฏิเสธไปเลย ไม่ใช่ปล่อยผ่าน
+  if (!expectedNonce || verified.nonce !== expectedNonce) {
     return NextResponse.redirect(`${baseUrl}/login?error=invalid_nonce`);
   }
 
@@ -144,75 +118,15 @@ export async function GET(req: NextRequest) {
   const displayName = verified.name ?? null;
   const picture = verified.picture ?? null;
 
-  // 4) ✅ หา/สร้าง Supabase auth user โดยอ้างจาก line_identities
-  //    (ต้องมีตาราง public.line_identities(line_sub pk, user_id uuid fk auth.users))
-  let userId: string | null = null;
-
-  const { data: ident, error: identErr } = await supabaseAdmin
-    .from("line_identities")
-    .select("user_id")
-    .eq("line_sub", lineSub)
-    .maybeSingle();
-
-  if (identErr) {
+  // 4) ✅ หา/สร้าง Supabase auth user + upsert profiles — ใช้ helper ตัวเดียวกับ LIFF login
+  //    (มี race-recovery ในตัว กันกรณี OAuth กับ LIFF login พร้อมกันแล้วชนกัน)
+  const linkedUser = await findOrCreateLineUser(supabaseAdmin, lineSub, displayName, picture);
+  if ("error" in linkedUser) {
     return NextResponse.redirect(
-      `${baseUrl}/login?error=line_identity_lookup_failed&detail=${encodeURIComponent(identErr.message)}`
+      `${baseUrl}/login?error=find_or_create_user_failed&detail=${encodeURIComponent(linkedUser.error)}`
     );
   }
-
-  if (ident?.user_id) userId = ident.user_id;
-
-  if (!userId) {
-    // สร้าง user ใหม่ใน auth.users
-    // Supabase createUser ต้องมี email -> ใช้ placeholder โดเมน .invalid (ไม่ส่งเมลจริง)
-    const email = `line_${lineSub}@example.invalid`;
-
-    const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      email_confirm: true,
-      user_metadata: { provider: "line", line_sub: lineSub, name: displayName, picture },
-    });
-
-    if (createErr || !created?.user?.id) {
-      return NextResponse.redirect(
-        `${baseUrl}/login?error=supabase_create_user_failed&detail=${encodeURIComponent(
-          createErr?.message || "no_user_returned"
-        )}`
-      );
-    }
-
-    userId = created.user.id;
-
-    // insert mapping
-    const { error: mapErr } = await supabaseAdmin
-      .from("line_identities")
-      .insert({ line_sub: lineSub, user_id: userId });
-
-    if (mapErr) {
-      return NextResponse.redirect(
-        `${baseUrl}/login?error=line_identity_insert_failed&detail=${encodeURIComponent(mapErr.message)}`
-      );
-    }
-  }
-
-  // 5) ✅ upsert profiles (id = auth.users.id)
-  const { error: profErr } = await supabaseAdmin
-    .from("profiles")
-    .upsert(
-      {
-        id: userId,
-        line_sub: lineSub,
-        name: displayName,
-        picture,
-      },
-      { onConflict: "id" }
-    );
-
-  if (profErr) {
-    return NextResponse.redirect(
-      `${baseUrl}/login?error=profile_upsert_failed&detail=${encodeURIComponent(profErr.message)}`
-    );
-  }
+  const userId = linkedUser.userId;
 
   // 5.5) ❌ เช็คว่าบัญชีนี้ถูกแบนหรือไม่ ก่อนออก session ใหม่
   const { data: banCheck } = await supabaseAdmin

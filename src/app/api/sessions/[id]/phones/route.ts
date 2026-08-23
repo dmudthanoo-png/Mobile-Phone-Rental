@@ -75,7 +75,7 @@ export async function GET(
       .select("phone_id, qty, lens_id, lens_qty")
       .eq("session_id", sessionId)
       .or(
-        `status.eq.confirmed,status.eq.pending.and(pending_expires_at.is.null),status.eq.pending.and(pending_expires_at.gt.${nowIso})`
+        `status.eq.confirmed,and(status.eq.pending,pending_expires_at.is.null),and(status.eq.pending,pending_expires_at.gt.${nowIso})`
       );
 
     if (bkErr) return NextResponse.json({ error: bkErr.message }, { status: 500 });

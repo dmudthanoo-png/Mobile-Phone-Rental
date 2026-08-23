@@ -112,7 +112,7 @@ export async function GET(
     .eq("session_id", sessionId)
     .in("phone_id", phoneIds)
     .or(
-      `status.eq.confirmed,status.eq.pending.and(pending_expires_at.is.null),status.eq.pending.and(pending_expires_at.gt.${nowIso})`
+      `status.eq.confirmed,and(status.eq.pending,pending_expires_at.is.null),and(status.eq.pending,pending_expires_at.gt.${nowIso})`
     );
 
   if (bookedErr) return NextResponse.json({ error: bookedErr.message }, { status: 500 });
@@ -205,7 +205,7 @@ export async function POST(
       .eq("session_id", sessionId)
       .eq("phone_id", phoneId)
       .or(
-        `status.eq.confirmed,status.eq.pending.and(pending_expires_at.is.null),status.eq.pending.and(pending_expires_at.gt.${nowIso})`
+        `status.eq.confirmed,and(status.eq.pending,pending_expires_at.is.null),and(status.eq.pending,pending_expires_at.gt.${nowIso})`
       );
     if (bookedErr) return NextResponse.json({ error: bookedErr.message }, { status: 500 });
     const bookedQtySum = (bookedRowsForPhone ?? []).reduce((sum, r) => sum + Number(r.qty ?? 1), 0);

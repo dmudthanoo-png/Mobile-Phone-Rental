@@ -113,12 +113,13 @@ export async function middleware(req: NextRequest) {
   let bucket = buckets.get(ip);
   if (!bucket || now - bucket.windowStart > WINDOW_MS) {
     if (!buckets.has(ip) && buckets.size >= MAX_TRACKED_IPS) {
-      // เต็มโควต้าแล้วและเป็น IP ใหม่ที่ไม่เคยเห็น — ปฏิเสธไปเลยแทนที่จะ clear() ทั้ง Map ทิ้ง
-      // (ถ้า clear ทั้งหมด คนร้ายจะยิงจาก IP ปลอมจำนวนมากมาบังคับรีเซ็ต limit ของทุกคนพร้อมกันได้)
-      return NextResponse.json(
-        { error: "too_many_requests", message: "ระบบมีผู้ใช้งานพร้อมกันเยอะเกินไป กรุณาลองใหม่อีกครั้ง" },
-        { status: 429 }
-      );
+      // เต็มโควต้าแล้วและเป็น IP ใหม่ที่ไม่เคยเห็น — เขี่ยรายการที่เก่าที่สุดออกแค่ 1 รายการ
+      // (Map ของ JS รักษาลำดับการ insert ไว้ ตัวแรกสุดที่ iterate เจอ = เก่าสุด) แทนที่จะทำ
+      // อย่างใดอย่างหนึ่งจากสองแบบที่แย่กว่า: clear() ทั้ง Map (โดนยิง IP ปลอมจำนวนมากมา
+      // บังคับรีเซ็ต limit ของทุกคนพร้อมกันได้) หรือปฏิเสธ IP ใหม่ทั้งหมดตลอดไปจนกว่า
+      // instance จะ restart (ถ้าโดน flood ครั้งเดียวจน Map เต็ม ผู้ใช้ใหม่จริงจะโดนบล็อกค้าง)
+      const oldestKey = buckets.keys().next().value;
+      if (oldestKey !== undefined) buckets.delete(oldestKey);
     }
     bucket = { count: 0, windowStart: now };
     buckets.set(ip, bucket);

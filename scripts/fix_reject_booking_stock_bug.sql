@@ -25,82 +25,15 @@ end;
 $function$;
 
 -- ═══════════════════════════════════════════════════════════════
--- 2) เสริมความแข็งแรงให้ create_pending_booking_if_available_v2
---    เพิ่มการกรอง pending ที่หมดอายุออกจากการนับ (กันเผื่อมี booking เก่า
---    ที่หลงเหลือ pending_expires_at ค้างอยู่จาก endpoint เก่าที่ถูกลบไปแล้ว)
---    ไม่ได้เปลี่ยน logic อื่นเลย ยัง check stock จาก phones.qty เหมือนเดิม
+-- 2) [ยกเลิกแล้ว — ห้ามรันไฟล์นี้ซ้ำถ้าเคยรัน add_mandatory_session_phone_quota.sql ไปแล้ว]
+--    เดิมส่วนนี้เคยมี CREATE OR REPLACE FUNCTION create_pending_booking_if_available_v2
+--    เวอร์ชันที่ยัง check stock จาก phones.qty (จำนวนรวมร้าน) ซึ่งถูกแทนที่ไปแล้วด้วย
+--    เวอร์ชันใหม่ใน scripts/add_mandatory_session_phone_quota.sql ที่ check จาก
+--    session_phone_inventory (โควต้าต่อรอบ) แทน — เอาออกจากไฟล์นี้แล้วเพื่อไม่ให้ใครรัน
+--    ไฟล์นี้ซ้ำแล้วไปทับเวอร์ชันใหม่กลับเป็นเวอร์ชันเก่าโดยไม่ตั้งใจ
+--    ถ้าต้องการแก้ create_pending_booking_if_available_v2 ให้ไปแก้ที่
+--    scripts/add_mandatory_session_phone_quota.sql เท่านั้น (เป็นไฟล์ที่ current จริง)
 -- ═══════════════════════════════════════════════════════════════
-CREATE OR REPLACE FUNCTION public.create_pending_booking_if_available_v2(p_user_id uuid, p_session_id uuid, p_phone_id uuid, p_qty integer, p_lens_id uuid, p_lens_qty integer, p_renter_name text, p_renter_phone text, p_total_amount numeric, p_slip_url text, p_ref_number text)
- RETURNS TABLE(booking_id uuid, ref_number text)
- LANGUAGE plpgsql
-AS $function$
-declare
-  v_phone_qty      integer;
-  v_phone_booked   integer;
-  v_lens_qty_total integer;
-  v_lens_booked    integer;
-  v_booking_id     uuid;
-  v_ref            text;
-begin
-  if p_qty is null or p_qty < 1 then
-    raise exception 'INVALID_QTY';
-  end if;
-
-  -- ล็อกแถวมือถือกันจองพร้อมกันเกิน stock
-  select qty into v_phone_qty from public.phones where id = p_phone_id for update;
-  if v_phone_qty is null then
-    raise exception 'PHONE_NOT_FOUND';
-  end if;
-
-  -- นับเฉพาะที่จองไว้ "รอบเดียวกัน" (session_id เดียวกัน) และยังไม่หมดอายุ
-  select coalesce(sum(qty), 0) into v_phone_booked
-  from public.bookings
-  where phone_id = p_phone_id
-    and session_id = p_session_id
-    and (
-      status = 'confirmed'
-      or (status = 'pending' and (pending_expires_at is null or pending_expires_at > now()))
-    );
-
-  if v_phone_booked + p_qty > v_phone_qty then
-    raise exception 'SOLD_OUT_PHONE';
-  end if;
-
-  -- ถ้าเลือกเลนส์ ให้ล็อกและเช็ค stock เลนส์ด้วย (สโคปตาม session เดียวกัน)
-  if p_lens_id is not null and p_lens_qty > 0 then
-    select qty into v_lens_qty_total from public.lenses where id = p_lens_id for update;
-    if v_lens_qty_total is null then
-      raise exception 'LENS_NOT_FOUND';
-    end if;
-
-    select coalesce(sum(lens_qty), 0) into v_lens_booked
-    from public.bookings
-    where lens_id = p_lens_id
-      and session_id = p_session_id
-      and (
-        status = 'confirmed'
-        or (status = 'pending' and (pending_expires_at is null or pending_expires_at > now()))
-      );
-
-    if v_lens_booked + p_lens_qty > v_lens_qty_total then
-      raise exception 'SOLD_OUT_LENS';
-    end if;
-  end if;
-
-  v_ref := coalesce(p_ref_number, 'BK' || to_char(now(), 'YYMMDD') || upper(substr(md5(random()::text || clock_timestamp()::text), 1, 8)));
-
-  insert into public.bookings (
-    user_id, session_id, phone_id, qty, lens_id, lens_qty,
-    renter_name, renter_phone, total_amount, slip_url, ref_number, status
-  ) values (
-    p_user_id, p_session_id, p_phone_id, p_qty, p_lens_id, coalesce(p_lens_qty, 0),
-    p_renter_name, p_renter_phone, round(p_total_amount)::integer, p_slip_url, v_ref, 'pending'
-  )
-  returning id into v_booking_id;
-
-  return query select v_booking_id, v_ref;
-end;
-$function$;
 
 -- ═══════════════════════════════════════════════════════════════
 -- 3) (แนะนำให้รันดูก่อน — ยังไม่แก้อะไร) ประเมินว่า phones.qty

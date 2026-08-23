@@ -45,6 +45,17 @@ type Phone   = { id: string; model_name: string; price: number; deposit: number;
 type Lens    = { id: string; name: string; focal_mm: number | null; price: number; qty: number; active: boolean };
 type Announcement = { id: string; title: string | null; subtitle: string | null; emoji: string | null; image_url: string | null; active: boolean };
 type Review = { id: string; booking_id: string; concert_title: string | null; display_name: string; rating: number; comment: string; is_published: boolean; created_at: string };
+type AdminUser = {
+  id: string;
+  line_sub: string | null;
+  name: string | null;
+  picture: string | null;
+  is_banned: boolean;
+  banned_at: string | null;
+  ban_reason: string | null;
+  booking_count: number;
+  total_spent: number;
+};
 type Summary = { total: number; pending: number; confirmed: number; rejected: number; revenue: number };
 type LineQuota = {
   status: "loading" | "connected" | "not_configured" | "error";
@@ -178,6 +189,7 @@ const card: React.CSSProperties = {
 
 const TAB_ITEMS = [
   { key: "bookings" as const, icon: "📋", label: "จัดการการจอง" },
+  { key: "users" as const, icon: "👤", label: "ผู้ใช้" },
   { key: "concerts" as const, icon: "🎫", label: "คอนเสิร์ต & รอบ" },
   { key: "phones" as const, icon: "📱", label: "มือถือ & Inventory" },
   { key: "lenses" as const, icon: "🔭", label: "เลนส์" },
@@ -199,7 +211,7 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 export default function AdminPage() {
   const [isAuthed, setIsAuthed] = useState(false);
   const [password, setPassword] = useState("");
-  const [tab, setTab] = useState<"bookings"|"concerts"|"phones"|"lenses"|"reviews"|"announcement">("bookings");
+  const [tab, setTab] = useState<"bookings"|"users"|"concerts"|"phones"|"lenses"|"reviews"|"announcement">("bookings");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // bookings
@@ -244,6 +256,8 @@ export default function AdminPage() {
   // ประกาศ/แบนเนอร์หน้าแรก
   const [announcement, setAnnouncement] = useState<Announcement|null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [uQ, setUQ] = useState("");
   const [annForm, setAnnForm] = useState({ title:"", subtitle:"", emoji:"🔥", active:true });
   const [annImage, setAnnImage] = useState<File|null>(null);
   const [annImagePreview, setAnnImagePreview] = useState<string|null>(null);
@@ -269,7 +283,7 @@ export default function AdminPage() {
     setLineQuota({ status:"loading", loading:true });
   };
 
-  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchReviews(); fetchAnnouncement(); fetchSettings(); fetchLineQuota(); };
+  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchReviews(); fetchUsers(); fetchAnnouncement(); fetchSettings(); fetchLineQuota(); };
 
   // ── bookings ──
   const fetchBookings = async () => {
@@ -350,6 +364,7 @@ export default function AdminPage() {
       if (!res.ok) { showMsg(out?.error || "ไม่สำเร็จ", false); return; }
       showMsg(banned ? "🚫 แบนผู้ใช้แล้ว" : "✅ ปลดแบนแล้ว");
       fetchBookings();
+      fetchUsers();
     } finally {
       setBanningUserId(null);
     }
@@ -661,6 +676,15 @@ export default function AdminPage() {
         body: JSON.stringify({ phone_id: managingPhoneLenses.id, lens_id: lensId }),
         cache:"no-store",
       });
+    }
+  };
+
+  // ── ผู้ใช้ (แบน/ปลดแบน) ──
+  const fetchUsers = async () => {
+    const res = await fetch("/api/admin/users", { cache:"no-store" });
+    if (res.ok) {
+      const out = await res.json();
+      setUsers(out.users ?? []);
     }
   };
 
@@ -1128,23 +1152,95 @@ export default function AdminPage() {
                                 : "↻ ส่ง LINE อีกครั้ง"}
                           </button>
                         )}
-                        {b.user_id && (
-                          <button
-                            disabled={banningUserId===b.user_id}
-                            onClick={() => toggleUserBan(b.user_id as string, !b.is_banned)}
-                            style={btnStyle(b.is_banned ? "white" : "red", banningUserId===b.user_id)}
-                          >
-                            {banningUserId===b.user_id
-                              ? "⏳ กำลังบันทึก..."
-                              : b.is_banned ? "🔓 ปลดแบนผู้ใช้" : "🚫 แบนผู้ใช้"}
-                          </button>
-                        )}
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* ═══════════════ TAB: USERS ═══════════════ */}
+        {tab === "users" && (
+          <div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, flexWrap:"wrap", gap:10 }}>
+              <div style={{ fontWeight:700, fontSize:15 }}>👤 ผู้ใช้ทั้งหมด ({users.length})</div>
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <input value={uQ} onChange={e=>setUQ(e.target.value)} placeholder="ค้นหาชื่อ..." style={{ ...inputStyle, maxWidth:200 }} />
+                <button onClick={fetchUsers} style={btnStyle("white")}>🔄 รีเฟรช</button>
+              </div>
+            </div>
+
+            {(() => {
+              const filtered = uQ.trim()
+                ? users.filter(u => (u.name ?? "").toLowerCase().includes(uQ.trim().toLowerCase()))
+                : users;
+
+              if (filtered.length === 0) {
+                return (
+                  <div style={{ ...card, padding:24, textAlign:"center", color:UI.muted, fontWeight:700 }}>
+                    ไม่มีผู้ใช้
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  {filtered.map((u) => {
+                    const firstChar = (u.name || "U").trim()[0]?.toUpperCase() ?? "U";
+                    return (
+                      <div key={u.id} style={{ ...card, padding:16 }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12 }}>
+                          <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+                            {u.picture ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={u.picture} alt={u.name ?? "user"} width={36} height={36} style={{ borderRadius:"50%", objectFit:"cover", flexShrink:0 }} />
+                            ) : (
+                              <div style={{ width:36, height:36, borderRadius:"50%", background:UI.accent, border:`1px solid ${UI.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700, fontSize:16, flexShrink:0 }}>
+                                {firstChar}
+                              </div>
+                            )}
+                            <div>
+                              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                                <span style={{ fontWeight:700, fontSize:14, color:UI.ink }}>{u.name ?? "ไม่ทราบชื่อ"}</span>
+                                {u.is_banned && (
+                                  <span style={{ fontSize:11, fontWeight:700, borderRadius:999, padding:"2px 8px", background:"#FFF1F2", color:"#C43D5C" }}>
+                                    🚫 ถูกแบน
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize:11, color:UI.muted, fontWeight:600, marginTop:2 }}>
+                                📋 {u.booking_count} การจอง · 💰 {money(u.total_spent)}
+                              </div>
+                              {u.is_banned && u.ban_reason && (
+                                <div style={{ fontSize:11, color:"#C43D5C", fontWeight:600, marginTop:2 }}>
+                                  เหตุผล: {u.ban_reason}
+                                </div>
+                              )}
+                              {u.is_banned && u.banned_at && (
+                                <div style={{ fontSize:11, color:UI.muted, fontWeight:600, marginTop:2 }}>
+                                  แบนเมื่อ {fmtDT(u.banned_at)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            disabled={banningUserId===u.id}
+                            onClick={() => toggleUserBan(u.id, !u.is_banned)}
+                            style={btnStyle(u.is_banned ? "white" : "red", banningUserId===u.id)}
+                          >
+                            {banningUserId===u.id
+                              ? "⏳ กำลังบันทึก..."
+                              : u.is_banned ? "🔓 ปลดแบนผู้ใช้" : "🚫 แบนผู้ใช้"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
 

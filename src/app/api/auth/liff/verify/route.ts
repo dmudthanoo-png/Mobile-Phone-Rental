@@ -63,6 +63,17 @@ export async function POST(req: NextRequest) {
     }
     const userId = result.userId;
 
+    // 2.5) ❌ เช็คว่าบัญชีนี้ถูกแบนหรือไม่ ก่อนออก session ใหม่
+    const { data: banCheck } = await supabaseAdmin
+      .from("profiles")
+      .select("is_banned")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (banCheck?.is_banned) {
+      return NextResponse.json({ error: "บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อแอดมิน" }, { status: 403 });
+    }
+
     // 3) ออก session cookie เดียวกับ OAuth flow เดิมทุกอย่าง
     const sessionJwt = signSessionJWT(
       { line_sub: lineSub, name: displayName, picture, app_user_id: userId },

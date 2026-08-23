@@ -28,6 +28,9 @@ type Booking = {
   line_message_http_status?: number | null;
   line_message_error_detail?: string | null;
   line_message_request_id?: string | null;
+  user_id?: string | null;
+  line_sub?: string | null;
+  is_banned?: boolean;
   concert_sessions?: {
     start_at: string | null;
     note: string | null;
@@ -332,6 +335,24 @@ export default function AdminPage() {
     }
     fetchBookings(); fetchSummary();
     if (status === "confirmed") fetchLineQuota();
+  };
+
+  const [banningUserId, setBanningUserId] = useState<string|null>(null);
+  const toggleUserBan = async (userId: string, banned: boolean) => {
+    if (banned && !window.confirm("แบนผู้ใช้นี้? ผู้ใช้จะถูกเตะออกจาก session ทันทีและล็อกอินไม่ได้อีก")) return;
+    setBanningUserId(userId);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/ban`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ banned }), cache: "no-store",
+      });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) { showMsg(out?.error || "ไม่สำเร็จ", false); return; }
+      showMsg(banned ? "🚫 แบนผู้ใช้แล้ว" : "✅ ปลดแบนแล้ว");
+      fetchBookings();
+    } finally {
+      setBanningUserId(null);
+    }
   };
 
   const [retryingLineBookingId, setRetryingLineBookingId] = useState<string|null>(null);
@@ -1026,6 +1047,11 @@ export default function AdminPage() {
                           <div style={{ borderRadius:999, border:`1px solid ${meta.pillBorder}`, background:meta.pillBg, padding:"5px 12px", fontWeight:700, color:meta.text, fontSize:12 }}>
                             {meta.label}
                           </div>
+                          {b.is_banned && (
+                            <div style={{ borderRadius:999, border:"1px solid #C43D5C", background:"#FFF1F2", padding:"5px 12px", fontWeight:700, color:"#C43D5C", fontSize:12 }}>
+                              🚫 ผู้ใช้ถูกแบน
+                            </div>
+                          )}
                           {b.status === "confirmed" && (
                             <div style={{
                               borderRadius:999, border:`1px solid ${lineMessageMeta.border}`, background:lineMessageMeta.bg,
@@ -1100,6 +1126,17 @@ export default function AdminPage() {
                               : b.line_message_status == null
                                 ? "✉️ ส่ง LINE ตอนนี้"
                                 : "↻ ส่ง LINE อีกครั้ง"}
+                          </button>
+                        )}
+                        {b.user_id && (
+                          <button
+                            disabled={banningUserId===b.user_id}
+                            onClick={() => toggleUserBan(b.user_id as string, !b.is_banned)}
+                            style={btnStyle(b.is_banned ? "white" : "red", banningUserId===b.user_id)}
+                          >
+                            {banningUserId===b.user_id
+                              ? "⏳ กำลังบันทึก..."
+                              : b.is_banned ? "🔓 ปลดแบนผู้ใช้" : "🚫 แบนผู้ใช้"}
                           </button>
                         )}
                       </div>

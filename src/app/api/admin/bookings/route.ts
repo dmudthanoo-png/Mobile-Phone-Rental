@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
       line_message_status, line_message_error, line_message_attempted_at,
       line_message_sent_at, line_message_attempt_count, line_message_http_status,
       line_message_error_detail, line_message_request_id,
+      user_id, line_sub,
       concert_sessions:session_id (
         start_at, note,
         concerts:concert_id ( title, venue_name )
@@ -52,8 +53,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const bookings = data ?? [];
+  const userIds = Array.from(
+    new Set(bookings.map((b) => b.user_id).filter((id): id is string => Boolean(id)))
+  );
+
+  let bannedMap: Record<string, boolean> = {};
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabaseAdmin
+      .from("profiles")
+      .select("id, is_banned")
+      .in("id", userIds);
+    bannedMap = Object.fromEntries((profiles ?? []).map((p) => [p.id, Boolean(p.is_banned)]));
+  }
+
+  const bookingsWithBanStatus = bookings.map((b) => ({
+    ...b,
+    is_banned: b.user_id ? bannedMap[b.user_id] ?? false : false,
+  }));
+
   return NextResponse.json(
-    { bookings: data ?? [] },
+    { bookings: bookingsWithBanStatus },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

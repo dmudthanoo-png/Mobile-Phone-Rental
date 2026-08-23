@@ -212,6 +212,17 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // 5.5) ❌ เช็คว่าบัญชีนี้ถูกแบนหรือไม่ ก่อนออก session ใหม่
+  const { data: banCheck } = await supabaseAdmin
+    .from("profiles")
+    .select("is_banned")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (banCheck?.is_banned) {
+    return NextResponse.redirect(`${baseUrl}/login?error=banned`);
+  }
+
   // 6) ออก session cookie ของเราเอง (เหมือนเดิม)
   const sessionJwt = signSessionJWT(
     {

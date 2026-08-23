@@ -19,6 +19,14 @@ export default function LoginPage() {
   const [liffError, setLiffError] = useState<string | null>(null);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("error") === "banned") {
+      setLiffError("บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อแอดมิน");
+      setPhase("ready");
+    }
+  }, []);
+
+  useEffect(() => {
     const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
 
     // ยังไม่ได้ตั้งค่า LIFF ID (เช่น ยังไม่ได้สร้าง LIFF app) → ข้ามไปโชว์ปุ่มปกติเลย

@@ -41,6 +41,15 @@ type Booking = {
 
 type Concert = { id: string; title: string; venue_name: string | null; poster_url: string | null; description: string | null; archived: boolean | null };
 type Session = { id: string; start_at: string | null; end_at: string | null; note: string | null };
+type PhoneQuotaInfo = {
+  phone_id: string;
+  model_name: string;
+  total_qty: number;
+  allocated_elsewhere: number;
+  available_to_allocate: number;
+  current_quota: number | null;
+  already_booked: number;
+};
 type Phone   = { id: string; model_name: string; price: number; deposit: number; qty: number; image_url: string | null; active: boolean };
 type Lens    = { id: string; name: string; focal_mm: number | null; price: number; qty: number; active: boolean };
 type Announcement = { id: string; title: string | null; subtitle: string | null; emoji: string | null; image_url: string | null; active: boolean };
@@ -270,6 +279,12 @@ export default function AdminPage() {
   const [editSession, setEditSession] = useState<Session|null>(null);
   const [editSessionForm, setEditSessionForm] = useState({ start_at:"", note:"" });
   const [editSessionConcertId, setEditSessionConcertId] = useState<string>("");
+
+  const [quotaSession, setQuotaSession] = useState<Session|null>(null);
+  const [quotaLoading, setQuotaLoading] = useState(false);
+  const [quotaSaving, setQuotaSaving] = useState(false);
+  const [quotaData, setQuotaData] = useState<PhoneQuotaInfo[]>([]);
+  const [quotaInputs, setQuotaInputs] = useState<Record<string, string>>({});
 
   // phones + inventory
   const [phones, setPhones] = useState<Phone[]>([]);
@@ -623,7 +638,7 @@ export default function AdminPage() {
   const saveEditSession = async () => {
     if (!editSession || !editSessionConcertId) return;
     if (!editSessionForm.start_at) { showMsg("กรุณาเลือกวันเวลาเริ่ม", false); return; }
-    const res = await fetch(`/api/admin/concerts/${editSessionConcertId}/sessions/${editSession.id}`, {
+    const res = await fetch(`/api/admin/concerts/${editSessionConcertId}/sessions`, {
       method:"PATCH", headers:{"content-type":"application/json"},
       body: JSON.stringify({ session_id: editSession.id, start_at: localToUTC(editSessionForm.start_at), note: editSessionForm.note||null }),
       cache:"no-store",
@@ -640,6 +655,48 @@ export default function AdminPage() {
     const res = await fetch(`/api/admin/concerts/${concertId}/sessions?session_id=${sessionId}`, { method:"DELETE", cache:"no-store" });
     if (!res.ok) { showMsg("ลบไม่สำเร็จ", false); return; }
     showMsg("ลบรอบแล้ว"); fetchSessions(concertId);
+  };
+
+  // ── โควต้ามือถือรายรอบ ──
+  const openQuotaManager = async (session: Session) => {
+    setQuotaSession(session);
+    setQuotaLoading(true);
+    try {
+      const res = await fetch(`/api/admin/sessions/${session.id}/quota`, { cache:"no-store" });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) { showMsg(out?.error || "โหลดโควต้าไม่สำเร็จ", false); setQuotaSession(null); return; }
+      const list: PhoneQuotaInfo[] = out.phones ?? [];
+      setQuotaData(list);
+      const inputs: Record<string, string> = {};
+      for (const p of list) inputs[p.phone_id] = p.current_quota != null ? String(p.current_quota) : "";
+      setQuotaInputs(inputs);
+    } finally {
+      setQuotaLoading(false);
+    }
+  };
+
+  const closeQuotaManager = () => { setQuotaSession(null); setQuotaData([]); setQuotaInputs({}); };
+
+  const saveQuota = async () => {
+    if (!quotaSession) return;
+    const items = Object.entries(quotaInputs)
+      .filter(([, v]) => v.trim() !== "")
+      .map(([phone_id, v]) => ({ phone_id, qty: Number(v) }));
+    if (items.length === 0) { showMsg("ยังไม่ได้กรอกจำนวนเลย", false); return; }
+
+    setQuotaSaving(true);
+    try {
+      const res = await fetch(`/api/admin/sessions/${quotaSession.id}/quota`, {
+        method:"POST", headers:{"content-type":"application/json"},
+        body: JSON.stringify({ items }), cache:"no-store",
+      });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) { showMsg(out?.error || "บันทึกไม่สำเร็จ", false); return; }
+      showMsg("✅ บันทึกโควต้าแล้ว");
+      openQuotaManager(quotaSession);
+    } finally {
+      setQuotaSaving(false);
+    }
   };
 
   // ── phones ──
@@ -1655,6 +1712,7 @@ export default function AdminPage() {
                           <div key={s.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 0", borderBottom:"1px dashed #eee", fontSize:13, fontWeight:700 }}>
                             <span>⏰ {fmtDT(s.start_at)}{s.note?` — ${s.note}`:""}</span>
                             <div style={{ display:"flex", gap:6 }}>
+                              <button onClick={()=>openQuotaManager(s)} style={{ ...btnStyle("blue"), padding:"4px 10px", fontSize:12 }}>🎯 โควต้า</button>
                               <button onClick={()=>{ setEditSession(s); setEditSessionConcertId(c.id); setEditSessionForm({ start_at: s.start_at?.slice(0,16)||"", note: s.note||"" }); }} style={{ ...btnStyle("white"), padding:"4px 10px", fontSize:12 }}>✏️</button>
                               <button onClick={()=>deleteSession(c.id, s.id)} style={{ ...btnStyle("red"), padding:"4px 10px", fontSize:12 }}>🗑</button>
                             </div>
@@ -1739,6 +1797,53 @@ export default function AdminPage() {
                   <div style={{ display:"flex", gap:8 }}>
                     <button onClick={saveEditSession} style={{ ...btnStyle("dark"), flex:1, justifyContent:"center" }}>💾 บันทึก</button>
                     <button onClick={()=>setEditSession(null)} style={btnStyle("white")}>ยกเลิก</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Quota Modal */}
+            {quotaSession && (
+              <div onClick={closeQuotaManager} style={{ position:"fixed", inset:0, background:"rgba(51,46,44,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:20 }}>
+                <div onClick={e=>e.stopPropagation()} style={{ ...card, width:"100%", maxWidth:520, padding:20, maxHeight:"85vh", overflowY:"auto" }}>
+                  <div style={{ fontWeight:700, fontSize:16, marginBottom:4 }}>🎯 ตั้งโควต้ามือถือของรอบนี้</div>
+                  <div style={{ fontSize:12, color:UI.muted, fontWeight:700, marginBottom:14 }}>
+                    ⏰ {fmtDT(quotaSession.start_at)}{quotaSession.note?` — ${quotaSession.note}`:""}
+                  </div>
+
+                  {quotaLoading ? (
+                    <div style={{ fontWeight:800, color:UI.muted, padding:"20px 0", textAlign:"center" }}>⏳ กำลังโหลด...</div>
+                  ) : quotaData.length === 0 ? (
+                    <div style={{ fontWeight:700, color:UI.muted, padding:"20px 0", textAlign:"center" }}>ยังไม่มีรุ่นมือถือที่ active</div>
+                  ) : (
+                    <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:16 }}>
+                      {quotaData.map((p) => (
+                        <div key={p.phone_id} style={{ borderRadius:12, border:`1px solid ${UI.border}`, padding:"10px 12px" }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, marginBottom:6 }}>
+                            <div style={{ fontWeight:700, fontSize:13 }}>{p.model_name}</div>
+                            <input
+                              value={quotaInputs[p.phone_id] ?? ""}
+                              onChange={e=>setQuotaInputs(prev=>({ ...prev, [p.phone_id]: e.target.value.replace(/\D/g,"") }))}
+                              placeholder="ยังไม่เปิดจอง"
+                              style={{ ...inputStyle, width:90, textAlign:"center" }}
+                            />
+                          </div>
+                          <div style={{ fontSize:11, color:UI.muted, fontWeight:600 }}>
+                            มีทั้งหมด {p.total_qty} เครื่อง
+                            {p.allocated_elsewhere > 0 && <> · รอบอื่นวันเดียวกันจัดสรรไปแล้ว {p.allocated_elsewhere}</>}
+                            {" · "}เหลือให้จัดสรรได้อีก <b style={{ color: p.available_to_allocate > 0 ? UI.ink : "#C43D5C" }}>{p.available_to_allocate}</b>
+                            {p.already_booked > 0 && <> · จองรอบนี้ไปแล้ว {p.already_booked}</>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={saveQuota} disabled={quotaSaving||quotaLoading} style={{ ...btnStyle("dark", quotaSaving||quotaLoading), flex:1, justifyContent:"center" }}>
+                      {quotaSaving ? "⏳ กำลังบันทึก..." : "💾 บันทึกโควต้า"}
+                    </button>
+                    <button onClick={closeQuotaManager} style={btnStyle("white")}>ปิด</button>
                   </div>
                 </div>
               </div>

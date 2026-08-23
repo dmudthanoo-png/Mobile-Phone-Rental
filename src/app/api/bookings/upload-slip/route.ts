@@ -230,6 +230,9 @@ export async function POST(req: NextRequest) {
       if (msg.includes("SOLD_OUT_LENS")) {
         return NextResponse.json({ error: "lens_sold_out" }, { status: 409 });
       }
+      if (msg.includes("PHONE_NOT_CONFIGURED_FOR_SESSION")) {
+        return NextResponse.json({ error: "sold_out" }, { status: 409 });
+      }
       return NextResponse.json({ error: msg }, { status: 500 });
     }
 

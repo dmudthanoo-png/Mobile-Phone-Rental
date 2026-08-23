@@ -52,7 +52,8 @@ export async function GET(
       lensesByPhone[r.phone_id] = arr;
     }
 
-    // 3) จำนวนที่ตั้งไว้เฉพาะรอบนี้ (ถ้าแอดมินไม่ได้ตั้งไว้ ให้ fallback ไปใช้จำนวนรวมของรุ่นนั้น)
+    // 3) จำนวนที่ตั้งไว้เฉพาะรอบนี้ — ต้องตั้งไว้ก่อนถึงจะจองรุ่นนั้นได้ (บังคับ ไม่ fallback ไปจำนวนรวมร้านแล้ว
+    //    เพราะจำนวนรวมร้านอาจถูกจัดสรรให้รอบอื่นในวันเดียวกันไปแล้วบางส่วน ตรงกับที่ RPC ฝั่งจองจริงบังคับ)
     const { data: invRows, error: invErr } = await supabase
       .from("session_phone_inventory")
       .select("phone_id, qty")
@@ -91,7 +92,9 @@ export async function GET(
     }
 
     // 4) ประกอบผลลัพธ์: มือถือ + remaining + รายการเลนส์ที่เลือกได้ (พร้อม remaining ของแต่ละเลนส์)
+    //    รุ่นที่แอดมินยังไม่ได้ตั้งโควต้าให้รอบนี้ = ยังไม่เปิดให้จองรุ่นนั้นในรอบนี้ ไม่แสดงเลย
     const phones = phoneRows
+      .filter((p) => sessionQtyByPhone[p.id] !== undefined)
       .map((p) => {
         const lensOptions = (lensesByPhone[p.id] ?? [])
           .map((l) => ({
@@ -103,8 +106,7 @@ export async function GET(
           }))
           .sort((a, b) => (a.focal_mm ?? 0) - (b.focal_mm ?? 0));
 
-        // ใช้จำนวนที่ตั้งไว้เฉพาะรอบนี้ก่อน ถ้าแอดมินไม่เคยตั้งไว้ค่อย fallback ไปใช้จำนวนรวมของรุ่นนั้น
-        const baseQty = sessionQtyByPhone[p.id] ?? Number(p.qty ?? 0);
+        const baseQty = sessionQtyByPhone[p.id];
 
         return {
           phone_id: String(p.id),

@@ -667,8 +667,12 @@ export default function AdminPage() {
       if (!res.ok) { showMsg(out?.error || "โหลดโควต้าไม่สำเร็จ", false); setQuotaSession(null); return; }
       const list: PhoneQuotaInfo[] = out.phones ?? [];
       setQuotaData(list);
+      // ถ้ายังไม่เคยตั้งโควต้ารุ่นนี้มาก่อน ให้ค่าเริ่มต้นเป็น "เหลือให้จัดสรรได้อีกเท่าไหร่" เลย
+      // (ปกติรอบเดียวไม่ชนกับใคร ก็จะเท่ากับจำนวนรวมร้านพอดี) แอดมินแค่มาลดตัวเลขเอาถ้าต้องการแบ่งให้รอบอื่น
       const inputs: Record<string, string> = {};
-      for (const p of list) inputs[p.phone_id] = p.current_quota != null ? String(p.current_quota) : "";
+      for (const p of list) {
+        inputs[p.phone_id] = String(p.current_quota != null ? p.current_quota : p.available_to_allocate);
+      }
       setQuotaInputs(inputs);
     } finally {
       setQuotaLoading(false);
@@ -1816,26 +1820,58 @@ export default function AdminPage() {
                   ) : quotaData.length === 0 ? (
                     <div style={{ fontWeight:700, color:UI.muted, padding:"20px 0", textAlign:"center" }}>ยังไม่มีรุ่นมือถือที่ active</div>
                   ) : (
-                    <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:16 }}>
-                      {quotaData.map((p) => (
-                        <div key={p.phone_id} style={{ borderRadius:12, border:`1px solid ${UI.border}`, padding:"10px 12px" }}>
-                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, marginBottom:6 }}>
-                            <div style={{ fontWeight:700, fontSize:13 }}>{p.model_name}</div>
-                            <input
-                              value={quotaInputs[p.phone_id] ?? ""}
-                              onChange={e=>setQuotaInputs(prev=>({ ...prev, [p.phone_id]: e.target.value.replace(/\D/g,"") }))}
-                              placeholder="ยังไม่เปิดจอง"
-                              style={{ ...inputStyle, width:90, textAlign:"center" }}
-                            />
+                    <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:16 }}>
+                      {quotaData.map((p) => {
+                        const shared = p.allocated_elsewhere > 0;
+                        return (
+                          <div key={p.phone_id} style={{
+                            borderRadius:14,
+                            border: `1.5px solid ${shared ? "#F3D9A8" : UI.border}`,
+                            background: shared ? "#FFFBF3" : "#fff",
+                            padding:14,
+                            boxShadow: UI.shadowSm,
+                          }}>
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginBottom:10 }}>
+                              <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
+                                <span style={{ fontSize:20, flexShrink:0 }}>📱</span>
+                                <span style={{ fontWeight:700, fontSize:14, color:UI.ink, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.model_name}</span>
+                              </div>
+                              <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                                <input
+                                  value={quotaInputs[p.phone_id] ?? ""}
+                                  onChange={e=>setQuotaInputs(prev=>({ ...prev, [p.phone_id]: e.target.value.replace(/\D/g,"") }))}
+                                  placeholder="0"
+                                  style={{ ...inputStyle, width:64, textAlign:"center", fontWeight:800, fontSize:16, border:`1.5px solid ${UI.accent2}`, color:UI.accent2 }}
+                                />
+                                <span style={{ fontSize:12, color:UI.muted, fontWeight:700 }}>เครื่อง</span>
+                              </div>
+                            </div>
+
+                            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                              <span style={{ borderRadius:999, padding:"3px 10px", fontSize:11, fontWeight:700, background:"#F5F3F1", color:UI.muted }}>
+                                มีทั้งหมด {p.total_qty}
+                              </span>
+                              {shared && (
+                                <span style={{ borderRadius:999, padding:"3px 10px", fontSize:11, fontWeight:700, background:"#FFF3D6", color:"#8A6D2F" }}>
+                                  ⚠️ รอบอื่นวันนี้ใช้ไป {p.allocated_elsewhere}
+                                </span>
+                              )}
+                              {p.already_booked > 0 && (
+                                <span style={{ borderRadius:999, padding:"3px 10px", fontSize:11, fontWeight:700, background:"#EFE6FF", color:UI.accent2 }}>
+                                  🎫 จองแล้ว {p.already_booked}
+                                </span>
+                              )}
+                              <span style={{
+                                borderRadius:999, padding:"3px 10px", fontSize:11, fontWeight:700,
+                                background: p.available_to_allocate > 0 ? "#E1FAEC" : "#FFF1F2",
+                                color: p.available_to_allocate > 0 ? "#0F9D4E" : "#C43D5C",
+                              }}>
+                                {p.available_to_allocate > 0 ? "✅" : "🚫"} เหลือให้จัดสรร {p.available_to_allocate}
+                              </span>
+                            </div>
                           </div>
-                          <div style={{ fontSize:11, color:UI.muted, fontWeight:600 }}>
-                            มีทั้งหมด {p.total_qty} เครื่อง
-                            {p.allocated_elsewhere > 0 && <> · รอบอื่นวันเดียวกันจัดสรรไปแล้ว {p.allocated_elsewhere}</>}
-                            {" · "}เหลือให้จัดสรรได้อีก <b style={{ color: p.available_to_allocate > 0 ? UI.ink : "#C43D5C" }}>{p.available_to_allocate}</b>
-                            {p.already_booked > 0 && <> · จองรอบนี้ไปแล้ว {p.already_booked}</>}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 

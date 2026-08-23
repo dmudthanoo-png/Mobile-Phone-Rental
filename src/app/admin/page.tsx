@@ -41,6 +41,7 @@ type Session = { id: string; start_at: string | null; end_at: string | null; not
 type Phone   = { id: string; model_name: string; price: number; deposit: number; qty: number; image_url: string | null; active: boolean };
 type Lens    = { id: string; name: string; focal_mm: number | null; price: number; qty: number; active: boolean };
 type Announcement = { id: string; title: string | null; subtitle: string | null; emoji: string | null; image_url: string | null; active: boolean };
+type Review = { id: string; booking_id: string; concert_title: string | null; display_name: string; rating: number; comment: string; is_published: boolean; created_at: string };
 type Summary = { total: number; pending: number; confirmed: number; rejected: number; revenue: number };
 type LineQuota = {
   status: "loading" | "connected" | "not_configured" | "error";
@@ -177,6 +178,7 @@ const TAB_ITEMS = [
   { key: "concerts" as const, icon: "🎫", label: "คอนเสิร์ต & รอบ" },
   { key: "phones" as const, icon: "📱", label: "มือถือ & Inventory" },
   { key: "lenses" as const, icon: "🔭", label: "เลนส์" },
+  { key: "reviews" as const, icon: "⭐", label: "รีวิว" },
   { key: "announcement" as const, icon: "📣", label: "ประกาศ" },
 ];
 
@@ -194,7 +196,7 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 export default function AdminPage() {
   const [isAuthed, setIsAuthed] = useState(false);
   const [password, setPassword] = useState("");
-  const [tab, setTab] = useState<"bookings"|"concerts"|"phones"|"lenses"|"announcement">("bookings");
+  const [tab, setTab] = useState<"bookings"|"concerts"|"phones"|"lenses"|"reviews"|"announcement">("bookings");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // bookings
@@ -238,6 +240,7 @@ export default function AdminPage() {
 
   // ประกาศ/แบนเนอร์หน้าแรก
   const [announcement, setAnnouncement] = useState<Announcement|null>(null);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [annForm, setAnnForm] = useState({ title:"", subtitle:"", emoji:"🔥", active:true });
   const [annImage, setAnnImage] = useState<File|null>(null);
   const [annImagePreview, setAnnImagePreview] = useState<string|null>(null);
@@ -263,7 +266,7 @@ export default function AdminPage() {
     setLineQuota({ status:"loading", loading:true });
   };
 
-  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchAnnouncement(); fetchSettings(); fetchLineQuota(); };
+  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchReviews(); fetchAnnouncement(); fetchSettings(); fetchLineQuota(); };
 
   // ── bookings ──
   const fetchBookings = async () => {
@@ -638,6 +641,23 @@ export default function AdminPage() {
         cache:"no-store",
       });
     }
+  };
+
+  // ── รีวิวลูกค้า (ดู + ลบ) ──
+  const fetchReviews = async () => {
+    const res = await fetch("/api/admin/reviews", { cache:"no-store" });
+    if (res.ok) {
+      const out = await res.json();
+      setReviews(out.reviews ?? []);
+    }
+  };
+
+  const deleteReview = async (id: string) => {
+    if (!confirm("ลบรีวิวนี้?")) return;
+    const res = await fetch(`/api/admin/reviews/${id}`, { method:"DELETE", cache:"no-store" });
+    if (!res.ok) { showMsg("ลบไม่สำเร็จ", false); return; }
+    showMsg("ลบรีวิวแล้ว");
+    fetchReviews();
   };
 
   // ── ประกาศ/แบนเนอร์หน้าแรก ──
@@ -1422,6 +1442,62 @@ export default function AdminPage() {
                     <button onClick={()=>setEditLens(null)} style={btnStyle("white")}>ยกเลิก</button>
                   </div>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════ TAB: REVIEWS ═══════════════ */}
+        {tab === "reviews" && (
+          <div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+              <div style={{ fontWeight:700, fontSize:15 }}>⭐ รีวิวจากลูกค้า ({reviews.length})</div>
+              <button onClick={fetchReviews} style={btnStyle("white")}>🔄 รีเฟรช</button>
+            </div>
+
+            {reviews.length === 0 ? (
+              <div style={{ ...card, padding:24, textAlign:"center", color:UI.muted, fontWeight:700 }}>
+                ยังไม่มีรีวิวเข้ามา
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                {reviews.map((r) => (
+                  <div key={r.id} style={{ ...card, padding:16 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, marginBottom:8 }}>
+                      <div>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ fontWeight:700, fontSize:14, color:UI.ink }}>{r.display_name}</span>
+                          <span style={{
+                            fontSize:11, fontWeight:700, borderRadius:999, padding:"2px 8px",
+                            background: r.is_published ? "#E1FAEC" : "#FFFBEF",
+                            color: r.is_published ? "#0F9D4E" : "#8A6D2F",
+                          }}>
+                            {r.is_published ? "✅ เผยแพร่แล้ว" : "⏳ ยังไม่เผยแพร่"}
+                          </span>
+                        </div>
+                        {r.concert_title && (
+                          <div style={{ fontSize:12, color:UI.muted, fontWeight:600, marginTop:2 }}>🎫 {r.concert_title}</div>
+                        )}
+                      </div>
+                      <button onClick={()=>deleteReview(r.id)} style={btnStyle("red")}>🗑 ลบ</button>
+                    </div>
+
+                    <div role="img" aria-label={`ให้คะแนน ${r.rating} จาก 5 ดาว`} style={{ color:"#F5B93F", fontSize:14, letterSpacing:1, marginBottom:8 }}>
+                      <span aria-hidden="true">
+                        {"★".repeat(r.rating)}
+                        <span style={{ color:"#EDE7E1" }}>{"★".repeat(5 - r.rating)}</span>
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize:13, color:UI.ink, fontWeight:500, lineHeight:1.6, marginBottom:8 }}>
+                      &ldquo;{r.comment}&rdquo;
+                    </div>
+
+                    <div style={{ fontSize:11, color:UI.muted, fontWeight:600 }}>
+                      ส่งเมื่อ {new Date(r.created_at).toLocaleString("th-TH", { dateStyle:"medium", timeStyle:"short" })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

@@ -716,11 +716,7 @@ export default function AdminPage() {
         setIsAuthed(true);
         const out = await res.json();
         setBookings(out.bookings ?? []);
-        fetchBookings();
-        fetchSummary();
-        fetchConcerts();
-        fetchPhones();
-        fetchLineQuota();
+        loadAll();
       }
     })();
   }, []);

@@ -18,7 +18,6 @@ const footerFont = "var(--font-noto-thai), 'Segoe UI', 'Leelawadee UI', -apple-s
 const quickLinks = [
   { href: "/#events", label: "อีเวนต์" },
   { href: "/how-to-book", label: "วิธีการจอง" },
-  { href: "/#reviews", label: "รีวิว" },
   { href: "/#faq", label: "FAQ" },
 ];
 

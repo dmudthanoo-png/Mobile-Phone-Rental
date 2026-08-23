@@ -144,7 +144,6 @@ export default function Navbar({
         <div className="navbar-center-links" style={{ alignItems: "center", gap: 22, justifySelf: "center" }}>
           <NavLink href="/#events">อีเวนต์</NavLink>
           <NavLink href="/how-to-book">วิธีการจอง</NavLink>
-          <NavLink href="/#reviews">รีวิว</NavLink>
         </div>
 
         {/* Right: user info (เดสก์ท็อป) */}
@@ -309,7 +308,6 @@ export default function Navbar({
           {[
             { href: "/#events", label: "อีเวนต์" },
             { href: "/how-to-book", label: "วิธีการจอง" },
-            { href: "/#reviews", label: "รีวิว" },
             ...(user ? [{ href: "/bookings", label: "ประวัติ" }] : []),
           ].map((item) => (
             <Link

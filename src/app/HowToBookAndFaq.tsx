@@ -18,54 +18,11 @@ const faqs = [
   { q: "ถ้ามือถือเต็มทำอย่างไร?", a: "ลองเลือกรอบอื่นหรือรุ่นอื่นที่ยังว่าง หรือทักไลน์แอดมินเพื่อสอบถามคิวรอ" },
 ];
 
-const reviews = [
-  { name: "มิ้นท์", event: "BTS World Tour", rating: 5, text: "เครื่องคมชัดมาก ถ่ายคอนเสิร์ตออกมาสวยเกินคาด บริการรวดเร็วด้วย" },
-  { name: "ต้นหอม", event: "TREASURE Pulse On", rating: 5, text: "จองง่าย รับเครื่องไว พนักงานน่ารักมาก จะกลับมาเช่าอีกแน่นอน" },
-  { name: "ปูเป้", event: "GEMINI Concert", rating: 4, text: "มือถือแบตอึด ถ่ายได้ทั้งงานไม่ต้องพกสำรองไฟเลย" },
-];
-
 export default function HowToBookAndFaq() {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
 
   return (
     <div style={{ marginTop: 36 }}>
-      {/* Reviews */}
-      <div id="reviews" style={{ scrollMarginTop: 90, marginBottom: 36 }}>
-        <div style={{ fontWeight: 700, fontSize: 16, color: ink, marginBottom: 4 }}>รีวิวจากลูกค้า</div>
-        <div style={{ fontSize: 12, color: sub, fontWeight: 500, marginBottom: 14 }}>เสียงจากคนที่เช่าไปแล้ว</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
-          {reviews.map((r, i) => (
-            <div
-              key={i}
-              style={{
-                borderRadius: 14,
-                border: `1px solid ${glassBorder}`,
-                background: glass,
-                backdropFilter: glassBlur,
-                WebkitBackdropFilter: glassBlur,
-                padding: "16px 14px",
-              }}
-            >
-              <div
-                role="img"
-                aria-label={`ให้คะแนน ${r.rating} จาก 5 ดาว`}
-                style={{ color: "#F5B93F", fontSize: 13, marginBottom: 8, letterSpacing: 1 }}
-              >
-                <span aria-hidden="true">
-                  {"★".repeat(r.rating)}
-                  <span style={{ color: "#EDE7E1" }}>{"★".repeat(5 - r.rating)}</span>
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: ink, fontWeight: 500, lineHeight: 1.5, marginBottom: 10 }}>
-                &ldquo;{r.text}&rdquo;
-              </div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: ink }}>{r.name}</div>
-              <div style={{ fontSize: 10, color: sub, fontWeight: 500 }}>{r.event}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* FAQ */}
       <div id="faq" style={{ scrollMarginTop: 90 }}>
         <div style={{ fontWeight: 700, fontSize: 16, color: ink, marginBottom: 4 }}>คำถามที่พบบ่อย</div>

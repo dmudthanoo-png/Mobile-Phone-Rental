@@ -6,6 +6,31 @@ function base64urlToBuffer(b64url: string) {
   return Buffer.from(b64, "base64");
 }
 
+export function signJWT(payload: Record<string, unknown>, secret: string): string {
+  const header = { alg: "HS256", typ: "JWT" };
+
+  const b64u = (obj: Record<string, unknown>) =>
+    Buffer.from(JSON.stringify(obj))
+      .toString("base64")
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+
+  const h = b64u(header);
+  const p = b64u(payload);
+  const data = `${h}.${p}`;
+
+  const sig = crypto
+    .createHmac("sha256", secret)
+    .update(data)
+    .digest("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+
+  return `${data}.${sig}`;
+}
+
 export function verifyJWT(token: string, secret: string) {
   const parts = token.split(".");
   if (parts.length !== 3) return null;

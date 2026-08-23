@@ -1,39 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { verifyPassword } from "@/lib/adminPassword";
 import { logAdminAction } from "@/lib/adminAudit";
+import { signJWT } from "@/lib/adminAuth";
 
 const MAX_FAILURES = 5;        // จำนวนครั้งที่ผิดได้ก่อนโดนล็อก
 const WINDOW_MINUTES = 15;     // นับความผิดย้อนหลังกี่นาที
 const LOCKOUT_MINUTES = 15;    // ล็อกนานแค่ไหนหลังผิดครบจำนวน
-
-function signAdminJWT(secret: string, adminId: string, username: string) {
-  const header = { alg: "HS256", typ: "JWT" };
-  const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 12; // 12 ชม.
-  const payload = { role: "admin", admin_id: adminId, username, exp };
-
-  const b64u = (obj: Record<string, unknown>) =>
-    Buffer.from(JSON.stringify(obj))
-      .toString("base64")
-      .replace(/=/g, "")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_");
-
-  const h = b64u(header);
-  const p = b64u(payload);
-  const data = `${h}.${p}`;
-
-  const sig = crypto
-    .createHmac("sha256", secret)
-    .update(data)
-    .digest("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-
-  return `${data}.${sig}`;
-}
+const PENDING_2FA_MINUTES = 5; // token ชั่วคราวระหว่างรอกรอกรหัส 2FA อยู่ได้กี่นาที
 
 function getClientIp(req: NextRequest): string {
   const fwd = req.headers.get("x-forwarded-for");
@@ -88,17 +62,19 @@ export async function POST(req: NextRequest) {
 
   let isCorrect = false;
   let adminId: string | null = null;
+  let totpEnabled = false;
 
   if (username && password) {
     const { data: account } = await supabase
       .from("admin_users")
-      .select("id, password_hash")
+      .select("id, password_hash, totp_enabled")
       .eq("username", username)
       .maybeSingle();
 
     if (account && verifyPassword(password, account.password_hash)) {
       isCorrect = true;
       adminId = account.id;
+      totpEnabled = Boolean(account.totp_enabled);
     }
   }
 
@@ -115,11 +91,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message, remaining }, { status: 401 });
   }
 
-  const token = signAdminJWT(sessionSecret, adminId, username);
+  // บัญชีนี้เปิด 2FA ไว้ — ยังไม่ออก session จริง ให้ token ชั่วคราวไปกรอกรหัส 6 หลักต่อก่อน
+  if (totpEnabled) {
+    const pendingToken = signJWT(
+      {
+        role: "admin_2fa_pending",
+        admin_id: adminId,
+        username,
+        exp: Math.floor(Date.now() / 1000) + PENDING_2FA_MINUTES * 60,
+      },
+      sessionSecret
+    );
+    return NextResponse.json({ ok: true, needs2fa: true, pending_token: pendingToken });
+  }
 
-  await logAdminAction({ username, action: "login", detail: `เข้าสู่ระบบจาก IP ${ip}` });
+  const token = signJWT(
+    { role: "admin", admin_id: adminId, username, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 12 },
+    sessionSecret
+  );
 
-  const res = NextResponse.json({ ok: true, username });
+  await logAdminAction({ username, action: "เข้าสู่ระบบ", detail: `เข้าสู่ระบบจาก IP ${ip}` });
+
+  const res = NextResponse.json({ ok: true, needs2fa: false, username });
   res.cookies.set("admin_session", token, {
     httpOnly: true,
     sameSite: "lax",

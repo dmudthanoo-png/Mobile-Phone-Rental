@@ -220,6 +220,14 @@ export default function AdminPage() {
   const [needsBootstrap, setNeedsBootstrap] = useState<boolean | null>(null);
   const [bootstrapPassword2, setBootstrapPassword2] = useState("");
   const [currentAdminUsername, setCurrentAdminUsername] = useState("");
+  const [pendingTotpToken, setPendingTotpToken] = useState<string | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [currentTotpEnabled, setCurrentTotpEnabled] = useState(false);
+  const [totpSetup, setTotpSetup] = useState<{ secret: string; qr_data_url: string } | null>(null);
+  const [totpSetupCode, setTotpSetupCode] = useState("");
+  const [totpDisableCode, setTotpDisableCode] = useState("");
+  const [totpBusy, setTotpBusy] = useState(false);
+  const [totpShowDisableForm, setTotpShowDisableForm] = useState(false);
   const [admins, setAdmins] = useState<AdminAccount[]>([]);
   const [newAdminUsername, setNewAdminUsername] = useState("");
   const [newAdminPassword, setNewAdminPassword] = useState("");
@@ -302,9 +310,38 @@ export default function AdminPage() {
     const out = await res.json().catch(() => null);
     setLoading(false);
     if (!res.ok) { setLoginError(out?.error || "เข้าสู่ระบบไม่สำเร็จ"); return; }
+
+    if (out?.needs2fa) {
+      setPendingTotpToken(out.pending_token);
+      setLoginError(null);
+      return;
+    }
+
     setIsAuthed(true); setPassword(""); setLoginError(null);
     setCurrentAdminUsername(out?.username ?? loginUsername.trim().toLowerCase());
     loadAll();
+    fetchMe();
+  };
+
+  const handleVerify2fa = async () => {
+    setLoading(true);
+    setLoginError(null);
+    const res = await fetch("/api/admin/login/verify-2fa", {
+      method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify({ pending_token: pendingTotpToken, code: totpCode.trim() }),
+    });
+    const out = await res.json().catch(() => null);
+    setLoading(false);
+    if (!res.ok) { setLoginError(out?.error || "ยืนยันไม่สำเร็จ"); return; }
+    setIsAuthed(true); setPassword(""); setLoginError(null);
+    setPendingTotpToken(null); setTotpCode("");
+    setCurrentAdminUsername(out?.username ?? "");
+    loadAll();
+    fetchMe();
+  };
+
+  const cancelVerify2fa = () => {
+    setPendingTotpToken(null); setTotpCode(""); setLoginError(null); setPassword("");
   };
 
   const handleBootstrap = async () => {
@@ -326,8 +363,17 @@ export default function AdminPage() {
   const handleLogout = async () => {
     await fetch("/api/admin/logout", { method:"POST" });
     setIsAuthed(false); setBookings([]); setConcerts([]); setPhones([]);
-    setCurrentAdminUsername("");
+    setCurrentAdminUsername(""); setCurrentTotpEnabled(false);
     setLineQuota({ status:"loading", loading:true });
+  };
+
+  const fetchMe = async () => {
+    const res = await fetch("/api/admin/me", { cache:"no-store" });
+    if (res.ok) {
+      const me = await res.json();
+      setCurrentAdminUsername(me.username ?? "");
+      setCurrentTotpEnabled(Boolean(me.totp_enabled));
+    }
   };
 
   const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchReviews(); fetchUsers(); fetchAnnouncement(); fetchSettings(); fetchLineQuota(); fetchAdmins(); fetchAuditLog(); };
@@ -776,6 +822,60 @@ export default function AdminPage() {
     }
   };
 
+  // ── 2FA ของบัญชีตัวเอง ──
+  const startTotpSetup = async () => {
+    setTotpBusy(true);
+    try {
+      const res = await fetch("/api/admin/2fa/setup", { method:"POST", cache:"no-store" });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) { showMsg(out?.error || "เริ่มตั้งค่าไม่สำเร็จ", false); return; }
+      setTotpSetup({ secret: out.secret, qr_data_url: out.qr_data_url });
+      setTotpSetupCode("");
+    } finally {
+      setTotpBusy(false);
+    }
+  };
+
+  const confirmTotpSetup = async () => {
+    if (!totpSetupCode.trim()) { showMsg("กรอกรหัส 6 หลัก", false); return; }
+    setTotpBusy(true);
+    try {
+      const res = await fetch("/api/admin/2fa/confirm", {
+        method:"POST", headers:{"content-type":"application/json"},
+        body: JSON.stringify({ code: totpSetupCode.trim() }),
+      });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) { showMsg(out?.error || "ยืนยันไม่สำเร็จ", false); return; }
+      showMsg("✅ เปิดใช้งาน 2FA แล้ว");
+      setCurrentTotpEnabled(true);
+      setTotpSetup(null); setTotpSetupCode("");
+      fetchAuditLog();
+    } finally {
+      setTotpBusy(false);
+    }
+  };
+
+  const cancelTotpSetup = () => { setTotpSetup(null); setTotpSetupCode(""); };
+
+  const disableTotp = async () => {
+    if (!totpDisableCode.trim()) { showMsg("กรอกรหัส 6 หลักจาก authenticator เพื่อยืนยัน", false); return; }
+    setTotpBusy(true);
+    try {
+      const res = await fetch("/api/admin/2fa/disable", {
+        method:"POST", headers:{"content-type":"application/json"},
+        body: JSON.stringify({ code: totpDisableCode.trim() }),
+      });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) { showMsg(out?.error || "ปิดใช้งานไม่สำเร็จ", false); return; }
+      showMsg("🔓 ปิดใช้งาน 2FA แล้ว");
+      setCurrentTotpEnabled(false);
+      setTotpShowDisableForm(false); setTotpDisableCode("");
+      fetchAuditLog();
+    } finally {
+      setTotpBusy(false);
+    }
+  };
+
   // ── ประวัติการดำเนินการของแอดมิน ──
   const fetchAuditLog = async (usernameFilter?: string) => {
     const qs = usernameFilter ? `?username=${encodeURIComponent(usernameFilter)}` : "";
@@ -860,11 +960,7 @@ export default function AdminPage() {
         const out = await res.json();
         setBookings(out.bookings ?? []);
         loadAll();
-        const meRes = await fetch("/api/admin/me", { cache:"no-store" });
-        if (meRes.ok) {
-          const me = await meRes.json();
-          setCurrentAdminUsername(me.username ?? "");
-        }
+        fetchMe();
       } else {
         // ยังไม่ได้ล็อกอิน — เช็คว่าต้องตั้งค่าบัญชีแอดมินคนแรกก่อนไหม
         try {
@@ -941,6 +1037,35 @@ export default function AdminPage() {
             )}
             <button onClick={handleBootstrap} disabled={loading||!loginUsername.trim()||!password} style={btnStyle("dark", loading||!loginUsername.trim()||!password)}>
               {loading ? "⏳..." : "สร้างบัญชี"}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (pendingTotpToken) {
+      return (
+        <div style={{ minHeight:"100vh", background:UI.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:UI.font, color:UI.ink }}>
+          <div style={{ ...card, width:"100%", maxWidth:400, padding:24 }}>
+            <div style={{ fontWeight:700, fontSize:22, marginBottom:6 }}>🔑 กรอกรหัส 2FA</div>
+            <div style={{ fontSize:12, color:UI.muted, fontWeight:600, marginBottom:16 }}>
+              เปิดแอป Google Authenticator แล้วกรอกรหัส 6 หลักปัจจุบัน
+            </div>
+            <input
+              value={totpCode}
+              onChange={e=>setTotpCode(e.target.value.replace(/\D/g,"").slice(0,6))}
+              onKeyDown={e=>e.key==="Enter"&&handleVerify2fa()}
+              placeholder="000000" inputMode="numeric" maxLength={6}
+              style={{ ...inputStyle, marginBottom:12, textAlign:"center", fontSize:22, letterSpacing:6, fontWeight:700 }}
+            />
+            {loginError && (
+              <div style={{ fontSize:12, color:"#C43D5C", fontWeight:700, marginBottom:12 }}>⚠️ {loginError}</div>
+            )}
+            <button onClick={handleVerify2fa} disabled={loading||totpCode.length!==6} style={{ ...btnStyle("dark", loading||totpCode.length!==6), width:"100%", justifyContent:"center", marginBottom:10 }}>
+              {loading ? "⏳..." : "ยืนยัน"}
+            </button>
+            <button onClick={cancelVerify2fa} style={{ ...btnStyle("white"), width:"100%", justifyContent:"center" }}>
+              ย้อนกลับ
             </button>
           </div>
         </div>
@@ -1894,6 +2019,70 @@ export default function AdminPage() {
         {/* ═══════════════ TAB: ADMINS ═══════════════ */}
         {tab === "admins" && (
           <div>
+            <div style={{ ...card, padding:16, marginBottom:16 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, flexWrap:"wrap", gap:8 }}>
+                <div style={{ fontWeight:700, fontSize:15 }}>🔐 2FA ของบัญชีคุณ ({currentAdminUsername})</div>
+                <span style={{
+                  fontSize:11, fontWeight:700, borderRadius:999, padding:"3px 10px",
+                  background: currentTotpEnabled ? "#E1FAEC" : "#FFF9E6",
+                  color: currentTotpEnabled ? "#0F9D4E" : "#8A6D2F",
+                }}>
+                  {currentTotpEnabled ? "✅ เปิดใช้งานอยู่" : "⏸️ ยังไม่เปิดใช้งาน"}
+                </span>
+              </div>
+
+              {!currentTotpEnabled && !totpSetup && (
+                <button onClick={startTotpSetup} disabled={totpBusy} style={btnStyle("dark", totpBusy)}>
+                  {totpBusy ? "⏳..." : "🔐 เปิดใช้งาน 2FA"}
+                </button>
+              )}
+
+              {totpSetup && (
+                <div>
+                  <div style={{ fontSize:12, color:UI.muted, fontWeight:600, marginBottom:10 }}>
+                    เปิดแอป Google Authenticator แล้วสแกน QR นี้ หรือกรอก key ด้านล่างด้วยตัวเอง
+                  </div>
+                  <img src={totpSetup.qr_data_url} alt="TOTP QR code" width={180} height={180} style={{ borderRadius:12, border:`1px solid ${UI.border}`, marginBottom:10, display:"block" }} />
+                  <div style={{ fontSize:12, color:UI.ink, fontWeight:700, marginBottom:12, wordBreak:"break-all", background:"#F5F1ED", borderRadius:8, padding:"8px 10px" }}>
+                    {totpSetup.secret}
+                  </div>
+                  <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
+                    <input
+                      value={totpSetupCode}
+                      onChange={e=>setTotpSetupCode(e.target.value.replace(/\D/g,"").slice(0,6))}
+                      placeholder="กรอกรหัส 6 หลักเพื่อยืนยัน" inputMode="numeric" maxLength={6}
+                      style={{ ...inputStyle, maxWidth:220 }}
+                    />
+                    <button onClick={confirmTotpSetup} disabled={totpBusy} style={btnStyle("dark", totpBusy)}>
+                      {totpBusy ? "⏳..." : "ยืนยันเปิดใช้งาน"}
+                    </button>
+                    <button onClick={cancelTotpSetup} style={btnStyle("white")}>ยกเลิก</button>
+                  </div>
+                </div>
+              )}
+
+              {currentTotpEnabled && !totpShowDisableForm && (
+                <button onClick={()=>setTotpShowDisableForm(true)} style={btnStyle("red")}>
+                  ปิดใช้งาน 2FA
+                </button>
+              )}
+
+              {currentTotpEnabled && totpShowDisableForm && (
+                <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center" }}>
+                  <input
+                    value={totpDisableCode}
+                    onChange={e=>setTotpDisableCode(e.target.value.replace(/\D/g,"").slice(0,6))}
+                    placeholder="กรอกรหัส 6 หลักเพื่อยืนยันปิด" inputMode="numeric" maxLength={6}
+                    style={{ ...inputStyle, maxWidth:220 }}
+                  />
+                  <button onClick={disableTotp} disabled={totpBusy} style={btnStyle("red", totpBusy)}>
+                    {totpBusy ? "⏳..." : "ยืนยันปิดใช้งาน"}
+                  </button>
+                  <button onClick={()=>{setTotpShowDisableForm(false); setTotpDisableCode("");}} style={btnStyle("white")}>ยกเลิก</button>
+                </div>
+              )}
+            </div>
+
             <div style={{ ...card, padding:16, marginBottom:16 }}>
               <div style={{ fontWeight:700, fontSize:15, marginBottom:14 }}>➕ สร้างบัญชีแอดมินใหม่</div>
               <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>

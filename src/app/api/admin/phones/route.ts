@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAdminAction } from "@/lib/adminAudit";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -78,6 +79,12 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "เพิ่มมือถือ",
+    detail: `เพิ่มมือถือ ${model_name} (id: ${data?.id})`,
+  });
+
   return NextResponse.json({ ok: true, phone: data }, { status: 201 });
 }
 
@@ -135,6 +142,12 @@ export async function PATCH(req: NextRequest) {
   const { error } = await supabase.from("phones").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "แก้ไขมือถือ",
+    detail: `แก้ไขมือถือ id: ${id}${model_name ? ` เป็น ${model_name}` : ""}`,
+  });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -157,6 +170,12 @@ export async function DELETE(req: NextRequest) {
 
   const { error } = await supabase.from("phones").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "ลบมือถือ",
+    detail: `ลบมือถือ id: ${id}`,
+  });
 
   return NextResponse.json({ ok: true });
 }

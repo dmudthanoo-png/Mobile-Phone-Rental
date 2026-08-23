@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAdminAction } from "@/lib/adminAudit";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -52,6 +53,12 @@ export async function POST(req: NextRequest) {
   const { error } = await supabase.from("phone_lenses").upsert({ phone_id, lens_id });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "ผูกเลนส์กับมือถือ",
+    detail: `phone_id: ${phone_id}, lens_id: ${lens_id}`,
+  });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -75,6 +82,12 @@ export async function DELETE(req: NextRequest) {
     .eq("lens_id", lens_id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "ยกเลิกผูกเลนส์กับมือถือ",
+    detail: `phone_id: ${phone_id}, lens_id: ${lens_id}`,
+  });
 
   return NextResponse.json({ ok: true });
 }

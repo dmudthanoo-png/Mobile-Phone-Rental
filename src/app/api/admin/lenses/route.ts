@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAdminAction } from "@/lib/adminAudit";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -54,6 +55,12 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "เพิ่มเลนส์",
+    detail: `เพิ่มเลนส์ ${name}`,
+  });
+
   return NextResponse.json({ ok: true, lens: data }, { status: 201 });
 }
 
@@ -82,6 +89,12 @@ export async function PATCH(req: NextRequest) {
   const { error } = await supabase.from("lenses").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "แก้ไขเลนส์",
+    detail: `แก้ไขเลนส์ id ${id}`,
+  });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -97,6 +110,12 @@ export async function DELETE(req: NextRequest) {
 
   const { error } = await supabase.from("lenses").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "ลบเลนส์",
+    detail: `ลบเลนส์ id ${id}`,
+  });
 
   return NextResponse.json({ ok: true });
 }

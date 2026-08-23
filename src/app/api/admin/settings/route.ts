@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAdminAction } from "@/lib/adminAudit";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -49,6 +50,12 @@ export async function POST(req: NextRequest) {
     .upsert({ id: true, slipok_enabled: slipokEnabled, updated_at: new Date().toISOString() });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "อัปเดตการตั้งค่าระบบ",
+    detail: `slipok_enabled: ${slipokEnabled}`,
+  });
 
   return NextResponse.json({ ok: true, slipok_enabled: slipokEnabled });
 }

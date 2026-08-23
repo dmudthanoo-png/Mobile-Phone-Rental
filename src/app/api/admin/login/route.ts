@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { verifyPassword } from "@/lib/adminPassword";
+import { logAdminAction } from "@/lib/adminAudit";
 
 const MAX_FAILURES = 5;        // จำนวนครั้งที่ผิดได้ก่อนโดนล็อก
 const WINDOW_MINUTES = 15;     // นับความผิดย้อนหลังกี่นาที
 const LOCKOUT_MINUTES = 15;    // ล็อกนานแค่ไหนหลังผิดครบจำนวน
 
-function signAdminJWT(secret: string) {
+function signAdminJWT(secret: string, adminId: string, username: string) {
   const header = { alg: "HS256", typ: "JWT" };
   const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 12; // 12 ชม.
-  const payload = { role: "admin", exp };
+  const payload = { role: "admin", admin_id: adminId, username, exp };
 
   const b64u = (obj: Record<string, unknown>) =>
     Buffer.from(JSON.stringify(obj))
@@ -33,17 +35,6 @@ function signAdminJWT(secret: string) {
   return `${data}.${sig}`;
 }
 
-// เปรียบเทียบ string แบบ constant-time กันโดน timing attack เดารหัสผ่านทีละตัวอักษร
-function safeCompare(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  // ต้องให้ buffer ยาวเท่ากันก่อนเรียก timingSafeEqual ไม่งั้น throw
-  // ใช้ hash กันความยาวหลุดไปเปรียบเทียบตรงๆ (ความยาวรหัสผ่านไม่ควรรั่วอยู่แล้ว แต่กันไว้)
-  const hashA = crypto.createHash("sha256").update(bufA).digest();
-  const hashB = crypto.createHash("sha256").update(bufB).digest();
-  return crypto.timingSafeEqual(hashA, hashB);
-}
-
 function getClientIp(req: NextRequest): string {
   const fwd = req.headers.get("x-forwarded-for");
   if (fwd) return fwd.split(",")[0].trim();
@@ -51,19 +42,18 @@ function getClientIp(req: NextRequest): string {
 }
 
 export async function POST(req: NextRequest) {
-  const adminPassword = process.env.ADMIN_PASSWORD;
   const sessionSecret = process.env.APP_SESSION_SECRET;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!adminPassword || !sessionSecret || !supabaseUrl || !serviceKey) {
+  if (!sessionSecret || !supabaseUrl || !serviceKey) {
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
 
   const supabase = createClient(supabaseUrl, serviceKey);
   const ip = getClientIp(req);
 
-  // 1) เช็คว่าโดนล็อกอยู่ไหม (ผิดครบจำนวนภายในช่วงเวลาที่กำหนด)
+  // 1) เช็คว่าโดนล็อกอยู่ไหม (ผิดครบจำนวนภายในช่วงเวลาที่กำหนด) — นับตาม IP
   const windowStart = new Date(Date.now() - WINDOW_MINUTES * 60 * 1000).toISOString();
   const { data: recentAttempts, error: attErr } = await supabase
     .from("admin_login_attempts")
@@ -72,41 +62,64 @@ export async function POST(req: NextRequest) {
     .gte("created_at", windowStart)
     .order("created_at", { ascending: false });
 
-  if (!attErr && recentAttempts) {
-    const failuresInWindow = recentAttempts.filter((a) => !a.success);
-    if (failuresInWindow.length >= MAX_FAILURES) {
-      const mostRecentFailure = new Date(failuresInWindow[0].created_at).getTime();
-      const lockoutEndsAt = mostRecentFailure + LOCKOUT_MINUTES * 60 * 1000;
-      if (Date.now() < lockoutEndsAt) {
-        const waitMin = Math.ceil((lockoutEndsAt - Date.now()) / 60000);
-        return NextResponse.json(
-          { error: `พยายามผิดเกินกำหนด กรุณารออีก ${waitMin} นาทีแล้วลองใหม่` },
-          { status: 429 }
-        );
-      }
+  const failuresInWindow = !attErr && recentAttempts ? recentAttempts.filter((a) => !a.success) : [];
+
+  if (failuresInWindow.length >= MAX_FAILURES) {
+    const mostRecentFailure = new Date(failuresInWindow[0].created_at).getTime();
+    const lockoutEndsAt = mostRecentFailure + LOCKOUT_MINUTES * 60 * 1000;
+    if (Date.now() < lockoutEndsAt) {
+      const waitMin = Math.ceil((lockoutEndsAt - Date.now()) / 60000);
+      return NextResponse.json(
+        { error: `พยายามผิดเกินกำหนด กรุณารออีก ${waitMin} นาทีแล้วลองใหม่` },
+        { status: 429 }
+      );
     }
   }
 
-  let body: { password?: string } | null = null;
+  let body: { username?: string; password?: string } | null = null;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
 
+  const username = String(body?.username ?? "").trim().toLowerCase();
   const password = String(body?.password ?? "");
-  const isCorrect = password.length > 0 && safeCompare(password, adminPassword);
 
-  // 2) log ความพยายามนี้ไว้เสมอ (ทั้งผ่านและไม่ผ่าน) เพื่อคำนวณ lockout ครั้งถัดไป
-  await supabase.from("admin_login_attempts").insert({ ip, success: isCorrect });
+  let isCorrect = false;
+  let adminId: string | null = null;
 
-  if (!isCorrect) {
-    return NextResponse.json({ error: "invalid password" }, { status: 401 });
+  if (username && password) {
+    const { data: account } = await supabase
+      .from("admin_users")
+      .select("id, password_hash")
+      .eq("username", username)
+      .maybeSingle();
+
+    if (account && verifyPassword(password, account.password_hash)) {
+      isCorrect = true;
+      adminId = account.id;
+    }
   }
 
-  const token = signAdminJWT(sessionSecret);
+  // 2) log ความพยายามนี้ไว้เสมอ (ทั้งผ่านและไม่ผ่าน) เพื่อคำนวณ lockout ครั้งถัดไป
+  await supabase.from("admin_login_attempts").insert({ ip, username: username || null, success: isCorrect });
 
-  const res = NextResponse.json({ ok: true });
+  if (!isCorrect || !adminId) {
+    const totalFailures = failuresInWindow.length + 1;
+    const remaining = Math.max(0, MAX_FAILURES - totalFailures);
+    const message =
+      remaining === 0
+        ? `พยายามผิดครบ ${MAX_FAILURES} ครั้งแล้ว บัญชีถูกล็อกชั่วคราว ${LOCKOUT_MINUTES} นาที`
+        : `ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (เหลืออีก ${remaining} ครั้ง ก่อนถูกล็อกชั่วคราว)`;
+    return NextResponse.json({ error: message, remaining }, { status: 401 });
+  }
+
+  const token = signAdminJWT(sessionSecret, adminId, username);
+
+  await logAdminAction({ username, action: "login", detail: `เข้าสู่ระบบจาก IP ${ip}` });
+
+  const res = NextResponse.json({ ok: true, username });
   res.cookies.set("admin_session", token, {
     httpOnly: true,
     sameSite: "lax",

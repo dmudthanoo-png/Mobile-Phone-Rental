@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminAuth";
 import { verifySlipForBooking } from "@/lib/slipOk";
+import { logAdminAction } from "@/lib/adminAudit";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -25,6 +26,12 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "ตรวจสอบสลิปด้วย SlipOK",
+    detail: `booking_id: ${bookingId}, ผลตรวจสอบ: ${result.verified ? "ผ่าน" : "ไม่ผ่าน"} (${result.message})`,
+  });
 
   return NextResponse.json(result);
 }

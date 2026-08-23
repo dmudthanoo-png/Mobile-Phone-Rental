@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAdminAction } from "@/lib/adminAudit";
 
 function supabase() {
   return createClient(
@@ -51,5 +52,12 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await sb.from("concerts").insert({ title, venue_name, description, poster_url }).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "สร้างคอนเสิร์ตใหม่",
+    detail: `คอนเสิร์ต: ${title}`,
+  });
+
   return NextResponse.json({ concert: data }, { status: 201 });
 }

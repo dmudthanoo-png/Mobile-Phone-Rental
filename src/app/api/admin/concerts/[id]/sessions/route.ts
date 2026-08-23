@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAdminAction } from "@/lib/adminAudit";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -69,6 +70,12 @@ export async function POST(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "เพิ่มรอบการแสดง",
+    detail: `concert_id: ${concert_id}, session_id: ${data?.id}, start_at: ${start_at}`,
+  });
+
   return NextResponse.json({ ok: true, session: data }, { status: 201 });
 }
 
@@ -104,6 +111,12 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "แก้ไขรอบการแสดง",
+    detail: `concert_id: ${concert_id}, session_id: ${session_id}, start_at: ${start_at}`,
+  });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -130,6 +143,12 @@ export async function DELETE(
     .eq("concert_id", concert_id); // double-check ป้องกัน cross-concert delete
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "ลบรอบการแสดง",
+    detail: `concert_id: ${concert_id}, session_id: ${session_id}`,
+  });
 
   return NextResponse.json({ ok: true });
 }

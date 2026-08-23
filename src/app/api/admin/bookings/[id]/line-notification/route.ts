@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAdminAction } from "@/lib/adminAudit";
 import {
   sendAndRecordBookingApprovalLineMessage,
   type BookingLineNotificationRow,
@@ -67,6 +68,12 @@ export async function POST(
 
   const delivery = await sendAndRecordBookingApprovalLineMessage(supabase, id, booking);
   const recorded = !delivery.recordError;
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "ส่งข้อความ LINE แจ้งเตือนอีกครั้ง",
+    detail: `รหัสการจอง ${id}${booking.ref_number ? ` (เลขอ้างอิง ${booking.ref_number})` : ""}`,
+  });
 
   return NextResponse.json({
     ok: true,

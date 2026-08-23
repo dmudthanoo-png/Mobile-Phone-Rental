@@ -22,7 +22,13 @@ export function verifyJWT(token: string, secret: string) {
     "base64"
   ).toString("utf8");
 
-  const payload = JSON.parse(payloadJson) as { exp?: number; role?: string; [k: string]: unknown };
+  const payload = JSON.parse(payloadJson) as {
+    exp?: number;
+    role?: string;
+    admin_id?: string;
+    username?: string;
+    [k: string]: unknown;
+  };
   const now = Math.floor(Date.now() / 1000);
   if (payload.exp && now > payload.exp) return null;
   return payload;

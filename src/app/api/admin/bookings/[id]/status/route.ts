@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAdminAction } from "@/lib/adminAudit";
 import {
   sendAndRecordBookingApprovalLineMessage,
   type BookingLineNotificationResult,
@@ -127,6 +128,12 @@ export async function PATCH(
       created_at: bookingRow.created_at ?? null,
     });
   }
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: status === "confirmed" ? "ยืนยันการจอง" : "ปฏิเสธการจอง",
+    detail: `การจอง ${bookingRow?.ref_number ? `เลขที่ ${bookingRow.ref_number}` : `รหัส ${id}`}`,
+  });
 
   let lineDelivery: BookingLineNotificationResult | undefined;
   if (status === "confirmed") {

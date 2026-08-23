@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAdminAction } from "@/lib/adminAudit";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -83,6 +84,13 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    await logAdminAction({
+      username: String(admin.payload.username ?? ""),
+      action: "อัปเดตประกาศหน้าแรก",
+      detail: `หัวข้อ: ${title ?? "-"}, สถานะ: ${active ? "เปิดใช้งาน" : "ปิดใช้งาน"}`,
+    });
+
     return NextResponse.json({ ok: true, announcement: data });
   }
 
@@ -93,5 +101,12 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "อัปเดตประกาศหน้าแรก",
+    detail: `หัวข้อ: ${title ?? "-"}, สถานะ: ${active ? "เปิดใช้งาน" : "ปิดใช้งาน"}`,
+  });
+
   return NextResponse.json({ ok: true, announcement: data }, { status: 201 });
 }

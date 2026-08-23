@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAdminAction } from "@/lib/adminAudit";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -56,6 +57,12 @@ export async function PATCH(
   const { error } = await supabase.from("concerts").update(updates).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "แก้ไขคอนเสิร์ต",
+    detail: `รหัส ${id}${title?.trim() ? ` ชื่อ ${title.trim()}` : ""}`,
+  });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -78,6 +85,12 @@ export async function DELETE(
     .eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: "ลบคอนเสิร์ต",
+    detail: `รหัส ${id}`,
+  });
 
   return NextResponse.json({ ok: true });
 }

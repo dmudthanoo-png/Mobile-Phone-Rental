@@ -45,6 +45,8 @@ type Phone   = { id: string; model_name: string; price: number; deposit: number;
 type Lens    = { id: string; name: string; focal_mm: number | null; price: number; qty: number; active: boolean };
 type Announcement = { id: string; title: string | null; subtitle: string | null; emoji: string | null; image_url: string | null; active: boolean };
 type Review = { id: string; booking_id: string; concert_title: string | null; display_name: string; rating: number; comment: string; is_published: boolean; created_at: string };
+type AdminAccount = { id: string; username: string; created_at: string };
+type AuditLogEntry = { id: string; admin_username: string; action: string; detail: string | null; created_at: string };
 type AdminUser = {
   id: string;
   line_sub: string | null;
@@ -195,6 +197,8 @@ const TAB_ITEMS = [
   { key: "lenses" as const, icon: "🔭", label: "เลนส์" },
   { key: "reviews" as const, icon: "⭐", label: "รีวิว" },
   { key: "announcement" as const, icon: "📣", label: "ประกาศ" },
+  { key: "admins" as const, icon: "🛡️", label: "จัดการแอดมิน" },
+  { key: "auditlog" as const, icon: "📜", label: "ประวัติการดำเนินการ" },
 ];
 
 // ── InfoCell: label + value ──
@@ -210,8 +214,20 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 // ─────────────────────────────── component ───────────────────────────────
 export default function AdminPage() {
   const [isAuthed, setIsAuthed] = useState(false);
+  const [loginUsername, setLoginUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [tab, setTab] = useState<"bookings"|"users"|"concerts"|"phones"|"lenses"|"reviews"|"announcement">("bookings");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [needsBootstrap, setNeedsBootstrap] = useState<boolean | null>(null);
+  const [bootstrapPassword2, setBootstrapPassword2] = useState("");
+  const [currentAdminUsername, setCurrentAdminUsername] = useState("");
+  const [admins, setAdmins] = useState<AdminAccount[]>([]);
+  const [newAdminUsername, setNewAdminUsername] = useState("");
+  const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const [deletingAdminId, setDeletingAdminId] = useState<string | null>(null);
+  const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
+  const [auditFilter, setAuditFilter] = useState("");
+  const [tab, setTab] = useState<"bookings"|"users"|"concerts"|"phones"|"lenses"|"reviews"|"announcement"|"admins"|"auditlog">("bookings");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // bookings
@@ -270,20 +286,43 @@ export default function AdminPage() {
   // ── auth ──
   const handleLogin = async () => {
     setLoading(true);
-    const res = await fetch("/api/admin/login", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({password}) });
+    setLoginError(null);
+    const res = await fetch("/api/admin/login", {
+      method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify({ username: loginUsername.trim(), password }),
+    });
+    const out = await res.json().catch(() => null);
     setLoading(false);
-    if (!res.ok) { showMsg("รหัสไม่ถูกต้อง", false); return; }
-    setIsAuthed(true); setPassword("");
+    if (!res.ok) { setLoginError(out?.error || "เข้าสู่ระบบไม่สำเร็จ"); return; }
+    setIsAuthed(true); setPassword(""); setLoginError(null);
+    setCurrentAdminUsername(out?.username ?? loginUsername.trim().toLowerCase());
     loadAll();
+  };
+
+  const handleBootstrap = async () => {
+    setLoginError(null);
+    if (password !== bootstrapPassword2) { setLoginError("ยืนยันรหัสผ่านไม่ตรงกัน"); return; }
+    setLoading(true);
+    const res = await fetch("/api/admin/admins", {
+      method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify({ username: loginUsername.trim(), password }),
+    });
+    const out = await res.json().catch(() => null);
+    setLoading(false);
+    if (!res.ok) { setLoginError(out?.error || "สร้างบัญชีไม่สำเร็จ"); return; }
+    setNeedsBootstrap(false);
+    showMsg("✅ สร้างบัญชีแอดมินคนแรกแล้ว กรุณาเข้าสู่ระบบ");
+    setPassword(""); setBootstrapPassword2("");
   };
 
   const handleLogout = async () => {
     await fetch("/api/admin/logout", { method:"POST" });
     setIsAuthed(false); setBookings([]); setConcerts([]); setPhones([]);
+    setCurrentAdminUsername("");
     setLineQuota({ status:"loading", loading:true });
   };
 
-  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchReviews(); fetchUsers(); fetchAnnouncement(); fetchSettings(); fetchLineQuota(); };
+  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchReviews(); fetchUsers(); fetchAnnouncement(); fetchSettings(); fetchLineQuota(); fetchAdmins(); fetchAuditLog(); };
 
   // ── bookings ──
   const fetchBookings = async () => {
@@ -688,6 +727,57 @@ export default function AdminPage() {
     }
   };
 
+  // ── บัญชีแอดมิน ──
+  const fetchAdmins = async () => {
+    const res = await fetch("/api/admin/admins", { cache:"no-store" });
+    if (res.ok) {
+      const out = await res.json();
+      setAdmins(out.admins ?? []);
+    }
+  };
+
+  const createAdmin = async () => {
+    if (!newAdminUsername.trim() || !newAdminPassword) { showMsg("กรอกให้ครบ", false); return; }
+    setCreatingAdmin(true);
+    try {
+      const res = await fetch("/api/admin/admins", {
+        method:"POST", headers:{"content-type":"application/json"},
+        body: JSON.stringify({ username: newAdminUsername.trim(), password: newAdminPassword }),
+      });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) { showMsg(out?.error || "สร้างไม่สำเร็จ", false); return; }
+      showMsg("✅ สร้างบัญชีแอดมินแล้ว");
+      setNewAdminUsername(""); setNewAdminPassword("");
+      fetchAdmins(); fetchAuditLog();
+    } finally {
+      setCreatingAdmin(false);
+    }
+  };
+
+  const deleteAdmin = async (id: string, username: string) => {
+    if (!window.confirm(`ลบบัญชีแอดมิน "${username}"?`)) return;
+    setDeletingAdminId(id);
+    try {
+      const res = await fetch(`/api/admin/admins/${id}`, { method:"DELETE", cache:"no-store" });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) { showMsg(out?.error || "ลบไม่สำเร็จ", false); return; }
+      showMsg("🗑 ลบบัญชีแล้ว");
+      fetchAdmins(); fetchAuditLog();
+    } finally {
+      setDeletingAdminId(null);
+    }
+  };
+
+  // ── ประวัติการดำเนินการของแอดมิน ──
+  const fetchAuditLog = async (usernameFilter?: string) => {
+    const qs = usernameFilter ? `?username=${encodeURIComponent(usernameFilter)}` : "";
+    const res = await fetch(`/api/admin/audit-log${qs}`, { cache:"no-store" });
+    if (res.ok) {
+      const out = await res.json();
+      setAuditLog(out.logs ?? []);
+    }
+  };
+
   // ── รีวิวลูกค้า (ดู + ลบ) ──
   const fetchReviews = async () => {
     const res = await fetch("/api/admin/reviews", { cache:"no-store" });
@@ -762,6 +852,20 @@ export default function AdminPage() {
         const out = await res.json();
         setBookings(out.bookings ?? []);
         loadAll();
+        const meRes = await fetch("/api/admin/me", { cache:"no-store" });
+        if (meRes.ok) {
+          const me = await meRes.json();
+          setCurrentAdminUsername(me.username ?? "");
+        }
+      } else {
+        // ยังไม่ได้ล็อกอิน — เช็คว่าต้องตั้งค่าบัญชีแอดมินคนแรกก่อนไหม
+        try {
+          const bRes = await fetch("/api/admin/admins", { cache:"no-store" });
+          const bOut = await bRes.json().catch(() => null);
+          setNeedsBootstrap(bRes.ok ? Boolean(bOut?.needsBootstrap) : false);
+        } catch {
+          setNeedsBootstrap(false);
+        }
       }
     })();
   }, []);
@@ -800,19 +904,61 @@ export default function AdminPage() {
           ? { label:"🟡 ยังไม่ได้ตั้งค่า Token", background:"#FFF9E6", border:"#F3E3B8", color:"#8A6D2F" }
           : { label:"🔴 ติดต่อ LINE ไม่สำเร็จ", background:"#FFF1F2", border:"#F9C7D1", color:"#C43D5C" };
   // ─────────── login screen ───────────
-  if (!isAuthed) return (
-    <div style={{ minHeight:"100vh", background:UI.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:UI.font, color:UI.ink }}>
-      <div style={{ ...card, width:"100%", maxWidth:400, padding:24 }}>
-        <div style={{ fontWeight:700, fontSize:22, marginBottom:6 }}>🔐 Admin Login</div>
-        <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
-          onKeyDown={e=>e.key==="Enter"&&handleLogin()}
-          placeholder="ADMIN_PASSWORD" style={{ ...inputStyle, marginBottom:12 }} />
-        <button onClick={handleLogin} disabled={loading||!password} style={btnStyle("dark", loading||!password)}>
-          {loading ? "⏳..." : "เข้าใช้งาน"}
-        </button>
+  if (!isAuthed) {
+    if (needsBootstrap === null) {
+      return (
+        <div style={{ minHeight:"100vh", background:UI.bg, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:UI.font, color:UI.muted, fontWeight:700 }}>
+          ⏳ กำลังโหลด...
+        </div>
+      );
+    }
+
+    if (needsBootstrap) {
+      return (
+        <div style={{ minHeight:"100vh", background:UI.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:UI.font, color:UI.ink }}>
+          <div style={{ ...card, width:"100%", maxWidth:400, padding:24 }}>
+            <div style={{ fontWeight:700, fontSize:22, marginBottom:6 }}>🛡️ ตั้งค่าบัญชีแอดมินคนแรก</div>
+            <div style={{ fontSize:12, color:UI.muted, fontWeight:600, marginBottom:16 }}>
+              ยังไม่มีบัญชีแอดมินในระบบ กรุณาสร้างบัญชีแรกก่อนเข้าใช้งาน
+            </div>
+            <input value={loginUsername} onChange={e=>setLoginUsername(e.target.value)}
+              placeholder="username" style={{ ...inputStyle, marginBottom:10 }} />
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
+              placeholder="รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)" style={{ ...inputStyle, marginBottom:10 }} />
+            <input type="password" value={bootstrapPassword2} onChange={e=>setBootstrapPassword2(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&handleBootstrap()}
+              placeholder="ยืนยันรหัสผ่านอีกครั้ง" style={{ ...inputStyle, marginBottom:12 }} />
+            {loginError && (
+              <div style={{ fontSize:12, color:"#C43D5C", fontWeight:700, marginBottom:12 }}>⚠️ {loginError}</div>
+            )}
+            <button onClick={handleBootstrap} disabled={loading||!loginUsername.trim()||!password} style={btnStyle("dark", loading||!loginUsername.trim()||!password)}>
+              {loading ? "⏳..." : "สร้างบัญชี"}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ minHeight:"100vh", background:UI.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:UI.font, color:UI.ink }}>
+        <div style={{ ...card, width:"100%", maxWidth:400, padding:24 }}>
+          <div style={{ fontWeight:700, fontSize:22, marginBottom:6 }}>🔐 Admin Login</div>
+          <input value={loginUsername} onChange={e=>setLoginUsername(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+            placeholder="username" style={{ ...inputStyle, marginBottom:10 }} />
+          <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+            placeholder="รหัสผ่าน" style={{ ...inputStyle, marginBottom:12 }} />
+          {loginError && (
+            <div style={{ fontSize:12, color:"#C43D5C", fontWeight:700, marginBottom:12 }}>⚠️ {loginError}</div>
+          )}
+          <button onClick={handleLogin} disabled={loading||!loginUsername.trim()||!password} style={btnStyle("dark", loading||!loginUsername.trim()||!password)}>
+            {loading ? "⏳..." : "เข้าใช้งาน"}
+          </button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   // ─────────── main ───────────
   const sidebarW = sidebarCollapsed ? 68 : 216;
@@ -902,6 +1048,11 @@ export default function AdminPage() {
             <div style={{ fontSize:12, color:UI.muted, fontWeight:800 }}>ระบบเช่ามือถือ</div>
           </div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+            {currentAdminUsername && (
+              <div style={{ fontSize:12, color:UI.muted, fontWeight:700, padding:"6px 10px" }}>
+                👤 {currentAdminUsername}
+              </div>
+            )}
             <button
               onClick={toggleSlipOk}
               style={{
@@ -1682,6 +1833,96 @@ export default function AdminPage() {
                 {annSaving ? "⏳ กำลังบันทึก..." : "💾 บันทึกประกาศ"}
               </button>
             </div>
+          </div>
+        )}
+
+        {/* ═══════════════ TAB: ADMINS ═══════════════ */}
+        {tab === "admins" && (
+          <div>
+            <div style={{ ...card, padding:16, marginBottom:16 }}>
+              <div style={{ fontWeight:700, fontSize:15, marginBottom:14 }}>➕ สร้างบัญชีแอดมินใหม่</div>
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+                <input value={newAdminUsername} onChange={e=>setNewAdminUsername(e.target.value)} placeholder="username" style={{ ...inputStyle, maxWidth:200 }} />
+                <input type="password" value={newAdminPassword} onChange={e=>setNewAdminPassword(e.target.value)} placeholder="รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)" style={{ ...inputStyle, maxWidth:240 }} />
+                <button onClick={createAdmin} disabled={creatingAdmin} style={btnStyle("dark", creatingAdmin)}>
+                  {creatingAdmin ? "⏳ กำลังสร้าง..." : "สร้างบัญชี"}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+              <div style={{ fontWeight:700, fontSize:15 }}>🛡️ บัญชีแอดมินทั้งหมด ({admins.length})</div>
+              <button onClick={fetchAdmins} style={btnStyle("white")}>🔄 รีเฟรช</button>
+            </div>
+
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              {admins.map((a) => (
+                <div key={a.id} style={{ ...card, padding:16, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
+                  <div>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ fontWeight:700, fontSize:14, color:UI.ink }}>{a.username}</span>
+                      {a.username === currentAdminUsername && (
+                        <span style={{ fontSize:11, fontWeight:700, borderRadius:999, padding:"2px 8px", background:UI.accentSoft, color:UI.accent }}>
+                          คุณ
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize:11, color:UI.muted, fontWeight:600, marginTop:2 }}>
+                      สร้างเมื่อ {fmtDT(a.created_at)}
+                    </div>
+                  </div>
+                  <button
+                    disabled={deletingAdminId===a.id || admins.length<=1}
+                    onClick={() => deleteAdmin(a.id, a.username)}
+                    style={btnStyle("red", deletingAdminId===a.id || admins.length<=1)}
+                  >
+                    {deletingAdminId===a.id ? "⏳ กำลังลบ..." : "🗑 ลบบัญชี"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════ TAB: AUDIT LOG ═══════════════ */}
+        {tab === "auditlog" && (
+          <div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, flexWrap:"wrap", gap:10 }}>
+              <div style={{ fontWeight:700, fontSize:15 }}>📜 ประวัติการดำเนินการของแอดมิน ({auditLog.length})</div>
+              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <select
+                  value={auditFilter}
+                  onChange={e => { setAuditFilter(e.target.value); fetchAuditLog(e.target.value || undefined); }}
+                  style={{ ...inputStyle, maxWidth:200 }}
+                >
+                  <option value="">ทุกคน</option>
+                  {admins.map(a => <option key={a.id} value={a.username}>{a.username}</option>)}
+                </select>
+                <button onClick={() => fetchAuditLog(auditFilter || undefined)} style={btnStyle("white")}>🔄 รีเฟรช</button>
+              </div>
+            </div>
+
+            {auditLog.length === 0 ? (
+              <div style={{ ...card, padding:24, textAlign:"center", color:UI.muted, fontWeight:700 }}>
+                ยังไม่มีประวัติการดำเนินการ
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {auditLog.map((l) => (
+                  <div key={l.id} style={{ ...card, padding:"12px 16px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:700, color:UI.ink }}>
+                        👤 {l.admin_username} <span style={{ color:UI.muted, fontWeight:600 }}>·</span> {l.action}
+                      </div>
+                      {l.detail && (
+                        <div style={{ fontSize:12, color:UI.muted, fontWeight:600, marginTop:2 }}>{l.detail}</div>
+                      )}
+                    </div>
+                    <div style={{ fontSize:11, color:UI.muted, fontWeight:600, whiteSpace:"nowrap" }}>{fmtDT(l.created_at)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

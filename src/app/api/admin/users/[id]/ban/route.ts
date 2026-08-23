@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logAdminAction } from "@/lib/adminAudit";
 
 const uuidRe =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -44,6 +45,12 @@ export async function PATCH(
     .eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAdminAction({
+    username: String(admin.payload.username ?? ""),
+    action: banned ? "แบนผู้ใช้" : "ปลดแบนผู้ใช้",
+    detail: `user_id: ${id}${banned && reason ? ` · เหตุผล: ${reason}` : ""}`,
+  });
 
   return NextResponse.json({ ok: true, banned });
 }

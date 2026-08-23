@@ -90,10 +90,12 @@ export async function POST(req: NextRequest) {
     const lens_id      = String(form.get("lens_id")      ?? "").trim() || null;
 
     let qty = Number(form.get("qty") ?? 1);
-    if (!Number.isFinite(qty) || qty < 1) qty = 1;
+    if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty < 1) qty = 1;
+    qty = Math.min(qty, 10);
 
     let lens_qty = Number(form.get("lens_qty") ?? 0);
-    if (!Number.isFinite(lens_qty) || lens_qty < 0) lens_qty = 0;
+    if (!Number.isFinite(lens_qty) || !Number.isInteger(lens_qty) || lens_qty < 0) lens_qty = 0;
+    lens_qty = Math.min(lens_qty, 10);
     if (!lens_id) lens_qty = 0;
 
     let amount = Number(form.get("total_amount") ?? 0);
@@ -117,11 +119,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `unsupported file type: ${slip.type}` }, { status: 400 });
     }
 
-    // 3) verify price + lens จาก DB (ไม่เชื่อ client)
+    // 2.5) verify session ว่ามีอยู่จริง + คอนเสิร์ตยังไม่ archive (กันจองรอบที่เก็บเข้าคลังไปแล้ว)
+    const { data: sessionCheck, error: sessionCheckErr } = await supabaseAdmin
+      .from("concert_sessions")
+      .select("id, concerts ( archived )")
+      .eq("id", session_id)
+      .maybeSingle();
+
+    if (sessionCheckErr) return NextResponse.json({ error: sessionCheckErr.message }, { status: 500 });
+    if (!sessionCheck) return NextResponse.json({ error: "session not found" }, { status: 404 });
+    const concertArchived = (sessionCheck.concerts as unknown as { archived: boolean } | null)?.archived;
+    if (concertArchived) return NextResponse.json({ error: "concert archived" }, { status: 400 });
+
+    // 3) verify price + lens จาก DB (ไม่เชื่อ client) — ต้อง active เท่านั้นถึงจะจองได้
     const { data: phoneRow, error: phoneErr } = await supabaseAdmin
       .from("phones")
       .select("model_name, price, deposit")
       .eq("id", phone_id)
+      .eq("active", true)
       .maybeSingle();
 
     if (phoneErr) return NextResponse.json({ error: phoneErr.message }, { status: 500 });

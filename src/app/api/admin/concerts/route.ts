@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { validateImageUpload } from "@/lib/imageUpload";
 
 function supabase() {
   return createClient(
@@ -42,6 +43,9 @@ export async function POST(req: NextRequest) {
   let poster_url: string | null = null;
 
   if (poster instanceof File && poster.size > 0) {
+    const imgErr = validateImageUpload(poster);
+    if (imgErr) return NextResponse.json({ error: imgErr }, { status: 400 });
+
     const ext = poster.type === "image/png" ? "png" : poster.type === "image/webp" ? "webp" : "jpg";
     const fileName = `concerts/${Date.now()}.${ext}`;
     const buf = Buffer.from(await poster.arrayBuffer());

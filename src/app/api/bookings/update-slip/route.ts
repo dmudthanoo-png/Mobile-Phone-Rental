@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { verifySlipForBooking } from "@/lib/slipOk";
 import { findOrCreateLineUser } from "@/lib/lineSession";
+import { extractSlipPath } from "@/lib/slipStorage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
   // ✅ เช็ค ownership ด้วย user_id แทน line_sub
   const { data: bk, error: bkErr } = await supabaseAdmin
     .from("bookings")
-    .select("id, user_id, status, slip_update_count, last_slip_update_at")
+    .select("id, user_id, status, slip_update_count, last_slip_update_at, slip_url")
     .eq("id", bookingId)
     .single();
 
@@ -133,19 +134,43 @@ export async function POST(req: NextRequest) {
   const { data: pub } = supabaseAdmin.storage.from("slips").getPublicUrl(fileName);
   const slipUrl = pub.publicUrl;
 
-  // ✅ แก้จากเดิม: อัปเดต slip_url + reset status → pending ให้ admin รู้ว่ามีสลิปใหม่
-  // พร้อมนับจำนวนครั้ง + บันทึกเวลาล่าสุด (กันสแปม)
-  const { error: upRowErr } = await supabaseAdmin
+  // ✅ อัปเดต slip_url + reset status → pending ให้ admin รู้ว่ามีสลิปใหม่ พร้อมนับจำนวนครั้ง +
+  // บันทึกเวลาล่าสุด (กันสแปม) — ผูก .eq("slip_update_count", updateCount) ไว้ด้วยเป็น optimistic lock
+  // กัน race condition ถ้ามี request อื่นมาอัปเดตพร้อมกันแล้วนับซ้ำ/ข้าม limit ไปได้
+  const { error: upRowErr, count: updatedCount } = await supabaseAdmin
     .from("bookings")
-    .update({
-      slip_url: slipUrl,
-      status: "pending",
-      slip_update_count: updateCount + 1,
-      last_slip_update_at: new Date().toISOString(),
-    })
-    .eq("id", bookingId);
+    .update(
+      {
+        slip_url: slipUrl,
+        status: "pending",
+        slip_update_count: updateCount + 1,
+        last_slip_update_at: new Date().toISOString(),
+      },
+      { count: "exact" }
+    )
+    .eq("id", bookingId)
+    .eq("slip_update_count", updateCount);
 
-  if (upRowErr) return NextResponse.json({ error: `update failed: ${upRowErr.message}` }, { status: 500 });
+  if (upRowErr) {
+    await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
+    return NextResponse.json({ error: `update failed: ${upRowErr.message}` }, { status: 500 });
+  }
+  if (!updatedCount) {
+    // มี request อื่นอัปเดตแซงไปแล้วระหว่างที่กำลังอัปโหลดไฟล์นี้อยู่ — ไม่ถือว่าสำเร็จ ลบไฟล์ที่เพิ่งอัปทิ้ง
+    await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
+    return NextResponse.json(
+      { error: "conflict", message: "มีการเปลี่ยนสลิปพร้อมกันจากที่อื่น กรุณาลองใหม่อีกครั้ง" },
+      { status: 409 }
+    );
+  }
+
+  // ลบสลิปเก่าทิ้งแบบ best-effort หลังอัปเดตสำเร็จแล้วเท่านั้น (กันไฟล์ orphan สะสม)
+  if (bk.slip_url) {
+    const oldPath = extractSlipPath(bk.slip_url);
+    if (oldPath) {
+      await supabaseAdmin.storage.from("slips").remove([oldPath]).catch(() => {});
+    }
+  }
 
   // ตรวจสอบสลิปใหม่กับ SlipOK อัตโนมัติแบบ best-effort
   try {

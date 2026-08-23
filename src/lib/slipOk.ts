@@ -94,16 +94,29 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
     form.append("files", new Blob([slipBuffer], { type: contentType }), `slip.${ext}`);
     form.append("amount", String(expectedAmount));
 
-    const slipOkRes = await fetch(apiUrl, {
-      method: "POST",
-      headers: { "x-authorization": apiKey },
-      body: form,
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    let slipOkRes: Response;
+    try {
+      slipOkRes = await fetch(apiUrl, {
+        method: "POST",
+        headers: { "x-authorization": apiKey },
+        body: form,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     slipOkResult = await slipOkRes.json().catch(() => null);
     slipOkOk = slipOkRes.ok;
   } catch (err) {
-    return { ok: false, error: `เรียก SlipOK ไม่สำเร็จ: ${err instanceof Error ? err.message : "unknown error"}` };
+    const isTimeout = err instanceof Error && err.name === "AbortError";
+    return {
+      ok: false,
+      error: isTimeout ? "เรียก SlipOK ไม่สำเร็จ: หมดเวลารอ" : `เรียก SlipOK ไม่สำเร็จ: ${err instanceof Error ? err.message : "unknown error"}`,
+    };
   }
 
   // 4) แกะผลลัพธ์แบบยืดหยุ่น (รองรับทั้ง success ตรงๆ หรือซ้อนใน data)

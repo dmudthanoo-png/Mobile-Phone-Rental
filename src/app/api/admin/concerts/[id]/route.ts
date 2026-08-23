@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { validateImageUpload } from "@/lib/imageUpload";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -36,6 +37,9 @@ export async function PATCH(
 
   // อัปโหลดโปสเตอร์ใหม่ถ้ามี
   if (posterFile instanceof File && posterFile.size > 0) {
+    const imgErr = validateImageUpload(posterFile);
+    if (imgErr) return NextResponse.json({ error: imgErr }, { status: 400 });
+
     const ext = posterFile.type === "image/png" ? "png" : posterFile.type === "image/webp" ? "webp" : "jpg";
     const fileName = `concert_${id}_${Date.now()}.${ext}`;
     const buffer = Buffer.from(await posterFile.arrayBuffer());

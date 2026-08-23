@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { validateImageUpload } from "@/lib/imageUpload";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -58,6 +59,9 @@ export async function POST(req: NextRequest) {
   let image_url: string | null = null;
 
   if (imageFile instanceof File && imageFile.size > 0) {
+    const imgErr = validateImageUpload(imageFile);
+    if (imgErr) return NextResponse.json({ error: imgErr }, { status: 400 });
+
     const ext      = getImageExt(imageFile.type);
     const fileName = `phone_${model_name.replace(/\s+/g, "_")}_${Date.now()}.${ext}`;
     const buffer   = Buffer.from(await imageFile.arrayBuffer());
@@ -126,6 +130,9 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (imageFile instanceof File && imageFile.size > 0) {
+    const imgErr = validateImageUpload(imageFile);
+    if (imgErr) return NextResponse.json({ error: imgErr }, { status: 400 });
+
     const ext      = getImageExt(imageFile.type);
     const fileName = `phone_${id}_${Date.now()}.${ext}`;
     const buffer   = Buffer.from(await imageFile.arrayBuffer());

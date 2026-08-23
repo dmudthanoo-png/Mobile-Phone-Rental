@@ -226,9 +226,12 @@ export default function BookingsPage() {
     const run = async () => {
       const meRes = await fetch("/api/me", { cache: "no-store" });
       const meRaw = await meRes.text();
-      let me: { user?: MeUser } | null = null;
+      let me: { user?: MeUser; error?: string } | null = null;
       try { me = meRaw ? JSON.parse(meRaw) : null; } catch { router.push("/login"); return; }
-      if (!me?.user) { router.push("/login"); return; }
+      if (!me?.user) {
+        router.push(me?.error === "banned" ? "/login?error=banned" : "/login");
+        return;
+      }
       setMeUser(me.user);
       try { await loadMyBookings(); }
       catch (e) { console.error(e); router.push("/login"); }

@@ -262,6 +262,17 @@ export default function PhoneRentalHome() {
     }
   };
 
+  // ถ้าโดนแบนกลางทาง (middleware เตะออกจาก session) ให้เคลียร์ cookie ที่เหลือ
+  // แล้วพาไปหน้า login พร้อมข้อความแจ้งเตือน แทนที่จะปล่อยให้ค้างครึ่งๆ กลางๆ
+  async function redirectIfBanned(status: number, out: unknown): Promise<boolean> {
+    if (status !== 403) return false;
+    const errCode = (out as { error?: string } | null)?.error;
+    if (errCode !== "banned") return false;
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    router.push("/login?error=banned");
+    return true;
+  }
+
   async function safeJson(res: Response) {
     const ct  = res.headers.get("content-type") || "";
     const raw = await res.text();
@@ -275,7 +286,11 @@ export default function PhoneRentalHome() {
   async function loadConcerts() {
     const res = await fetch("/api/concerts", { cache: "no-store" });
     const raw = await res.text();
-    if (!res.ok) throw new Error(raw || "failed to load concerts");
+    if (!res.ok) {
+      const parsed = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
+      if (await redirectIfBanned(res.status, parsed)) return;
+      throw new Error(raw || "failed to load concerts");
+    }
     const out = raw ? JSON.parse(raw) : null;
     setConcerts(out?.concerts ?? []);
   }
@@ -283,7 +298,11 @@ export default function PhoneRentalHome() {
   async function loadSessions(concertId: string) {
     const res = await fetch(`/api/concerts/${concertId}`, { cache: "no-store" });
     const raw = await res.text();
-    if (!res.ok) throw new Error(raw || "failed to load sessions");
+    if (!res.ok) {
+      const parsed = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
+      if (await redirectIfBanned(res.status, parsed)) return;
+      throw new Error(raw || "failed to load sessions");
+    }
     const out = raw ? JSON.parse(raw) : null;
     setSessions(out?.sessions ?? []);
   }
@@ -291,7 +310,11 @@ export default function PhoneRentalHome() {
   async function loadPhones(sessionId: string) {
     const res = await fetch(`/api/sessions/${sessionId}/phones`, { cache: "no-store" });
     const raw = await res.text();
-    if (!res.ok) throw new Error(raw || "failed to load phones");
+    if (!res.ok) {
+      const parsed = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
+      if (await redirectIfBanned(res.status, parsed)) return;
+      throw new Error(raw || "failed to load phones");
+    }
     const out = raw ? JSON.parse(raw) : null;
     setPhones(out?.phones ?? []);
   }
@@ -301,7 +324,10 @@ export default function PhoneRentalHome() {
       try {
         const meRes = await fetch("/api/me", { cache: "no-store" });
         const me = await meRes.json();
-        if (!me.user) { router.push("/login"); return; }
+        if (!me.user) {
+          router.push(me?.error === "banned" ? "/login?error=banned" : "/login");
+          return;
+        }
         setMeUser(me.user);
         if (me.user.name) setRenterName(me.user.name);
         await loadConcerts();
@@ -491,6 +517,7 @@ export default function PhoneRentalHome() {
         }
 
         if (!upRes.ok) {
+          if (await redirectIfBanned(upRes.status, upOut)) return;
           if (upRes.status === 409 && upOut?.error === "sold_out") {
             alert("ขออภัย รุ่นนี้เต็มแล้ว กรุณาเลือกรุ่น/รอบใหม่");
             if (selectedSessionId) await loadPhones(selectedSessionId);

@@ -104,7 +104,7 @@ export default function ReviewPage() {
         const meRes = await fetch("/api/me", { cache: "no-store" });
         const me = await meRes.json();
         if (!me.user) {
-          router.push("/login");
+          router.push(me?.error === "banned" ? "/login?error=banned" : "/login");
           return;
         }
         setMeUser(me.user);

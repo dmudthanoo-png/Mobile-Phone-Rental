@@ -365,6 +365,8 @@ export default function AdminPage() {
     setIsAuthed(false); setBookings([]); setConcerts([]); setPhones([]);
     setCurrentAdminUsername(""); setCurrentTotpEnabled(false);
     setLineQuota({ status:"loading", loading:true });
+    // เพิ่งออกจากระบบสำเร็จ = ต้องมีบัญชีแอดมินอยู่แล้วแน่ๆ ไม่ต้องเช็ค bootstrap ซ้ำ
+    setNeedsBootstrap(false);
   };
 
   const fetchMe = async () => {

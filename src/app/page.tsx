@@ -554,7 +554,7 @@ export default function PhoneRentalHome() {
         <Navbar user={meUser} onSignOut={handleSignOut} />
       </div>
 
-      <div style={{ width: "100%", maxWidth: 760 }}>
+      <div style={{ width: "100%", maxWidth: 760, flex: 1 }}>
 
         <AnnouncementBanner
           title="จองด่วน! รอบใหม่เปิดแล้ว 🎫"

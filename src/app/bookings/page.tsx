@@ -253,7 +253,7 @@ export default function BookingsPage() {
         <Navbar user={meUser} onSignOut={handleSignOut} />
       </div>
 
-      <div style={{ width: "100%", maxWidth: 760 }}>
+      <div style={{ width: "100%", maxWidth: 760, flex: 1 }}>
 
         {/* Header */}
         <div style={{ padding: "28px 32px 16px" }}>

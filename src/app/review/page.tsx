@@ -182,7 +182,7 @@ export default function ReviewPage() {
         <Navbar user={meUser} onSignOut={handleSignOut} />
       </div>
 
-      <div style={{ width: "100%", maxWidth: 640, padding: "28px 32px 40px" }}>
+      <div style={{ width: "100%", maxWidth: 640, padding: "28px 32px 40px", flex: 1 }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ fontSize: 26, fontWeight: 800 }}>
             <span style={{ color: ink }}>เขียน</span>{" "}

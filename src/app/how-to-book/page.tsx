@@ -126,7 +126,7 @@ export default function HowToBookPage() {
         <Navbar user={meUser} onSignOut={handleSignOut} />
       </div>
 
-      <div style={{ width: "100%", maxWidth: 900, padding: "28px 32px 40px" }}>
+      <div style={{ width: "100%", maxWidth: 900, padding: "28px 32px 40px", flex: 1 }}>
         <div style={{ textAlign: "center", marginBottom: 30 }}>
           <div style={{ fontSize: 30, fontWeight: 800 }}>
             <span style={{ color: ink }}>วิธีการ</span>{" "}

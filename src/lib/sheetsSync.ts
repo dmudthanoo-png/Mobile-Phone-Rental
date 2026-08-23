@@ -20,6 +20,25 @@ export type SheetBookingPayload = {
   created_at?: string | null;
 };
 
+// กัน Spreadsheet Formula Injection — ถ้า Apps Script ปลายทางเขียนค่าลง cell ตรงๆ
+// ค่าที่ขึ้นต้นด้วย =, +, -, @ จะถูกตีความเป็นสูตรได้ (เช่น renter_name ที่ผู้ใช้กรอกเอง)
+// เติม ' นำหน้าให้สเปรดชีตส่วนใหญ่ตีความเป็นข้อความธรรมดาแทน
+function sanitizeForSheet(value: string): string {
+  if (/^[=+\-@\t\r]/.test(value)) return `'${value}`;
+  return value;
+}
+
+function sanitizePayload(payload: SheetBookingPayload): SheetBookingPayload {
+  const sanitized = { ...payload };
+  for (const key of Object.keys(sanitized) as (keyof SheetBookingPayload)[]) {
+    const value = sanitized[key];
+    if (typeof value === "string") {
+      (sanitized[key] as string) = sanitizeForSheet(value);
+    }
+  }
+  return sanitized;
+}
+
 export async function syncBookingToSheet(payload: SheetBookingPayload) {
   const webhookUrl = process.env.SHEETS_WEBHOOK_URL;
   if (!webhookUrl) return; // ยังไม่ได้ตั้งค่า — ข้ามเงียบๆ
@@ -31,7 +50,7 @@ export async function syncBookingToSheet(payload: SheetBookingPayload) {
     await fetch(webhookUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(sanitizePayload(payload)),
       signal: controller.signal,
     });
 

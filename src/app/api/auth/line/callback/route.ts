@@ -133,8 +133,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${baseUrl}/login?error=missing_sub`);
   }
 
-  // nonce check (ถ้ามี)
-  if (expectedNonce && verified.nonce && verified.nonce !== expectedNonce) {
+  // nonce check — ถ้าเราส่ง nonce ไปตอน login (มี expectedNonce) ID token ที่ verify กลับมาต้องมี
+  // nonce ตรงกันเสมอ ถ้า LINE ไม่ส่ง nonce กลับมาเลยทั้งที่เราคาดหวังไว้ ให้ถือว่าน่าสงสัยแล้วปฏิเสธ
+  // (ไม่ใช่แค่เช็คตอนที่ทั้งสองค่ามีอยู่ ซึ่งจะหลุดผ่านได้ถ้า verified.nonce หายไปเฉยๆ)
+  if (expectedNonce && verified.nonce !== expectedNonce) {
     return NextResponse.redirect(`${baseUrl}/login?error=invalid_nonce`);
   }
 

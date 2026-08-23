@@ -59,6 +59,25 @@ export async function POST(req: NextRequest) {
 
   const supabase = getSupabase();
 
+  // กันตั้งจำนวนต่ำกว่ายอดที่ถูกจองไปแล้วจริง (confirmed + pending ที่ยังไม่หมดอายุ)
+  const nowIso = new Date().toISOString();
+  const { count: bookedCount, error: bookedErr } = await supabase
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("session_id", session_id)
+    .eq("phone_id", phone_id)
+    .or(
+      `status.eq.confirmed,status.eq.pending.and(pending_expires_at.is.null),status.eq.pending.and(pending_expires_at.gt.${nowIso})`
+    );
+
+  if (bookedErr) return NextResponse.json({ error: bookedErr.message }, { status: 500 });
+  if (parsedQty < (bookedCount ?? 0)) {
+    return NextResponse.json(
+      { error: `ตั้งได้ต่ำสุด ${bookedCount} เพราะมีการจองอยู่แล้ว ${bookedCount} รายการ` },
+      { status: 400 }
+    );
+  }
+
   const { error } = await supabase
     .from("session_phone_inventory")
     .upsert(
@@ -98,6 +117,27 @@ export async function PUT(req: NextRequest) {
   }
 
   const supabase = getSupabase();
+
+  // กันตั้งจำนวนต่ำกว่ายอดที่ถูกจองไปแล้วจริง (confirmed + pending ที่ยังไม่หมดอายุ) ทีละรายการ
+  const nowIso = new Date().toISOString();
+  for (const item of items) {
+    const { count: bookedCount, error: bookedErr } = await supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("session_id", session_id)
+      .eq("phone_id", item.phone_id)
+      .or(
+        `status.eq.confirmed,status.eq.pending.and(pending_expires_at.is.null),status.eq.pending.and(pending_expires_at.gt.${nowIso})`
+      );
+
+    if (bookedErr) return NextResponse.json({ error: bookedErr.message }, { status: 500 });
+    if (Number(item.qty) < (bookedCount ?? 0)) {
+      return NextResponse.json(
+        { error: `phone_id ${item.phone_id} ตั้งได้ต่ำสุด ${bookedCount} เพราะมีการจองอยู่แล้ว ${bookedCount} รายการ` },
+        { status: 400 }
+      );
+    }
+  }
 
   const rows = items.map((item) => ({
     session_id,

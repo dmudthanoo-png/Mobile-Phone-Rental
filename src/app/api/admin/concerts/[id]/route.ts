@@ -54,8 +54,9 @@ export async function PATCH(
     return NextResponse.json({ error: "no fields to update" }, { status: 400 });
   }
 
-  const { error } = await supabase.from("concerts").update(updates).eq("id", id);
+  const { error, count } = await supabase.from("concerts").update(updates, { count: "exact" }).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!count) return NextResponse.json({ error: "ไม่พบคอนเสิร์ตนี้" }, { status: 404 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
@@ -79,12 +80,13 @@ export async function DELETE(
 
   const supabase = getSupabase();
 
-  const { error } = await supabase
+  const { error, count } = await supabase
     .from("concerts")
-    .update({ archived: true })
+    .update({ archived: true }, { count: "exact" })
     .eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!count) return NextResponse.json({ error: "ไม่พบคอนเสิร์ตนี้" }, { status: 404 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

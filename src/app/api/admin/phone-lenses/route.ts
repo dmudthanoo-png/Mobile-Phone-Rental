@@ -75,13 +75,14 @@ export async function DELETE(req: NextRequest) {
   }
 
   const supabase = getSupabase();
-  const { error } = await supabase
+  const { error, count } = await supabase
     .from("phone_lenses")
-    .delete()
+    .delete({ count: "exact" })
     .eq("phone_id", phone_id)
     .eq("lens_id", lens_id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!count) return NextResponse.json({ error: "ไม่พบการผูกเลนส์กับมือถือนี้" }, { status: 404 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

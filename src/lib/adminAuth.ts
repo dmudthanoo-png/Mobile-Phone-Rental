@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import type { NextRequest } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 function base64urlToBuffer(b64url: string) {
   const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64url.length + 3) % 4);
@@ -59,7 +60,9 @@ export function verifyJWT(token: string, secret: string) {
   return payload;
 }
 
-export function requireAdmin(req: NextRequest) {
+// เช็คว่าบัญชีแอดมินนี้ยังมีอยู่จริงในระบบทุกครั้ง (ไม่ใช่แค่ verify ลายเซ็น JWT)
+// เพื่อให้การ "ลบบัญชีแอดมิน" มีผลทันที ไม่ต้องรอ session เดิมหมดอายุเอง (สูงสุด 12 ชม.)
+export async function requireAdmin(req: NextRequest) {
   const secret = process.env.APP_SESSION_SECRET;
   if (!secret) return { ok: false as const, error: "missing APP_SESSION_SECRET" };
 
@@ -68,6 +71,17 @@ export function requireAdmin(req: NextRequest) {
 
   const payload = verifyJWT(token, secret);
   if (!payload || payload.role !== "admin") return { ok: false as const, error: "unauthorized" };
+
+  const adminId = payload.admin_id;
+  if (!adminId) return { ok: false as const, error: "unauthorized" };
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return { ok: false as const, error: "missing supabase env" };
+
+  const supabase = createClient(url, serviceKey);
+  const { data } = await supabase.from("admin_users").select("id").eq("id", adminId).maybeSingle();
+  if (!data) return { ok: false as const, error: "unauthorized" };
 
   return { ok: true as const, payload };
 }

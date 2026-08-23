@@ -165,11 +165,12 @@ export async function POST(req: NextRequest) {
       ? `${sessionRow.note ?? "รอบ"} • ${new Date(sessionRow.start_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}`
       : null;
 
-    // 4) rate limit
+    // 4) rate limit — นับตาม user_id (ตัวตนจริงจาก LINE login) ไม่ใช่ renter_phone
+    //    เพราะ renter_phone เป็นช่องกรอกอิสระ เปลี่ยนเบอร์ไปเรื่อยๆ เพื่อหลบ limit ได้ถ้านับแค่เบอร์
     const { count: pendingCount, error: pendingErr } = await supabaseAdmin
       .from("bookings")
       .select("*", { count: "exact", head: true })
-      .eq("renter_phone", renter_phone)
+      .eq("user_id", user_id)
       .eq("status", "pending");
 
     if (pendingErr) return NextResponse.json({ error: pendingErr.message }, { status: 500 });

@@ -58,16 +58,42 @@ export async function findOrCreateLineUser(
     });
 
     if (createErr || !created?.user?.id) {
-      return { error: `supabase_create_user_failed: ${createErr?.message || "no_user_returned"}` };
+      // อาจเกิดจาก request อื่น (LIFF/OAuth พร้อมกัน) สร้าง user นี้ไปแล้วพอดี (email ชนกัน)
+      // เช็ค line_identities อีกครั้งก่อนจะถือว่า fail จริง แทนที่จะ error ทิ้งไปเฉยๆ
+      const { data: raceIdent } = await supabaseAdmin
+        .from("line_identities")
+        .select("user_id")
+        .eq("line_sub", lineSub)
+        .maybeSingle();
+
+      if (raceIdent?.user_id) {
+        userId = raceIdent.user_id;
+      } else {
+        return { error: `supabase_create_user_failed: ${createErr?.message || "no_user_returned"}` };
+      }
+    } else {
+      userId = created.user.id;
+
+      const { error: mapErr } = await supabaseAdmin
+        .from("line_identities")
+        .insert({ line_sub: lineSub, user_id: userId });
+
+      if (mapErr) {
+        // unique_violation = อีก request หนึ่งเพิ่ง insert แถวนี้ไปพร้อมกันพอดี ไม่ใช่ error จริง
+        const isUniqueViolation = (mapErr as { code?: string }).code === "23505";
+        if (isUniqueViolation) {
+          const { data: raceIdent } = await supabaseAdmin
+            .from("line_identities")
+            .select("user_id")
+            .eq("line_sub", lineSub)
+            .maybeSingle();
+          if (raceIdent?.user_id) userId = raceIdent.user_id;
+          else return { error: `line_identity_insert_failed: ${mapErr.message}` };
+        } else {
+          return { error: `line_identity_insert_failed: ${mapErr.message}` };
+        }
+      }
     }
-
-    userId = created.user.id;
-
-    const { error: mapErr } = await supabaseAdmin
-      .from("line_identities")
-      .insert({ line_sub: lineSub, user_id: userId });
-
-    if (mapErr) return { error: `line_identity_insert_failed: ${mapErr.message}` };
   }
 
   const { error: profErr } = await supabaseAdmin
@@ -76,5 +102,6 @@ export async function findOrCreateLineUser(
 
   if (profErr) return { error: `profile_upsert_failed: ${profErr.message}` };
 
-  return { userId };
+  // ถึงตรงนี้ userId ต้องไม่เป็น null แล้วเสมอ — ทุก branch ด้านบนที่หา user_id ไม่ได้จริงๆ return ออกไปก่อนแล้ว
+  return { userId: userId as string };
 }

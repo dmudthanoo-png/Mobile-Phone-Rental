@@ -51,8 +51,9 @@ export async function POST(req: NextRequest) {
   const imageFile  = form.get("image");
 
   if (!model_name) return NextResponse.json({ error: "model_name is required" }, { status: 400 });
-  if (!price || price <= 0) return NextResponse.json({ error: "price must be > 0" }, { status: 400 });
-  if (qty < 0) return NextResponse.json({ error: "qty must be >= 0" }, { status: 400 });
+  if (!Number.isFinite(price) || price <= 0) return NextResponse.json({ error: "price must be a finite number > 0" }, { status: 400 });
+  if (!Number.isFinite(deposit) || deposit < 0) return NextResponse.json({ error: "deposit must be a finite number >= 0" }, { status: 400 });
+  if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty < 0) return NextResponse.json({ error: "qty must be a non-negative integer" }, { status: 400 });
 
   let image_url: string | null = null;
 
@@ -110,13 +111,17 @@ export async function PATCH(req: NextRequest) {
   if (model_name) updates.model_name = model_name;
   if (price !== null && price !== "") {
     const p = Number(price);
-    if (p <= 0) return NextResponse.json({ error: "price must be > 0" }, { status: 400 });
+    if (!Number.isFinite(p) || p <= 0) return NextResponse.json({ error: "price must be a finite number > 0" }, { status: 400 });
     updates.price = p;
   }
-  if (deposit !== null && deposit !== "") updates.deposit = Number(deposit);
+  if (deposit !== null && deposit !== "") {
+    const d = Number(deposit);
+    if (!Number.isFinite(d) || d < 0) return NextResponse.json({ error: "deposit must be a finite number >= 0" }, { status: 400 });
+    updates.deposit = d;
+  }
   if (qty !== null && qty !== "") {
     const q = Number(qty);
-    if (q < 0) return NextResponse.json({ error: "qty must be >= 0" }, { status: 400 });
+    if (!Number.isFinite(q) || !Number.isInteger(q) || q < 0) return NextResponse.json({ error: "qty must be a non-negative integer" }, { status: 400 });
     updates.qty = q;
   }
 
@@ -139,8 +144,9 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "no fields to update" }, { status: 400 });
   }
 
-  const { error } = await supabase.from("phones").update(updates).eq("id", id);
+  const { error, count } = await supabase.from("phones").update(updates, { count: "exact" }).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!count) return NextResponse.json({ error: "ไม่พบมือถือรุ่นนี้" }, { status: 404 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
@@ -161,6 +167,21 @@ export async function DELETE(req: NextRequest) {
 
   const supabase = getSupabase();
 
+  // เช็คว่ามี booking ที่อ้างอิงมือถือรุ่นนี้อยู่ไหมก่อน กันกรณีลบ phones ไม่ผ่าน (FK ชน)
+  // แต่ session_phone_inventory ถูกลบไปแล้วก่อนหน้า (ไม่มี transaction ครอบสอง delete นี้)
+  const { count: bookingCount, error: bookingCountErr } = await supabase
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("phone_id", id);
+
+  if (bookingCountErr) return NextResponse.json({ error: bookingCountErr.message }, { status: 500 });
+  if ((bookingCount ?? 0) > 0) {
+    return NextResponse.json(
+      { error: `ลบไม่ได้ เพราะมีประวัติการจองมือถือรุ่นนี้อยู่ ${bookingCount} รายการ ปิดการใช้งาน (active=false) แทนได้` },
+      { status: 400 }
+    );
+  }
+
   const { error: invErr } = await supabase
     .from("session_phone_inventory")
     .delete()
@@ -168,8 +189,9 @@ export async function DELETE(req: NextRequest) {
 
   if (invErr) return NextResponse.json({ error: invErr.message }, { status: 500 });
 
-  const { error } = await supabase.from("phones").delete().eq("id", id);
+  const { error, count } = await supabase.from("phones").delete({ count: "exact" }).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!count) return NextResponse.json({ error: "ไม่พบมือถือรุ่นนี้" }, { status: 404 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

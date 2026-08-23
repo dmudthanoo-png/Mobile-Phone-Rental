@@ -35,16 +35,20 @@ export async function PATCH(
   }
 
   const supabase = createClient(url, serviceKey);
-  const { error } = await supabase
+  const { error, count } = await supabase
     .from("profiles")
-    .update({
-      is_banned: banned,
-      banned_at: banned ? new Date().toISOString() : null,
-      ban_reason: banned ? reason : null,
-    })
+    .update(
+      {
+        is_banned: banned,
+        banned_at: banned ? new Date().toISOString() : null,
+        ban_reason: banned ? reason : null,
+      },
+      { count: "exact" }
+    )
     .eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!count) return NextResponse.json({ error: "ไม่พบผู้ใช้นี้" }, { status: 404 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

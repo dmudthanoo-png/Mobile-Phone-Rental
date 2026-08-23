@@ -26,8 +26,9 @@ export async function DELETE(
   }
 
   const supabase = createClient(url, serviceKey);
-  const { error } = await supabase.from("reviews").delete().eq("id", id);
+  const { error, count } = await supabase.from("reviews").delete({ count: "exact" }).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!count) return NextResponse.json({ error: "ไม่พบรีวิวนี้" }, { status: 404 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

@@ -103,13 +103,14 @@ export async function PATCH(
 
   const supabase = getSupabase();
 
-  const { error } = await supabase
+  const { error, count } = await supabase
     .from("concert_sessions")
-    .update({ start_at, note: note ?? null })
+    .update({ start_at, note: note ?? null }, { count: "exact" })
     .eq("id", session_id)
     .eq("concert_id", concert_id); // double-check ป้องกัน cross-concert edit
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!count) return NextResponse.json({ error: "ไม่พบรอบการแสดงนี้" }, { status: 404 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
@@ -136,13 +137,14 @@ export async function DELETE(
 
   const supabase = getSupabase();
 
-  const { error } = await supabase
+  const { error, count } = await supabase
     .from("concert_sessions")
-    .delete()
+    .delete({ count: "exact" })
     .eq("id", session_id)
     .eq("concert_id", concert_id); // double-check ป้องกัน cross-concert delete
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!count) return NextResponse.json({ error: "ไม่พบรอบการแสดงนี้" }, { status: 404 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

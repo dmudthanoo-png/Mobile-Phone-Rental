@@ -31,24 +31,59 @@ function getClientIp(req: NextRequest): string {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// เช็คแบนผู้ใช้แบบ real-time — ไม่ต้อง verify ลายเซ็น JWT ซ้ำที่นี่
-// (route handler ปลายทางจะ verify ลายเซ็นจริงอยู่แล้ว) แค่ decode
-// payload มาดู line_sub เพื่อ query สถานะแบนจาก DB เท่านั้น ถ้าโดนแบน
-// จะเตะออกจาก session ทันทีโดยไม่ต้องรอ token หมดอายุ
+// เช็คแบนผู้ใช้แบบ real-time — ต้อง verify ลายเซ็น JWT ก่อนเชื่อ line_sub
+// เสมอ (ใช้ Web Crypto ที่มีมากับ runtime อยู่แล้ว ไม่ต้องพึ่ง Node crypto
+// เลยยัง Edge-compatible เหมือนเดิม) ถ้าไม่ verify ลายเซ็น ใครก็ปลอม
+// cookie ใส่ line_sub อะไรก็ได้มาบังคับให้ middleware ยิง query ไป Supabase
+// ทุกครั้ง กลายเป็นช่องทาง DoS/เดา ban status ได้แม้ signature จะไม่ผ่านจริง
+// route handler ปลายทางเองก็ยัง verify ซ้ำอีกชั้นอยู่ดี อันนี้แค่กันไม่ให้
+// query ฐานข้อมูลจาก token ปลอมที่ไม่มีทางผ่าน auth จริงได้ตั้งแต่แรก
+// ถ้าโดนแบน จะเตะออกจาก session ทันทีโดยไม่ต้องรอ token หมดอายุ
 // ═══════════════════════════════════════════════════════════════
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = supabaseUrl && serviceKey ? createClient(supabaseUrl, serviceKey) : null;
 
-function decodeSessionLineSub(token: string): string | null {
+function base64urlToBytes(b64url: string): Uint8Array {
+  const base64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function verifiedSessionLineSub(token: string): Promise<string | null> {
+  const secret = process.env.APP_SESSION_SECRET;
+  if (!secret) return null;
+
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [h, p, s] = parts;
+
   try {
-    const payloadPart = token.split(".")[1];
-    if (!payloadPart) return null;
-    const base64 = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-    const json = atob(padded);
-    const payload = JSON.parse(json) as { line_sub?: string };
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+    const isValid = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      base64urlToBytes(s) as BufferSource,
+      new TextEncoder().encode(`${h}.${p}`)
+    );
+    if (!isValid) return null;
+
+    const json = new TextDecoder().decode(base64urlToBytes(p));
+    const payload = JSON.parse(json) as { line_sub?: string; exp?: number };
+
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && now > payload.exp) return null;
+
     return payload.line_sub ?? null;
   } catch {
     return null;
@@ -77,11 +112,15 @@ export async function middleware(req: NextRequest) {
 
   let bucket = buckets.get(ip);
   if (!bucket || now - bucket.windowStart > WINDOW_MS) {
-    bucket = { count: 0, windowStart: now };
-    if (buckets.size >= MAX_TRACKED_IPS) {
-      // ล้างของเก่าทิ้งกัน memory บวม (ทำแบบหยาบๆ พอ ไม่ต้องแม่นยำ)
-      buckets.clear();
+    if (!buckets.has(ip) && buckets.size >= MAX_TRACKED_IPS) {
+      // เต็มโควต้าแล้วและเป็น IP ใหม่ที่ไม่เคยเห็น — ปฏิเสธไปเลยแทนที่จะ clear() ทั้ง Map ทิ้ง
+      // (ถ้า clear ทั้งหมด คนร้ายจะยิงจาก IP ปลอมจำนวนมากมาบังคับรีเซ็ต limit ของทุกคนพร้อมกันได้)
+      return NextResponse.json(
+        { error: "too_many_requests", message: "ระบบมีผู้ใช้งานพร้อมกันเยอะเกินไป กรุณาลองใหม่อีกครั้ง" },
+        { status: 429 }
+      );
     }
+    bucket = { count: 0, windowStart: now };
     buckets.set(ip, bucket);
   }
 
@@ -106,7 +145,7 @@ export async function middleware(req: NextRequest) {
   const sessionToken = req.cookies.get("app_session")?.value;
 
   if (sessionToken && !pathname.startsWith("/api/auth/") && !pathname.startsWith("/api/admin/")) {
-    const lineSub = decodeSessionLineSub(sessionToken);
+    const lineSub = await verifiedSessionLineSub(sessionToken);
     if (lineSub && (await isUserBanned(lineSub))) {
       const res = NextResponse.json(
         { error: "banned", message: "บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อแอดมิน" },

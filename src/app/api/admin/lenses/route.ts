@@ -44,8 +44,9 @@ export async function POST(req: NextRequest) {
   const qty      = Number(body?.qty ?? 0);
 
   if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
-  if (price < 0) return NextResponse.json({ error: "price must be >= 0" }, { status: 400 });
-  if (qty < 0) return NextResponse.json({ error: "qty must be >= 0" }, { status: 400 });
+  if (focal_mm !== null && !Number.isFinite(focal_mm)) return NextResponse.json({ error: "focal_mm must be a finite number" }, { status: 400 });
+  if (!Number.isFinite(price) || price < 0) return NextResponse.json({ error: "price must be a finite number >= 0" }, { status: 400 });
+  if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty < 0) return NextResponse.json({ error: "qty must be a non-negative integer" }, { status: 400 });
 
   const { data, error } = await supabase
     .from("lenses")
@@ -77,17 +78,34 @@ export async function PATCH(req: NextRequest) {
 
   const updates: Record<string, unknown> = {};
   if (body?.name !== undefined) updates.name = String(body.name).trim();
-  if (body?.focal_mm !== undefined) updates.focal_mm = body.focal_mm === "" || body.focal_mm === null ? null : Number(body.focal_mm);
-  if (body?.price !== undefined) updates.price = Number(body.price);
-  if (body?.qty !== undefined) updates.qty = Number(body.qty);
+  if (body?.focal_mm !== undefined) {
+    if (body.focal_mm === "" || body.focal_mm === null) {
+      updates.focal_mm = null;
+    } else {
+      const f = Number(body.focal_mm);
+      if (!Number.isFinite(f)) return NextResponse.json({ error: "focal_mm must be a finite number" }, { status: 400 });
+      updates.focal_mm = f;
+    }
+  }
+  if (body?.price !== undefined) {
+    const p = Number(body.price);
+    if (!Number.isFinite(p) || p < 0) return NextResponse.json({ error: "price must be a finite number >= 0" }, { status: 400 });
+    updates.price = p;
+  }
+  if (body?.qty !== undefined) {
+    const q = Number(body.qty);
+    if (!Number.isFinite(q) || !Number.isInteger(q) || q < 0) return NextResponse.json({ error: "qty must be a non-negative integer" }, { status: 400 });
+    updates.qty = q;
+  }
   if (body?.active !== undefined) updates.active = Boolean(body.active);
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "no fields to update" }, { status: 400 });
   }
 
-  const { error } = await supabase.from("lenses").update(updates).eq("id", id);
+  const { error, count } = await supabase.from("lenses").update(updates, { count: "exact" }).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!count) return NextResponse.json({ error: "ไม่พบเลนส์นี้" }, { status: 404 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
@@ -108,8 +126,9 @@ export async function DELETE(req: NextRequest) {
 
   const supabase = getSupabase();
 
-  const { error } = await supabase.from("lenses").delete().eq("id", id);
+  const { error, count } = await supabase.from("lenses").delete({ count: "exact" }).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!count) return NextResponse.json({ error: "ไม่พบเลนส์นี้" }, { status: 404 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

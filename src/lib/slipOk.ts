@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { downloadSlipBuffer } from "@/lib/slipStorage";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -77,12 +78,12 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
 
   const expectedAmount = Number(booking.phones?.deposit ?? 0) * Number(booking.qty ?? 1);
 
-  // 2) โหลดรูปสลิปจาก Supabase Storage
-  const slipRes = await fetch(booking.slip_url);
-  if (!slipRes.ok) return { ok: false, error: "cannot fetch slip image" };
+  // 2) โหลดรูปสลิปจาก Supabase Storage ผ่าน service role โดยตรง
+  //    (ใช้ได้ทั้งตอน bucket เป็น public หรือ private — ไม่ต้องพึ่ง URL สาธารณะ)
+  const downloaded = await downloadSlipBuffer(booking.slip_url);
+  if (!downloaded) return { ok: false, error: "cannot fetch slip image" };
 
-  const slipBuffer = Buffer.from(await slipRes.arrayBuffer());
-  const contentType = slipRes.headers.get("content-type") || "image/jpeg";
+  const { buffer: slipBuffer, contentType } = downloaded;
 
   // 3) ส่งไปให้ SlipOK ตรวจสอบ
   let slipOkResult: SlipOkResponse | null = null;

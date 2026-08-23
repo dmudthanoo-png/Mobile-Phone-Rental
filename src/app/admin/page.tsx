@@ -253,6 +253,7 @@ export default function AdminPage() {
   const [bQ, setBQ] = useState("");
   const [summary, setSummary] = useState<Summary>({ total:0, pending:0, confirmed:0, rejected:0, revenue:0 });
   const [slipModal, setSlipModal] = useState<string|null>(null);
+  const [viewingSlipId, setViewingSlipId] = useState<string|null>(null);
   const [lineQuota, setLineQuota] = useState<LineQuota>({ status:"loading", loading:true });
 
   // concerts
@@ -496,6 +497,18 @@ export default function AdminPage() {
       showMsg("ส่ง LINE ซ้ำไม่สำเร็จ", false);
     } finally {
       setRetryingLineBookingId(null);
+    }
+  };
+
+  const viewSlip = async (bookingId: string) => {
+    setViewingSlipId(bookingId);
+    try {
+      const res = await fetch(`/api/admin/bookings/${bookingId}/slip-url`, { cache:"no-store" });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) { showMsg(out?.error || "ไม่มีสลิป", false); return; }
+      setSlipModal(out.url);
+    } finally {
+      setViewingSlipId(null);
     }
   };
 
@@ -1459,7 +1472,13 @@ export default function AdminPage() {
                       )}
 
                       <div style={{ display:"flex", gap:8, marginTop:14, flexWrap:"wrap" }}>
-                        <button onClick={()=>b.slip_url?setSlipModal(b.slip_url):showMsg("ไม่มีสลิป",false)} style={btnStyle("white")}>🧾 ดูสลิป</button>
+                        <button
+                          disabled={!b.slip_url || viewingSlipId===b.id}
+                          onClick={()=>b.slip_url?viewSlip(b.id):showMsg("ไม่มีสลิป",false)}
+                          style={btnStyle("white", !b.slip_url || viewingSlipId===b.id)}
+                        >
+                          {viewingSlipId===b.id ? "⏳ กำลังโหลด..." : "🧾 ดูสลิป"}
+                        </button>
                         <button
                           disabled={!b.slip_url || verifyingId===b.id}
                           onClick={()=>verifySlip(b.id)}

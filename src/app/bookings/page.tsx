@@ -164,6 +164,19 @@ export default function BookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [slipModal, setSlipModal] = useState<string | null>(null);
+  const [viewingSlipId, setViewingSlipId] = useState<string | null>(null);
+
+  const viewSlip = async (bookingId: string) => {
+    setViewingSlipId(bookingId);
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}/slip-url`, { cache: "no-store" });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) { setToast({ message: out?.error || "ไม่มีสลิป", type: "error" }); return; }
+      setSlipModal(out.url);
+    } finally {
+      setViewingSlipId(null);
+    }
+  };
 
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
@@ -357,8 +370,12 @@ export default function BookingsPage() {
 
                   <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                     {b.slip_url && (
-                      <button onClick={() => setSlipModal(b.slip_url!)} style={{ background: warningSoft, border: `1px solid ${warningBorder}`, color: warningText, borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: uiFont, minHeight: 44, display: "inline-flex", alignItems: "center" }}>
-                        🧾 ดูสลิป
+                      <button
+                        disabled={viewingSlipId === b.id}
+                        onClick={() => viewSlip(b.id)}
+                        style={{ background: warningSoft, border: `1px solid ${warningBorder}`, color: warningText, borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: viewingSlipId === b.id ? "default" : "pointer", fontFamily: uiFont, minHeight: 44, display: "inline-flex", alignItems: "center", opacity: viewingSlipId === b.id ? 0.6 : 1 }}
+                      >
+                        {viewingSlipId === b.id ? "⏳ กำลังโหลด..." : "🧾 ดูสลิป"}
                       </button>
                     )}
                     {(b.status === "pending" || b.status === "rejected") && (

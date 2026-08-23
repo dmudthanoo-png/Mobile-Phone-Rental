@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { hashPassword } from "@/lib/adminPassword";
 import { logAdminAction } from "@/lib/adminAudit";
+
+// เทียบ bootstrap secret แบบ constant-time กัน timing attack
+function safeCompare(a: string, b: string): boolean {
+  const hashA = crypto.createHash("sha256").update(a).digest();
+  const hashB = crypto.createHash("sha256").update(b).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -57,16 +65,30 @@ export async function POST(req: NextRequest) {
 
   const isBootstrap = (count ?? 0) === 0;
 
+  const body = await req.json().catch(() => null);
+  const username = String((body as { username?: string } | null)?.username ?? "").trim().toLowerCase();
+  const password = String((body as { password?: string } | null)?.password ?? "");
+
   let actorUsername = "";
-  if (!isBootstrap) {
+  if (isBootstrap) {
+    // กันคนแปลกหน้าแย่งสร้างบัญชีแอดมินคนแรกในช่วงที่ตารางยังว่างอยู่
+    // ต้องตั้ง ADMIN_BOOTSTRAP_SECRET ไว้ก่อน แล้วส่งมาคู่กับ username/password ตอนตั้งค่าครั้งแรก
+    const bootstrapSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
+    if (!bootstrapSecret) {
+      return NextResponse.json(
+        { error: "ยังไม่ได้ตั้งค่า ADMIN_BOOTSTRAP_SECRET กรุณาตั้งค่าใน environment variables ก่อน" },
+        { status: 500 }
+      );
+    }
+    const providedSecret = String((body as { bootstrap_secret?: string } | null)?.bootstrap_secret ?? "");
+    if (!providedSecret || !safeCompare(providedSecret, bootstrapSecret)) {
+      return NextResponse.json({ error: "bootstrap secret ไม่ถูกต้อง" }, { status: 401 });
+    }
+  } else {
     const admin = await requireAdmin(req);
     if (!admin.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     actorUsername = String(admin.payload.username ?? "");
   }
-
-  const body = await req.json().catch(() => null);
-  const username = String((body as { username?: string } | null)?.username ?? "").trim().toLowerCase();
-  const password = String((body as { password?: string } | null)?.password ?? "");
 
   if (!username || username.length < 3) {
     return NextResponse.json({ error: "username ต้องมีอย่างน้อย 3 ตัวอักษร" }, { status: 400 });

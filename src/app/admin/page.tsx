@@ -219,6 +219,7 @@ export default function AdminPage() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [needsBootstrap, setNeedsBootstrap] = useState<boolean | null>(null);
   const [bootstrapPassword2, setBootstrapPassword2] = useState("");
+  const [bootstrapSecret, setBootstrapSecret] = useState("");
   const [currentAdminUsername, setCurrentAdminUsername] = useState("");
   const [pendingTotpToken, setPendingTotpToken] = useState<string | null>(null);
   const [totpCode, setTotpCode] = useState("");
@@ -350,14 +351,14 @@ export default function AdminPage() {
     setLoading(true);
     const res = await fetch("/api/admin/admins", {
       method:"POST", headers:{"content-type":"application/json"},
-      body: JSON.stringify({ username: loginUsername.trim(), password }),
+      body: JSON.stringify({ username: loginUsername.trim(), password, bootstrap_secret: bootstrapSecret.trim() }),
     });
     const out = await res.json().catch(() => null);
     setLoading(false);
     if (!res.ok) { setLoginError(out?.error || "สร้างบัญชีไม่สำเร็จ"); return; }
     setNeedsBootstrap(false);
     showMsg("✅ สร้างบัญชีแอดมินคนแรกแล้ว กรุณาเข้าสู่ระบบ");
-    setPassword(""); setBootstrapPassword2("");
+    setPassword(""); setBootstrapPassword2(""); setBootstrapSecret("");
   };
 
   const handleLogout = async () => {
@@ -1032,8 +1033,10 @@ export default function AdminPage() {
             <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
               placeholder="รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)" style={{ ...inputStyle, marginBottom:10 }} />
             <input type="password" value={bootstrapPassword2} onChange={e=>setBootstrapPassword2(e.target.value)}
+              placeholder="ยืนยันรหัสผ่านอีกครั้ง" style={{ ...inputStyle, marginBottom:10 }} />
+            <input type="password" value={bootstrapSecret} onChange={e=>setBootstrapSecret(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&handleBootstrap()}
-              placeholder="ยืนยันรหัสผ่านอีกครั้ง" style={{ ...inputStyle, marginBottom:12 }} />
+              placeholder="Bootstrap secret (จาก ADMIN_BOOTSTRAP_SECRET)" style={{ ...inputStyle, marginBottom:12 }} />
             {loginError && (
               <div style={{ fontSize:12, color:"#C43D5C", fontWeight:700, marginBottom:12 }}>⚠️ {loginError}</div>
             )}

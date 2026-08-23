@@ -52,13 +52,30 @@ export async function GET(
       lensesByPhone[r.phone_id] = arr;
     }
 
-    // 3) นับจำนวนมือถือที่ถูกจองอยู่ (confirmed + pending) เฉพาะ "รอบนี้" เท่านั้น
+    // 3) จำนวนที่ตั้งไว้เฉพาะรอบนี้ (ถ้าแอดมินไม่ได้ตั้งไว้ ให้ fallback ไปใช้จำนวนรวมของรุ่นนั้น)
+    const { data: invRows, error: invErr } = await supabase
+      .from("session_phone_inventory")
+      .select("phone_id, qty")
+      .eq("session_id", sessionId)
+      .in("phone_id", phoneIds);
+
+    if (invErr) return NextResponse.json({ error: invErr.message }, { status: 500 });
+
+    const sessionQtyByPhone: Record<string, number> = {};
+    for (const r of invRows ?? []) {
+      if (r.phone_id) sessionQtyByPhone[r.phone_id] = Number(r.qty ?? 0);
+    }
+
+    // 4) นับจำนวนมือถือที่ถูกจองอยู่ (confirmed + pending ที่ยังไม่หมดอายุ) เฉพาะ "รอบนี้" เท่านั้น
     //    (มือถือ/เลนส์คืนหลังจบแต่ละรอบ ดังนั้นสต็อกต้องรีเซ็ตต่อรอบ ไม่ใช่รวมทุกรอบของคอนเสิร์ต)
+    const nowIso = new Date().toISOString();
     const { data: bookedRows, error: bkErr } = await supabase
       .from("bookings")
       .select("phone_id, qty, lens_id, lens_qty")
       .eq("session_id", sessionId)
-      .in("status", ["confirmed", "pending"]);
+      .or(
+        `status.eq.confirmed,status.eq.pending.and(pending_expires_at.is.null),status.eq.pending.and(pending_expires_at.gt.${nowIso})`
+      );
 
     if (bkErr) return NextResponse.json({ error: bkErr.message }, { status: 500 });
 
@@ -86,13 +103,16 @@ export async function GET(
           }))
           .sort((a, b) => (a.focal_mm ?? 0) - (b.focal_mm ?? 0));
 
+        // ใช้จำนวนที่ตั้งไว้เฉพาะรอบนี้ก่อน ถ้าแอดมินไม่เคยตั้งไว้ค่อย fallback ไปใช้จำนวนรวมของรุ่นนั้น
+        const baseQty = sessionQtyByPhone[p.id] ?? Number(p.qty ?? 0);
+
         return {
           phone_id: String(p.id),
           model_name: String(p.model_name ?? ""),
           image_url: p.image_url ?? null,
           price: Number(p.price ?? 0),
           deposit: Number(p.deposit ?? 0),
-          remaining: Math.max(0, Number(p.qty ?? 0) - (phoneBookedQty[p.id] ?? 0)),
+          remaining: Math.max(0, baseQty - (phoneBookedQty[p.id] ?? 0)),
           lens_options: lensOptions,
         };
       })

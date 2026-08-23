@@ -80,8 +80,19 @@ export async function requireAdmin(req: NextRequest) {
   if (!url || !serviceKey) return { ok: false as const, error: "missing supabase env" };
 
   const supabase = createClient(url, serviceKey);
-  const { data } = await supabase.from("admin_users").select("id").eq("id", adminId).maybeSingle();
+  const { data } = await supabase
+    .from("admin_users")
+    .select("id, password_changed_at")
+    .eq("id", adminId)
+    .maybeSingle();
   if (!data) return { ok: false as const, error: "unauthorized" };
+
+  // เช็คว่า token นี้ถูกออกหลังการเปลี่ยนรหัสผ่านล่าสุดไหม — ถ้าเปลี่ยนรหัสผ่านไปแล้ว
+  // token เก่า (เช่น เครื่องอื่น/ถูกขโมยไป) ที่ pwd_ver ไม่ตรงกับเวลาปัจจุบันในฐานข้อมูล จะถูกตัดสิทธิ์ทันที
+  const currentPwdVer = data.password_changed_at ? new Date(data.password_changed_at).getTime() : null;
+  if (currentPwdVer !== null && payload.pwd_ver !== currentPwdVer) {
+    return { ok: false as const, error: "session หมดอายุ (มีการเปลี่ยนรหัสผ่าน) กรุณาเข้าสู่ระบบใหม่" };
+  }
 
   return { ok: true as const, payload };
 }

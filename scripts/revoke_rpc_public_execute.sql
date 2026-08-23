@@ -12,11 +12,14 @@
 --
 -- โค้ดของแอปเองเรียกผ่าน service role key เสมอ (ไม่ได้รับผลกระทบจากการ revoke นี้)
 
+-- ต้อง revoke จาก PUBLIC ด้วยเสมอ — Postgres ให้สิทธิ์ EXECUTE กับ PUBLIC (ทุก role
+-- รวม anon/authenticated โดย inherit มาอัตโนมัติ) เป็นค่าเริ่มต้นตอนสร้างฟังก์ชัน
+-- revoke แค่ anon/authenticated เฉยๆ ไม่มีผล เพราะสิทธิ์ที่ inherit จาก PUBLIC ยังอยู่
 revoke execute on function public.create_pending_booking_if_available_v2(
   uuid, uuid, uuid, integer, uuid, integer, text, text, numeric, text, text
-) from anon, authenticated;
+) from PUBLIC, anon, authenticated;
 
-revoke execute on function public.reject_booking_and_restore(uuid) from anon, authenticated;
+revoke execute on function public.reject_booking_and_restore(uuid) from PUBLIC, anon, authenticated;
 
 -- ── เช็คก่อน/หลัง: ดูว่า function ไหนใน public schema ยังให้สิทธิ์ anon/authenticated
 -- เรียกตรงได้อยู่บ้าง (โดยเฉพาะตัวที่ไม่ได้ตั้งใจให้เรียกจาก client โดยตรง) ──

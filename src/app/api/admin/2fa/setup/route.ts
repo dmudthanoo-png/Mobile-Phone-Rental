@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import { requireAdmin } from "@/lib/adminAuth";
-import { generateTotpSecret, generateTotpUri } from "@/lib/totp";
+import { generateTotpSecret, generateTotpUri, encryptTotpSecret } from "@/lib/totp";
 
 // POST /api/admin/2fa/setup — เริ่มเปิดใช้งาน 2FA ให้บัญชีตัวเอง
 // สร้าง secret ใหม่ (ยังไม่ enable จนกว่าจะ /confirm ด้วยรหัสที่ถูกต้อง)
@@ -16,7 +16,9 @@ export async function POST(req: NextRequest) {
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) return NextResponse.json({ error: "missing env" }, { status: 500 });
+  if (!url || !serviceKey || !process.env.TOTP_ENCRYPTION_KEY) {
+    return NextResponse.json({ error: "missing env" }, { status: 500 });
+  }
   const supabase = createClient(url, serviceKey);
 
   const { data: account } = await supabase
@@ -29,11 +31,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "เปิดใช้งาน 2FA อยู่แล้ว ต้องปิดก่อนถึงจะตั้งค่าใหม่ได้" }, { status: 400 });
   }
 
+  // secret plaintext ใช้แค่สร้าง QR ให้ scan ครั้งนี้เท่านั้น ที่เก็บลง DB ต้องเข้ารหัสไว้เสมอ
   const secret = generateTotpSecret();
 
   const { error } = await supabase
     .from("admin_users")
-    .update({ totp_secret: secret, totp_enabled: false })
+    .update({ totp_secret: encryptTotpSecret(secret), totp_enabled: false })
     .eq("id", adminId);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

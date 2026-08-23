@@ -134,11 +134,28 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
   const transRef = d.transRef || d.transactionRef || null;
 
   const amountMatches = readAmount != null ? Math.abs(readAmount - expectedAmount) < 1 : null;
-  const verified = slipOkOk && slipOkSuccess && (amountMatches === null || amountMatches === true);
+  let verified = slipOkOk && slipOkSuccess && (amountMatches === null || amountMatches === true);
 
   let finalMessage = message;
   if (slipOkOk && slipOkSuccess && amountMatches === false) {
     finalMessage = `ยอดเงินไม่ตรง: สลิปแจ้ง ฿${readAmount} แต่ควรเป็น ฿${expectedAmount}`;
+  }
+
+  // 4.5) กันสลิปใบเดียวกัน (transaction reference เดียวกัน) ถูกใช้ยืนยัน booking อื่นไปแล้ว
+  // เช็คก่อนเขียนลง DB (มี unique index เป็นด่านสุดท้ายกันเรื่อง race ซ้ำอีกชั้นด้วย)
+  if (verified && transRef) {
+    const { data: dup } = await supabase
+      .from("bookings")
+      .select("id")
+      .eq("slip_verify_ref", transRef)
+      .eq("slip_verified", true)
+      .neq("id", bookingId)
+      .maybeSingle();
+
+    if (dup) {
+      verified = false;
+      finalMessage = "สลิปนี้เคยถูกใช้ยืนยันการจองรายการอื่นไปแล้ว";
+    }
   }
 
   // 5) บันทึกผลลง booking
@@ -153,7 +170,33 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
     })
     .eq("id", bookingId);
 
-  if (updErr) return { ok: false, error: updErr.message };
+  if (updErr) {
+    // unique_violation = อีก request หนึ่งเพิ่ง verify สลิปเดียวกันสำเร็จไปพร้อมกันพอดี (race)
+    // ให้ถือว่าไม่ verified แทนที่จะโยน error ดิบออกไป
+    if ((updErr as { code?: string }).code === "23505") {
+      await supabase
+        .from("bookings")
+        .update({
+          slip_verified: false,
+          slip_verify_message: "สลิปนี้เคยถูกใช้ยืนยันการจองรายการอื่นไปแล้ว",
+          slip_verify_amount: readAmount,
+          slip_verify_ref: transRef,
+          slip_verified_at: new Date().toISOString(),
+        })
+        .eq("id", bookingId);
+
+      return {
+        ok: true,
+        verified: false,
+        message: "สลิปนี้เคยถูกใช้ยืนยันการจองรายการอื่นไปแล้ว",
+        amount: readAmount,
+        expected_amount: expectedAmount,
+        trans_ref: transRef,
+        raw: slipOkResult,
+      };
+    }
+    return { ok: false, error: updErr.message };
+  }
 
   return {
     ok: true,

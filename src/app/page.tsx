@@ -49,6 +49,10 @@ type PhoneOption = {
 };
 
 // ── Design tokens — glass / vibrant ──────────────────────────────
+// ต้องตรงกับเพดานที่ฝั่ง server บังคับไว้ใน src/app/api/bookings/upload-slip/route.ts
+// (qty = Math.min(qty, 10)) ไม่งั้นลูกค้าจะเลือกได้เกินจริง แล้วโดนตัดยอดเงียบๆ ตอน submit
+const MAX_PHONE_QTY = 10;
+
 const ink = "#241F1C";
 const sub = "#7A6D61";
 const muted = "#AB9C8D";
@@ -793,7 +797,7 @@ export default function PhoneRentalHome() {
                                 <button
                                   type="button"
                                   aria-label="เพิ่มจำนวนเครื่อง"
-                                  onClick={(e) => { e.stopPropagation(); setPhoneQty((q) => Math.min(p.remaining, q + 1)); }}
+                                  onClick={(e) => { e.stopPropagation(); setPhoneQty((q) => Math.min(p.remaining, MAX_PHONE_QTY, q + 1)); }}
                                   style={{ width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", border: "none", background: "transparent", cursor: "pointer" }}
                                 >
                                   <span aria-hidden="true" style={{ width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", border: `1px solid ${line}`, background: "#fff", fontWeight: 700, color: ink }}>+</span>

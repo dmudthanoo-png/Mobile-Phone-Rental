@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { verifySlipForBooking } from "@/lib/slipOk";
 import { findOrCreateLineUser } from "@/lib/lineSession";
 import { extractSlipPath } from "@/lib/slipStorage";
+import { sniffImageMimeType } from "@/lib/imageUpload";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -122,12 +123,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const ext = slip.type === "image/png" ? "png" : slip.type === "image/webp" ? "webp" : "jpg";
+  const buffer      = Buffer.from(await slip.arrayBuffer());
+  const sniffedType = sniffImageMimeType(buffer);
+  if (!sniffedType) {
+    return NextResponse.json({ error: "ไฟล์ไม่ใช่รูปภาพที่รองรับ (ตรวจสอบจากเนื้อหาไฟล์จริงแล้วไม่ตรง)" }, { status: 400 });
+  }
+
+  const ext = sniffedType === "image/png" ? "png" : sniffedType === "image/webp" ? "webp" : "jpg";
   const fileName = `${lineSub}_${Date.now()}.${ext}`;
-  const buffer = Buffer.from(await slip.arrayBuffer());
 
   const { error: upErr } = await supabaseAdmin.storage
-    .from("slips").upload(fileName, buffer, { contentType: slip.type, upsert: true });
+    .from("slips").upload(fileName, buffer, { contentType: sniffedType, upsert: true });
 
   if (upErr) return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
 

@@ -242,6 +242,10 @@ export default function AdminPage() {
   const [newAdminUsername, setNewAdminUsername] = useState("");
   const [newAdminPassword, setNewAdminPassword] = useState("");
   const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const [changePwCurrent, setChangePwCurrent] = useState("");
+  const [changePwNew, setChangePwNew] = useState("");
+  const [changePwConfirm, setChangePwConfirm] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
   const [deletingAdminId, setDeletingAdminId] = useState<string | null>(null);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [auditFilter, setAuditFilter] = useState("");
@@ -950,6 +954,27 @@ export default function AdminPage() {
       fetchAuditLog();
     } finally {
       setTotpBusy(false);
+    }
+  };
+
+  // ── เปลี่ยนรหัสผ่านของบัญชีตัวเอง ──
+  const changePassword = async () => {
+    if (!changePwCurrent || !changePwNew || !changePwConfirm) { showMsg("กรอกให้ครบทุกช่อง", false); return; }
+    if (changePwNew.length < 8) { showMsg("รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร", false); return; }
+    if (changePwNew !== changePwConfirm) { showMsg("รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน", false); return; }
+    setChangingPassword(true);
+    try {
+      const res = await fetch("/api/admin/change-password", {
+        method:"POST", headers:{"content-type":"application/json"},
+        body: JSON.stringify({ current_password: changePwCurrent, new_password: changePwNew }),
+      });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) { showMsg(out?.error || "เปลี่ยนรหัสผ่านไม่สำเร็จ", false); return; }
+      showMsg("✅ เปลี่ยนรหัสผ่านแล้ว");
+      setChangePwCurrent(""); setChangePwNew(""); setChangePwConfirm("");
+      fetchAuditLog();
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -2246,6 +2271,31 @@ export default function AdminPage() {
                   <button onClick={()=>{setTotpShowDisableForm(false); setTotpDisableCode("");}} style={btnStyle("white")}>ยกเลิก</button>
                 </div>
               )}
+            </div>
+
+            <div style={{ ...card, padding:16, marginBottom:16 }}>
+              <div style={{ fontWeight:700, fontSize:15, marginBottom:14 }}>🔑 เปลี่ยนรหัสผ่านของคุณ ({currentAdminUsername})</div>
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+                <input
+                  type="password" value={changePwCurrent} onChange={e=>setChangePwCurrent(e.target.value)}
+                  placeholder="รหัสผ่านปัจจุบัน" style={{ ...inputStyle, maxWidth:200 }}
+                />
+                <input
+                  type="password" value={changePwNew} onChange={e=>setChangePwNew(e.target.value)}
+                  placeholder="รหัสผ่านใหม่ (อย่างน้อย 8 ตัวอักษร)" style={{ ...inputStyle, maxWidth:240 }}
+                />
+                <input
+                  type="password" value={changePwConfirm} onChange={e=>setChangePwConfirm(e.target.value)}
+                  placeholder="ยืนยันรหัสผ่านใหม่" style={{ ...inputStyle, maxWidth:200 }}
+                  onKeyDown={e=>e.key==="Enter"&&changePassword()}
+                />
+                <button onClick={changePassword} disabled={changingPassword} style={btnStyle("dark", changingPassword)}>
+                  {changingPassword ? "⏳ กำลังเปลี่ยน..." : "เปลี่ยนรหัสผ่าน"}
+                </button>
+              </div>
+              <div style={{ fontSize:11, color:UI.muted, fontWeight:600, marginTop:10 }}>
+                เปลี่ยนสำเร็จแล้ว session ของคุณในเครื่องนี้จะใช้งานต่อได้เลย ส่วนเครื่อง/เบราว์เซอร์อื่นที่ล็อกอินค้างไว้จะถูกดีดออกอัตโนมัติ
+              </div>
             </div>
 
             <div style={{ ...card, padding:16, marginBottom:16 }}>

@@ -27,29 +27,6 @@ export async function POST(req: NextRequest) {
   const supabase = createClient(supabaseUrl, serviceKey);
   const ip = getClientIp(req);
 
-  // 1) เช็คว่าโดนล็อกอยู่ไหม (ผิดครบจำนวนภายในช่วงเวลาที่กำหนด) — นับตาม IP
-  const windowStart = new Date(Date.now() - WINDOW_MINUTES * 60 * 1000).toISOString();
-  const { data: recentAttempts, error: attErr } = await supabase
-    .from("admin_login_attempts")
-    .select("success, created_at")
-    .eq("ip", ip)
-    .gte("created_at", windowStart)
-    .order("created_at", { ascending: false });
-
-  const failuresInWindow = !attErr && recentAttempts ? recentAttempts.filter((a) => !a.success) : [];
-
-  if (failuresInWindow.length >= MAX_FAILURES) {
-    const mostRecentFailure = new Date(failuresInWindow[0].created_at).getTime();
-    const lockoutEndsAt = mostRecentFailure + LOCKOUT_MINUTES * 60 * 1000;
-    if (Date.now() < lockoutEndsAt) {
-      const waitMin = Math.ceil((lockoutEndsAt - Date.now()) / 60000);
-      return NextResponse.json(
-        { error: `พยายามผิดเกินกำหนด กรุณารออีก ${waitMin} นาทีแล้วลองใหม่` },
-        { status: 429 }
-      );
-    }
-  }
-
   let body: { username?: string; password?: string } | null = null;
   try {
     body = await req.json();
@@ -60,14 +37,57 @@ export async function POST(req: NextRequest) {
   const username = String(body?.username ?? "").trim().toLowerCase();
   const password = String(body?.password ?? "");
 
+  // 1) เช็คว่าโดนล็อกอยู่ไหม — เช็คทั้งสองทาง: ตาม IP (กันยิงรัวจากเครื่องเดียว) และ
+  // ตาม username (กันเดารหัสบัญชีเดียวกันแบบกระจายยิงจากหลาย IP/บอตเน็ต) โดนอันไหนก่อนก็ล็อกอันนั้น
+  const windowStart = new Date(Date.now() - WINDOW_MINUTES * 60 * 1000).toISOString();
+
+  const { data: recentAttempts, error: attErr } = await supabase
+    .from("admin_login_attempts")
+    .select("success, created_at")
+    .eq("ip", ip)
+    .gte("created_at", windowStart)
+    .order("created_at", { ascending: false });
+  const failuresInWindow = !attErr && recentAttempts ? recentAttempts.filter((a) => !a.success) : [];
+
+  let failuresByUsername: typeof recentAttempts = [];
+  if (username) {
+    const { data: userAttempts, error: userAttErr } = await supabase
+      .from("admin_login_attempts")
+      .select("success, created_at")
+      .eq("username", username)
+      .gte("created_at", windowStart)
+      .order("created_at", { ascending: false });
+    failuresByUsername = !userAttErr && userAttempts ? userAttempts.filter((a) => !a.success) : [];
+  }
+
+  const checkLockout = (failures: typeof recentAttempts) => {
+    if (!failures || failures.length < MAX_FAILURES) return null;
+    const mostRecentFailure = new Date(failures[0].created_at).getTime();
+    const lockoutEndsAt = mostRecentFailure + LOCKOUT_MINUTES * 60 * 1000;
+    if (Date.now() >= lockoutEndsAt) return null;
+    return Math.ceil((lockoutEndsAt - Date.now()) / 60000);
+  };
+
+  const ipWaitMin = checkLockout(failuresInWindow);
+  const userWaitMin = checkLockout(failuresByUsername);
+  const waitMin = ipWaitMin != null || userWaitMin != null ? Math.max(ipWaitMin ?? 0, userWaitMin ?? 0) : null;
+
+  if (waitMin != null) {
+    return NextResponse.json(
+      { error: `พยายามผิดเกินกำหนด กรุณารออีก ${waitMin} นาทีแล้วลองใหม่` },
+      { status: 429 }
+    );
+  }
+
   let isCorrect = false;
   let adminId: string | null = null;
   let totpEnabled = false;
+  let pwdVer: number | null = null;
 
   if (username && password) {
     const { data: account } = await supabase
       .from("admin_users")
-      .select("id, password_hash, totp_enabled")
+      .select("id, password_hash, totp_enabled, password_changed_at")
       .eq("username", username)
       .maybeSingle();
 
@@ -75,6 +95,7 @@ export async function POST(req: NextRequest) {
       isCorrect = true;
       adminId = account.id;
       totpEnabled = Boolean(account.totp_enabled);
+      pwdVer = account.password_changed_at ? new Date(account.password_changed_at).getTime() : null;
     }
   }
 
@@ -82,8 +103,13 @@ export async function POST(req: NextRequest) {
   await supabase.from("admin_login_attempts").insert({ ip, username: username || null, success: isCorrect });
 
   if (!isCorrect || !adminId) {
-    const totalFailures = failuresInWindow.length + 1;
-    const remaining = Math.max(0, MAX_FAILURES - totalFailures);
+    // เอาฝั่งที่ใกล้โดนล็อกกว่า (เหลือน้อยกว่า) มาโชว์ เพราะทั้งสองทางนับ +1 ครั้งนี้ด้วยเหมือนกัน
+    const totalFailuresByIp = failuresInWindow.length + 1;
+    const totalFailuresByUser = (failuresByUsername?.length ?? 0) + (username ? 1 : 0);
+    const remaining = Math.max(
+      0,
+      MAX_FAILURES - Math.max(totalFailuresByIp, totalFailuresByUser)
+    );
     const message =
       remaining === 0
         ? `พยายามผิดครบ ${MAX_FAILURES} ครั้งแล้ว บัญชีถูกล็อกชั่วคราว ${LOCKOUT_MINUTES} นาที`
@@ -106,7 +132,7 @@ export async function POST(req: NextRequest) {
   }
 
   const token = signJWT(
-    { role: "admin", admin_id: adminId, username, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 12 },
+    { role: "admin", admin_id: adminId, username, pwd_ver: pwdVer, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 12 },
     sessionSecret
   );
 

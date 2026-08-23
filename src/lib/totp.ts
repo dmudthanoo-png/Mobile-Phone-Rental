@@ -7,6 +7,58 @@ const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const STEP_SECONDS = 30;
 const DIGITS = 6;
 
+// ── เข้ารหัส totp_secret ก่อนเก็บลง DB (AES-256-GCM, key แยกจาก DB ผ่าน env) ──
+// ค่าที่เก็บจริงคือ "v1:<iv>:<authTag>:<ciphertext>" (ทุกส่วน base64)
+// รองรับ secret เก่าที่ยังเป็น plaintext (ไม่มี prefix "v1:") เพื่อไม่ให้บัญชีที่เปิด 2FA
+// ไว้ก่อนหน้านี้ใช้งานไม่ได้ทันที — เมื่อ verify ผ่านครั้งถัดไปจะเข้ารหัสทับให้อัตโนมัติ (self-heal)
+const ENC_PREFIX = "v1:";
+
+function getTotpEncryptionKey(): Buffer {
+  const raw = process.env.TOTP_ENCRYPTION_KEY;
+  if (!raw) throw new Error("missing TOTP_ENCRYPTION_KEY env");
+  const key = Buffer.from(raw, "base64");
+  if (key.length !== 32) {
+    throw new Error("TOTP_ENCRYPTION_KEY ต้อง decode เป็น 32 bytes (base64 ของ AES-256 key)");
+  }
+  return key;
+}
+
+export function isLegacyPlaintextTotpSecret(stored: string): boolean {
+  return !stored.startsWith(ENC_PREFIX);
+}
+
+export function encryptTotpSecret(plainSecret: string): string {
+  const key = getTotpEncryptionKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plainSecret, "utf8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return `${ENC_PREFIX}${iv.toString("base64")}:${authTag.toString("base64")}:${ciphertext.toString("base64")}`;
+}
+
+export function decryptTotpSecret(stored: string): string {
+  if (isLegacyPlaintextTotpSecret(stored)) return stored;
+  const key = getTotpEncryptionKey();
+  const [, ivB64, tagB64, ctB64] = stored.split(":");
+  const iv = Buffer.from(ivB64 ?? "", "base64");
+  const authTag = Buffer.from(tagB64 ?? "", "base64");
+  const ciphertext = Buffer.from(ctB64 ?? "", "base64");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(authTag);
+  const plain = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return plain.toString("utf8");
+}
+
+// เหมือน decryptTotpSecret แต่ไม่ throw — ใช้ตอนต้อง fail ด้วย error message ที่ชัดเจน
+// (เช่น TOTP_ENCRYPTION_KEY หายไปหลัง deploy หรือค่าที่เก็บไว้เสียหาย) แทนที่จะปล่อยให้ route แตกแบบ 500 เปล่าๆ
+export function safeDecryptTotpSecret(stored: string): string | null {
+  try {
+    return decryptTotpSecret(stored);
+  } catch {
+    return null;
+  }
+}
+
 export function generateTotpSecret(): string {
   return base32Encode(crypto.randomBytes(20));
 }

@@ -35,11 +35,12 @@ export async function GET(
       return NextResponse.json({ error: "concert not found" }, { status: 404 });
     }
 
-    // ดึง sessions พร้อม inventory ของแต่ละ session
+    // ดึง sessions พร้อม inventory ของแต่ละ session — เอาเฉพาะรอบที่ยังไม่ผ่านไป
     const { data, error } = await supabase
       .from("concert_sessions")
       .select("id, concert_id, start_at, end_at, note, created_at")
       .eq("concert_id", concertId)
+      .gte("start_at", new Date().toISOString())
       .order("start_at", { ascending: true });
 
     if (error) {

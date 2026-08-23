@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
-import { validateImageUpload } from "@/lib/imageUpload";
+import { validateImageUpload, sniffImageMimeType } from "@/lib/imageUpload";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -40,13 +40,18 @@ export async function PATCH(
     const imgErr = validateImageUpload(posterFile);
     if (imgErr) return NextResponse.json({ error: imgErr }, { status: 400 });
 
-    const ext = posterFile.type === "image/png" ? "png" : posterFile.type === "image/webp" ? "webp" : "jpg";
+    const buffer      = Buffer.from(await posterFile.arrayBuffer());
+    const sniffedType = sniffImageMimeType(buffer);
+    if (!sniffedType) {
+      return NextResponse.json({ error: "ไฟล์ไม่ใช่รูปภาพที่รองรับ (ตรวจสอบจากเนื้อหาไฟล์จริงแล้วไม่ตรง)" }, { status: 400 });
+    }
+
+    const ext = sniffedType === "image/png" ? "png" : sniffedType === "image/webp" ? "webp" : "jpg";
     const fileName = `concert_${id}_${Date.now()}.${ext}`;
-    const buffer = Buffer.from(await posterFile.arrayBuffer());
 
     const { error: upErr } = await supabase.storage
       .from("posters")
-      .upload(fileName, buffer, { contentType: posterFile.type, upsert: true });
+      .upload(fileName, buffer, { contentType: sniffedType, upsert: true });
 
     if (upErr) return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
 

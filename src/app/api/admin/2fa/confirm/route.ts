@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
-import { verifyTotpCode } from "@/lib/totp";
+import { verifyTotpCode, safeDecryptTotpSecret, encryptTotpSecret, isLegacyPlaintextTotpSecret } from "@/lib/totp";
 import { logAdminAction } from "@/lib/adminAudit";
 
 // POST /api/admin/2fa/confirm — ยืนยันว่าตั้งค่า authenticator สำเร็จ แล้วเปิดใช้งานจริง
@@ -19,7 +19,9 @@ export async function POST(req: NextRequest) {
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) return NextResponse.json({ error: "missing env" }, { status: 500 });
+  if (!url || !serviceKey || !process.env.TOTP_ENCRYPTION_KEY) {
+    return NextResponse.json({ error: "missing env" }, { status: 500 });
+  }
   const supabase = createClient(url, serviceKey);
 
   const { data: account } = await supabase
@@ -32,13 +34,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ยังไม่ได้เริ่มตั้งค่า 2FA กรุณากดเริ่มตั้งค่าใหม่" }, { status: 400 });
   }
 
-  if (!verifyTotpCode(account.totp_secret, code)) {
+  const wasLegacyPlaintext = isLegacyPlaintextTotpSecret(account.totp_secret);
+  const plainSecret = safeDecryptTotpSecret(account.totp_secret);
+  if (plainSecret === null) {
+    return NextResponse.json(
+      { error: "อ่านค่า 2FA ไม่ได้ (encryption key อาจไม่ถูกต้องหรือข้อมูลเสียหาย) กรุณาติดต่อผู้ดูแลระบบ" },
+      { status: 500 }
+    );
+  }
+
+  if (!verifyTotpCode(plainSecret, code)) {
     return NextResponse.json({ error: "รหัสไม่ถูกต้อง กรุณาลองใหม่" }, { status: 401 });
   }
 
+  const updates: Record<string, unknown> = { totp_enabled: true };
+  if (wasLegacyPlaintext) updates.totp_secret = encryptTotpSecret(plainSecret);
+
   const { error } = await supabase
     .from("admin_users")
-    .update({ totp_enabled: true })
+    .update(updates)
     .eq("id", adminId);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

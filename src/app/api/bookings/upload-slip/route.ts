@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { syncBookingToSheet } from "@/lib/sheetsSync";
 import { verifySlipForBooking } from "@/lib/slipOk";
 import { findOrCreateLineUser } from "@/lib/lineSession";
+import { sniffImageMimeType } from "@/lib/imageUpload";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -120,9 +121,10 @@ export async function POST(req: NextRequest) {
     }
 
     // 2.5) verify session ว่ามีอยู่จริง + คอนเสิร์ตยังไม่ archive (กันจองรอบที่เก็บเข้าคลังไปแล้ว)
+    //      + รอบยังไม่ผ่านไปแล้ว (กันจองย้อนหลังรอบที่จบไปแล้วจาก session_id เก่าที่ค้างอยู่)
     const { data: sessionCheck, error: sessionCheckErr } = await supabaseAdmin
       .from("concert_sessions")
-      .select("id, concerts ( archived )")
+      .select("id, start_at, concerts ( archived )")
       .eq("id", session_id)
       .maybeSingle();
 
@@ -130,6 +132,9 @@ export async function POST(req: NextRequest) {
     if (!sessionCheck) return NextResponse.json({ error: "session not found" }, { status: 404 });
     const concertArchived = (sessionCheck.concerts as unknown as { archived: boolean } | null)?.archived;
     if (concertArchived) return NextResponse.json({ error: "concert archived" }, { status: 400 });
+    if (sessionCheck.start_at && new Date(sessionCheck.start_at).getTime() < Date.now()) {
+      return NextResponse.json({ error: "session already passed" }, { status: 400 });
+    }
 
     // 3) verify price + lens จาก DB (ไม่เชื่อ client) — ต้อง active เท่านั้นถึงจะจองได้
     const { data: phoneRow, error: phoneErr } = await supabaseAdmin
@@ -197,17 +202,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5) upload slip
-    const ext =
-      slip.type === "image/png"  ? "png"  :
-      slip.type === "image/webp" ? "webp" : "jpg";
+    // 5) upload slip — เช็ค magic bytes จริงของไฟล์ ไม่เชื่อแค่ Content-Type ที่ client อ้าง
+    const buffer      = Buffer.from(await slip.arrayBuffer());
+    const sniffedType = sniffImageMimeType(buffer);
+    if (!sniffedType) {
+      return NextResponse.json({ error: "ไฟล์ไม่ใช่รูปภาพที่รองรับ (ตรวจสอบจากเนื้อหาไฟล์จริงแล้วไม่ตรง)" }, { status: 400 });
+    }
 
+    const ext = sniffedType === "image/png" ? "png" : sniffedType === "image/webp" ? "webp" : "jpg";
     const fileName = `bookings/${user_id}/${session_id}/${phone_id}/${Date.now()}.${ext}`;
-    const buffer   = Buffer.from(await slip.arrayBuffer());
 
     const { error: upErr } = await supabaseAdmin.storage
       .from("slips")
-      .upload(fileName, buffer, { contentType: slip.type, upsert: true });
+      .upload(fileName, buffer, { contentType: sniffedType, upsert: true });
 
     if (upErr) {
       return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });

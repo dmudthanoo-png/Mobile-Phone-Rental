@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
-import { validateImageUpload } from "@/lib/imageUpload";
+import { validateImageUpload, sniffImageMimeType } from "@/lib/imageUpload";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -65,13 +65,18 @@ export async function POST(req: NextRequest) {
     const imgErr = validateImageUpload(imageFile);
     if (imgErr) return NextResponse.json({ error: imgErr }, { status: 400 });
 
-    const ext      = getImageExt(imageFile.type);
+    const buffer     = Buffer.from(await imageFile.arrayBuffer());
+    const sniffedType = sniffImageMimeType(buffer);
+    if (!sniffedType) {
+      return NextResponse.json({ error: "ไฟล์ไม่ใช่รูปภาพที่รองรับ (ตรวจสอบจากเนื้อหาไฟล์จริงแล้วไม่ตรง)" }, { status: 400 });
+    }
+
+    const ext      = getImageExt(sniffedType);
     const fileName = `announcement_${Date.now()}.${ext}`;
-    const buffer   = Buffer.from(await imageFile.arrayBuffer());
 
     const { error: upErr } = await supabase.storage
       .from("announcements")
-      .upload(fileName, buffer, { contentType: imageFile.type, upsert: true });
+      .upload(fileName, buffer, { contentType: sniffedType, upsert: true });
 
     if (upErr) return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
 

@@ -23,6 +23,8 @@ type Concert = {
   publish_at?: string | null;
 };
 
+type ConcertListItem = Concert & { _status: "open" | "upcoming" };
+
 type ConcertSession = {
   id: string;
   concert_id?: string;
@@ -197,6 +199,7 @@ export default function PhoneRentalHome() {
   const [concerts, setConcerts] = useState<Concert[]>([]);
   const [upcomingConcerts, setUpcomingConcerts] = useState<Concert[]>([]);
   const [upcomingDetail, setUpcomingDetail] = useState<Concert | null>(null);
+  const [concertFilter, setConcertFilter] = useState<"all" | "open" | "upcoming">("all");
   const [sessions, setSessions] = useState<ConcertSession[]>([]);
   const [phones, setPhones] = useState<PhoneOption[]>([]);
 
@@ -233,6 +236,17 @@ export default function PhoneRentalHome() {
   const timeLeft = timerExpiresAt !== null ? Math.max(0, Math.round((timerExpiresAt - nowTick) / 1000)) : null;
 
   const selectedConcert = useMemo(() => concerts.find((c) => c.id === selectedConcertId) || null, [concerts, selectedConcertId]);
+
+  const allConcertItems = useMemo<ConcertListItem[]>(() => [
+    ...concerts.map((c) => ({ ...c, _status: "open" as const })),
+    ...upcomingConcerts.map((c) => ({ ...c, _status: "upcoming" as const })),
+  ], [concerts, upcomingConcerts]);
+
+  const filteredConcertItems = useMemo(() => {
+    if (concertFilter === "open") return allConcertItems.filter((c) => c._status === "open");
+    if (concertFilter === "upcoming") return allConcertItems.filter((c) => c._status === "upcoming");
+    return allConcertItems;
+  }, [allConcertItems, concertFilter]);
   const selectedSession = useMemo(() => sessions.find((s) => s.id === selectedSessionId) || null, [sessions, selectedSessionId]);
   const selectedPhone   = useMemo(() => phones.find((p) => p.phone_id === selectedPhoneId) || null, [phones, selectedPhoneId]);
   const selectedLens    = useMemo(() => selectedPhone?.lens_options.find((l) => l.lens_id === selectedLensId) || null, [selectedPhone, selectedLensId]);
@@ -655,22 +669,73 @@ export default function PhoneRentalHome() {
                 <span style={{ width: 26, height: 26, borderRadius: 8, background: accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>🎫</span>
                 <span style={{ fontWeight: 700, fontSize: 17, color: ink }}>เลือกคอนเสิร์ต</span>
               </div>
+
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {([
+                    { key: "all" as const, label: "ทั้งหมด", count: allConcertItems.length },
+                    { key: "open" as const, label: "เปิดจอง", count: concerts.length },
+                    { key: "upcoming" as const, label: "เร็วๆ นี้", count: upcomingConcerts.length },
+                  ]).map((f) => {
+                    const active = concertFilter === f.key;
+                    return (
+                      <button
+                        key={f.key}
+                        onClick={() => setConcertFilter(f.key)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 7, border: "none", cursor: "pointer",
+                          borderRadius: 999, padding: "8px 14px", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+                          background: active ? `linear-gradient(135deg, ${accent}, ${accent2})` : "#fff",
+                          color: active ? "#fff" : ink,
+                          boxShadow: active ? `0 8px 18px -6px ${accentGlow}` : `inset 0 0 0 1.5px ${line}`,
+                          transition: "all .15s",
+                        }}
+                      >
+                        {f.label}
+                        <span style={{
+                          background: active ? "rgba(255,255,255,0.3)" : accentSoft,
+                          color: active ? "#fff" : accentStrong,
+                          borderRadius: 999, padding: "1px 8px", fontSize: 11, fontWeight: 800, minWidth: 18, textAlign: "center",
+                        }}>{f.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <span style={{ fontSize: 12, color: sub, fontWeight: 600, whiteSpace: "nowrap" }}>
+                  พบ {filteredConcertItems.length} คอนเสิร์ต
+                </span>
+              </div>
+
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
-                {concerts.map((c) => {
+                {filteredConcertItems.map((c) => {
                   const sel = selectedConcertId === c.id;
+                  const isOpen = c._status === "open";
                   return (
-                    <div key={c.id} onClick={async () => {
-                      setSelectedConcertId(c.id);
-                      resetBelowConcert();
-                      try { await loadSessions(c.id); }
-                      catch (e: unknown) { setPageError(e instanceof Error ? e.message : "โหลดรอบไม่สำเร็จ"); }
-                    }} style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 10, cursor: "pointer", position: "relative", transition: "all .15s", overflow: "hidden" }}>
-                      <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 12, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden" }}>
+                    <div
+                      key={c.id}
+                      onClick={isOpen ? async () => {
+                        setSelectedConcertId(c.id);
+                        resetBelowConcert();
+                        try { await loadSessions(c.id); }
+                        catch (e: unknown) { setPageError(e instanceof Error ? e.message : "โหลดรอบไม่สำเร็จ"); }
+                      } : () => setUpcomingDetail(c)}
+                      style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 10, cursor: "pointer", position: "relative", transition: "all .15s", overflow: "hidden" }}
+                    >
+                      <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 12, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", position: "relative" }}>
                         {c.poster_url ? (
                           <img src={c.poster_url} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         ) : (
                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, color: sub, fontSize: 12 }}>ไม่มีโปสเตอร์</div>
                         )}
+                        <div style={{
+                          position: "absolute", top: 8, left: 8, display: "flex", alignItems: "center", gap: 4,
+                          background: isOpen ? goodSoft : violetSoft, color: isOpen ? good : accent2,
+                          borderRadius: 999, padding: "3px 9px", fontSize: 10, fontWeight: 800,
+                          boxShadow: "0 2px 8px -2px rgba(36,31,28,0.25)",
+                        }}>
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: isOpen ? good : accent2, flexShrink: 0 }} />
+                          {isOpen ? "เปิดจอง" : "เร็วๆ นี้"}
+                        </div>
                       </div>
                       <div style={{ marginTop: 8, color: ink }}>
                         <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{c.title}</div>
@@ -683,38 +748,11 @@ export default function PhoneRentalHome() {
                   );
                 })}
               </div>
-              {concerts.length === 0 && (
-                <div style={{ ...doodle.cardYellow, padding: 16, marginTop: 10, color: ink }}>ยังไม่มีคอนเสิร์ตในระบบ</div>
-              )}
-
-              {upcomingConcerts.length > 0 && (
-                <div style={{ marginTop: 28 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-                    <span style={{ width: 26, height: 26, borderRadius: 8, background: violetSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>🔜</span>
-                    <span style={{ fontWeight: 700, fontSize: 17, color: ink }}>เร็วๆ นี้</span>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
-                    {upcomingConcerts.map((c) => (
-                      <div key={c.id} onClick={() => setUpcomingDetail(c)} style={{ ...doodle.card, padding: 10, cursor: "pointer", position: "relative", overflow: "hidden" }}>
-                        <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 12, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", filter: "grayscale(35%)", opacity: 0.85 }}>
-                          {c.poster_url ? (
-                            <img src={c.poster_url} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                          ) : (
-                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, color: sub, fontSize: 12 }}>ไม่มีโปสเตอร์</div>
-                          )}
-                        </div>
-                        <div style={{ marginTop: 8, color: ink }}>
-                          <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{c.title}</div>
-                          <div style={{ fontSize: 11, color: sub, fontWeight: 500 }}>{c.venue_name ? `📍 ${c.venue_name}` : ""}</div>
-                        </div>
-                        {c.publish_at && (
-                          <div style={{ position: "absolute", top: 10, right: 10, background: violetSoft, color: accent2, borderRadius: 999, padding: "2px 10px", fontSize: 10, fontWeight: 700 }}>
-                            🔜 {formatThaiDateTime(c.publish_at)}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+              {filteredConcertItems.length === 0 && (
+                <div style={{ ...doodle.cardYellow, padding: 16, marginTop: 10, color: ink }}>
+                  {concertFilter === "open" ? "ยังไม่มีคอนเสิร์ตที่เปิดจองตอนนี้"
+                    : concertFilter === "upcoming" ? "ยังไม่มีคอนเสิร์ตที่จะเปิดเร็วๆ นี้"
+                    : "ยังไม่มีคอนเสิร์ตในระบบ"}
                 </div>
               )}
 

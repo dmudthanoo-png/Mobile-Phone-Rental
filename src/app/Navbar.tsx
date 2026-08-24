@@ -42,11 +42,12 @@ function LogoutIcon() {
   );
 }
 
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+function NavLink({ href, onClick, children }: { href: string; onClick?: () => void; children: React.ReactNode }) {
   const [hover, setHover] = useState(false);
   return (
     <Link
       href={href}
+      onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -66,9 +67,13 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
 export default function Navbar({
   user,
   onSignOut,
+  onGoHome,
 }: {
   user?: MeUser | null;
   onSignOut?: () => void;
+  // เรียกตอนกด logo/อีเวนต์ ขณะที่อยู่หน้าแรกอยู่แล้ว (path เดิม กด Link เฉยๆ จะไม่ remount
+  // component เลย reset ขั้นตอนจองที่ค้างอยู่ (เช่น หลังจองเสร็จ step 5) ไม่ได้ ต้องรีเซ็ตเอง
+  onGoHome?: () => void;
 }) {
   const router = useRouter();
   const [signOutHover, setSignOutHover] = useState(false);
@@ -121,6 +126,7 @@ export default function Navbar({
         {/* Left: Logo */}
         <Link
           href="/"
+          onClick={onGoHome}
           style={{
             display: "flex",
             alignItems: "center",
@@ -142,7 +148,7 @@ export default function Navbar({
 
         {/* Center: nav links (ซ่อนบนมือถือ) */}
         <div className="navbar-center-links" style={{ alignItems: "center", gap: 22, justifySelf: "center" }}>
-          <NavLink href="/#events">อีเวนต์</NavLink>
+          <NavLink href="/#events" onClick={onGoHome}>อีเวนต์</NavLink>
           <NavLink href="/how-to-book">วิธีการจอง</NavLink>
         </div>
 
@@ -313,7 +319,7 @@ export default function Navbar({
             <Link
               key={item.href}
               href={item.href}
-              onClick={closeMenu}
+              onClick={() => { closeMenu(); if (item.href === "/#events") onGoHome?.(); }}
               style={{
                 padding: "10px 4px",
                 fontSize: 14,

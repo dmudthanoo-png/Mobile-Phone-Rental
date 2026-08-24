@@ -385,6 +385,15 @@ export default function PhoneRentalHome() {
     setRefNumber(null);
   };
 
+  const goToStep1 = () => {
+    setSelectedConcertId(null);
+    resetBelowConcert();
+    setAgreedTerms(false);
+    setTimerExpiresAt(null);
+    setTimerStepKey(null);
+    setStep(1);
+  };
+
   const resetBelowConcert = () => {
     setSessions([]); setPhones([]);
     setSelectedSessionId(null); setSelectedPhoneId(null);
@@ -456,12 +465,7 @@ export default function PhoneRentalHome() {
     if (timerExpiresAt === null || timeLeft === null || (step !== 3 && step !== 4)) return;
     if (timeLeft <= 0) {
       alert("หมดเวลาทำรายการ กรุณาเริ่มทำรายการใหม่อีกครั้งครับ");
-      setSelectedConcertId(null);
-      resetBelowConcert();
-      setAgreedTerms(false);
-      setTimerExpiresAt(null);
-      setTimerStepKey(null);
-      setStep(1);
+      goToStep1();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeLeft, step, timerExpiresAt]);
@@ -644,7 +648,7 @@ export default function PhoneRentalHome() {
     <div style={{ minHeight: "100vh", background: "#FFF9F3", fontFamily: uiFont, display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: showBottomNav ? 100 : 0, position: "relative", isolation: "isolate" }}>
       <AmbientGlow />
       <div style={{ width: "100%" }}>
-        <Navbar user={meUser} onSignOut={handleSignOut} />
+        <Navbar user={meUser} onSignOut={handleSignOut} onGoHome={goToStep1} />
       </div>
 
       <div style={{ width: "100%", maxWidth: 760, flex: 1 }}>

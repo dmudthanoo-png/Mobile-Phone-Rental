@@ -1236,32 +1236,51 @@ export default function PhoneRentalHome() {
           {/* STEP 5 */}
           {step === 5 && (
             <div style={{ textAlign: "center", paddingTop: 16 }}>
-              <div style={{ fontSize: 48, marginBottom: 8 }}>🎉</div>
-              <div style={{ fontWeight: 800, fontSize: 22, marginBottom: 4, color: ink }}>จองสำเร็จแล้ว!</div>
+              <div style={{
+                width: 92, height: 92, borderRadius: "50%", margin: "0 auto 14px",
+                background: `radial-gradient(circle at 35% 30%, ${accentSoft} 0%, ${violetSoft} 100%)`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                boxShadow: `0 14px 34px -12px ${accentGlow}, inset 0 1px 0 rgba(255,255,255,0.6)`,
+              }}>
+                <span style={{ fontSize: 44 }}>🎉</span>
+              </div>
+              <div style={{
+                fontWeight: 800, fontSize: 23, marginBottom: 4,
+                background: `linear-gradient(135deg, ${accent}, ${accent2})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+              }}>จองสำเร็จแล้ว!</div>
               <p style={{ fontSize: 15, color: sub, fontWeight: 500, marginBottom: 8, lineHeight: 1.6 }}>
                 ระบบยืนยันการจองแล้ว พบกันที่คอนเสิร์ต 🎶
               </p>
 
               <div style={{ ...doodle.card, padding: 16, marginBottom: 16, textAlign: "left", color: ink }}>
-                <div style={{ fontWeight: 800, fontSize: 14, color: ink, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-                  📌 ขั้นตอนถัดไป
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                  <span style={{ width: 24, height: 24, borderRadius: 8, background: accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0 }}>📌</span>
+                  <span style={{ fontWeight: 800, fontSize: 14, color: ink }}>ขั้นตอนถัดไป</span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {[
-                    { title: "เพิ่มเพื่อน LINE OA", desc: "เพื่อรับการแจ้งเตือนทันทีที่แอดมินยืนยันการจอง", icon: "🔔" },
-                    { title: "รอแอดมินอนุมัติ", desc: "แอดมินตรวจสอบสลิปและยืนยันคิวการจอง", icon: "🧾" },
-                    { title: "ไปรับเครื่องที่จุดนัดหมาย", desc: "ตามวัน-เวลาที่จอง", icon: "📍" },
-                    { title: "สนุกกับคอนเสิร์ต", desc: "เก็บภาพและวิดีโอให้เต็มที่!", icon: "🎉" },
+                    { title: "เพิ่มเพื่อน LINE OA", desc: "เพื่อรับการแจ้งเตือนทันทีที่แอดมินยืนยันการจอง", icon: "🔔", iconBg: warningSoft },
+                    { title: "รอแอดมินอนุมัติ", desc: "แอดมินตรวจสอบสลิปและยืนยันคิวการจอง", icon: "🧾", iconBg: accentSoft },
+                    { title: "ไปรับเครื่องที่จุดนัดหมาย", desc: "ตามวัน-เวลาที่จอง", icon: "📍", iconBg: violetSoft },
+                    { title: "สนุกกับคอนเสิร์ต", desc: "เก็บภาพและวิดีโอให้เต็มที่!", icon: "🎉", iconBg: goodSoft },
                   ].map((s, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: `1px solid ${line}`, borderRadius: 14, padding: "12px 14px" }}>
-                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: accent2, color: "#fff", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <div key={i} style={{
+                      display: "flex", alignItems: "center", gap: 12, background: "#fff",
+                      border: `1px solid ${line}`, borderRadius: 14, padding: "12px 14px",
+                      boxShadow: "0 4px 14px -8px rgba(36,31,28,0.18)",
+                    }}>
+                      <div style={{
+                        width: 26, height: 26, borderRadius: "50%", background: `linear-gradient(135deg, ${accent}, ${accent2})`,
+                        color: "#fff", fontWeight: 800, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                        boxShadow: `0 4px 10px -4px ${accentGlow}`,
+                      }}>
                         {i + 1}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 700, fontSize: 13, color: ink }}>{s.title}</div>
                         <div style={{ fontSize: 11, color: sub, fontWeight: 500, marginTop: 2 }}>{s.desc}</div>
                       </div>
-                      <span style={{ fontSize: 22, flexShrink: 0 }}>{s.icon}</span>
+                      <span style={{ width: 36, height: 36, borderRadius: 10, background: s.iconBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{s.icon}</span>
                     </div>
                   ))}
                 </div>

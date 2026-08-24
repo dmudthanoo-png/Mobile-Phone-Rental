@@ -1078,6 +1078,15 @@ export default function PhoneRentalHome() {
                 </div>
               </div>
 
+              <div style={{ ...doodle.card, padding: "16px 16px 18px", marginBottom: 16, textAlign: "center", color: ink }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: ink, marginBottom: 10 }}>📷 สแกน QR เพื่อโอนผ่านแอปธนาคาร</div>
+                <img
+                  src="/payment-qr.png"
+                  alt="QR พร้อมเพย์สำหรับโอนเงิน"
+                  style={{ width: "100%", maxWidth: 240, borderRadius: 14, border: `1px solid ${line}`, display: "block", margin: "0 auto" }}
+                />
+              </div>
+
               <div style={{ ...doodle.card, overflow: "hidden", marginBottom: 16, color: ink }}>
                 {[
                   { bg: "#003D6B", label: "พร้อมเพย์", num: "014000009934092", name: "รหัสร้านค้า (Merchant ID) · ธาราธร เสมียนรัมย์", val: "014000009934092", key: "pp" },

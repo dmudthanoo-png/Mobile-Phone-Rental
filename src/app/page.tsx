@@ -728,9 +728,9 @@ export default function PhoneRentalHome() {
                         try { await loadSessions(c.id); }
                         catch (e: unknown) { setPageError(e instanceof Error ? e.message : "โหลดรอบไม่สำเร็จ"); }
                       } : () => setUpcomingDetail(c)}
-                      style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 10, cursor: "pointer", position: "relative", transition: "all .15s", overflow: "hidden" }}
+                      style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 10, cursor: "pointer", position: "relative", transition: "all .15s", overflow: "hidden", display: "flex", flexDirection: "column", height: "100%" }}
                     >
-                      <div style={{ width: "100%", aspectRatio: "4/3", borderRadius: 12, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", position: "relative" }}>
+                      <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 12, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", position: "relative", flexShrink: 0 }}>
                         {c.poster_url ? (
                           <img src={c.poster_url} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         ) : (
@@ -746,15 +746,18 @@ export default function PhoneRentalHome() {
                           </div>
                         )}
                       </div>
-                      <div style={{ marginTop: 10, color: ink }}>
-                        <div style={{ fontWeight: 800, fontSize: 13, lineHeight: 1.25 }}>{c.title}</div>
+                      <div style={{ marginTop: 10, color: ink, flex: 1, display: "flex", flexDirection: "column" }}>
+                        <div style={{
+                          fontWeight: 800, fontSize: 13, lineHeight: 1.25, display: "-webkit-box",
+                          WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+                        }}>{c.title}</div>
                         {c.venue_name && (
-                          <div style={{ fontSize: 11, color: sub, fontWeight: 600, marginTop: 4 }}>📍 {c.venue_name}</div>
+                          <div style={{ fontSize: 11, color: sub, fontWeight: 600, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>📍 {c.venue_name}</div>
                         )}
                         {dateToShow && (
                           <div style={{ fontSize: 11, color: sub, fontWeight: 600, marginTop: 2 }}>📅 {formatThaiDateTime(dateToShow)}</div>
                         )}
-                        <div style={{ marginTop: 8 }}>
+                        <div style={{ marginTop: "auto", paddingTop: 8 }}>
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: badge.bg, color: badge.fg, borderRadius: 999, padding: "4px 10px", fontSize: 11, fontWeight: 800 }}>
                             <span style={{ width: 6, height: 6, borderRadius: "50%", background: badge.fg, flexShrink: 0 }} />
                             {badge.label}

@@ -22,6 +22,7 @@ type Concert = {
   description?: string | null;
   publish_at?: string | null;
   sold_out?: boolean;
+  no_sessions?: boolean;
   next_session_at?: string | null;
 };
 
@@ -713,12 +714,14 @@ export default function PhoneRentalHome() {
                   const sel = selectedConcertId === c.id;
                   const isOpen = c._status === "open";
                   const isSoldOut = isOpen && Boolean(c.sold_out);
+                  const isNoSessions = isOpen && Boolean(c.no_sessions);
                   const badge = !isOpen
                     ? { label: "กำลังจะเปิด", bg: violetSoft, fg: accent2 }
+                    : isNoSessions
+                    ? { label: "ยังไม่มีรอบ", bg: line, fg: sub }
                     : isSoldOut
                     ? { label: "เต็มแล้ว", bg: criticalSoft, fg: critical }
                     : { label: "เปิดจองอยู่", bg: goodSoft, fg: good };
-                  const dateToShow = isOpen ? c.next_session_at : c.publish_at;
                   return (
                     <div
                       key={c.id}
@@ -753,9 +756,6 @@ export default function PhoneRentalHome() {
                         }}>{c.title}</div>
                         {c.venue_name && (
                           <div style={{ fontSize: 11, color: sub, fontWeight: 600, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>📍 {c.venue_name}</div>
-                        )}
-                        {dateToShow && (
-                          <div style={{ fontSize: 11, color: sub, fontWeight: 600, marginTop: 2 }}>📅 {formatThaiDateTime(dateToShow)}</div>
                         )}
                         <div style={{ marginTop: "auto", paddingTop: 8 }}>
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: badge.bg, color: badge.fg, borderRadius: 999, padding: "4px 10px", fontSize: 11, fontWeight: 800 }}>

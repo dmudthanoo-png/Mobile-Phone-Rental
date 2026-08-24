@@ -43,8 +43,10 @@ export async function GET(_req: NextRequest) {
       .sort((a, b) => new Date(a.publish_at!).getTime() - new Date(b.publish_at!).getTime());
 
     // เช็คว่าคอนเสิร์ตที่ live อยู่ ยังมีรอบไหนพอจะจองได้บ้างไหม (สต็อกเหลือจริง)
-    // ไม่มีรอบในอนาคตเลย หรือทุกรอบ/ทุกรุ่นเต็มหมด = ถือว่า "เต็มแล้ว"
+    // แยก 2 กรณีให้ชัด: "เต็มแล้ว" (มีรอบในอนาคต แต่สต็อกหมดทุกรอบ) กับ "no_sessions"
+    // (ยังไม่ตั้งรอบเลย หรือรอบที่มีผ่านไปหมดแล้ว) เพราะความหมายไม่เหมือนกัน
     const soldOutIds = new Set<string>();
+    const noSessionIds = new Set<string>();
     const nextSessionAtByConcert = new Map<string, string>();
     const liveIds = liveConcerts.map((c) => c.id);
 
@@ -95,6 +97,12 @@ export async function GET(_req: NextRequest) {
 
       for (const c of liveConcerts) {
         const sIds = sessionsByConcert.get(c.id) ?? [];
+        if (sIds.length === 0) {
+          // ไม่มีรอบในอนาคตเลย (ยังไม่ตั้งรอบ หรือรอบที่มีผ่านไปหมดแล้ว) — คนละกรณีกับ "เต็มแล้ว"
+          // (เต็มแล้ว = มีรอบให้จอง แต่สต็อกหมด) ไม่ควรติดป้ายเดียวกัน เดี๋ยวเข้าใจผิดว่าคนจองเต็ม
+          noSessionIds.add(c.id);
+          continue;
+        }
         const anyStock = sIds.some((sid) => hasStockSessionIds.has(sid));
         if (!anyStock) soldOutIds.add(c.id);
       }
@@ -103,6 +111,7 @@ export async function GET(_req: NextRequest) {
     const concerts = liveConcerts.map((c) => ({
       ...c,
       sold_out: soldOutIds.has(c.id),
+      no_sessions: noSessionIds.has(c.id),
       next_session_at: nextSessionAtByConcert.get(c.id) ?? null,
     }));
 

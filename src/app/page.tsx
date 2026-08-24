@@ -21,6 +21,8 @@ type Concert = {
   venue_name?: string | null;
   description?: string | null;
   publish_at?: string | null;
+  sold_out?: boolean;
+  next_session_at?: string | null;
 };
 
 type ConcertListItem = Concert & { _status: "open" | "upcoming" };
@@ -55,6 +57,7 @@ type PhoneOption = {
 // ต้องตรงกับเพดานที่ฝั่ง server บังคับไว้ใน src/app/api/bookings/upload-slip/route.ts
 // (qty = Math.min(qty, 10)) ไม่งั้นลูกค้าจะเลือกได้เกินจริง แล้วโดนตัดยอดเงียบๆ ตอน submit
 const MAX_PHONE_QTY = 10;
+const CONCERT_LIST_COLLAPSED_COUNT = 5;
 
 const ink = "#241F1C";
 const sub = "#7A6D61";
@@ -192,6 +195,7 @@ export default function PhoneRentalHome() {
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(1);
   const stepLabels = ["คอนเสิร์ต", "รอบ & มือถือ", "ข้อมูล", "ชำระเงิน", "เสร็จสิ้น"];
+  const stepIcons = ["📅", "📱", "👤", "💳", "✓"];
 
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [refNumber, setRefNumber] = useState<string | null>(null);
@@ -200,6 +204,7 @@ export default function PhoneRentalHome() {
   const [upcomingConcerts, setUpcomingConcerts] = useState<Concert[]>([]);
   const [upcomingDetail, setUpcomingDetail] = useState<Concert | null>(null);
   const [concertFilter, setConcertFilter] = useState<"all" | "open" | "upcoming">("all");
+  const [concertListExpanded, setConcertListExpanded] = useState(false);
   const [sessions, setSessions] = useState<ConcertSession[]>([]);
   const [phones, setPhones] = useState<PhoneOption[]>([]);
 
@@ -643,7 +648,7 @@ export default function PhoneRentalHome() {
                       transition: "all .2s",
                     }}
                   >
-                    {step > i + 1 ? "✓" : i + 1}
+                    {step > i + 1 ? "✓" : stepIcons[i]}
                   </div>
                   <span style={{ fontSize: 11, fontWeight: 600, color: step === i + 1 ? accentStrong : sub, whiteSpace: "nowrap" }}>{l}</span>
                 </div>
@@ -670,33 +675,36 @@ export default function PhoneRentalHome() {
                 <span style={{ fontWeight: 700, fontSize: 17, color: ink }}>เลือกคอนเสิร์ต</span>
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 12, color: sub, fontWeight: 700, marginBottom: 8 }}>สถานะการเปิดจอง</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {([
-                    { key: "all" as const, label: "ทั้งหมด", count: allConcertItems.length },
-                    { key: "open" as const, label: "เปิดจอง", count: concerts.length },
-                    { key: "upcoming" as const, label: "เร็วๆ นี้", count: upcomingConcerts.length },
+                    { key: "all" as const, icon: "🔲", label: "ทั้งหมด", count: allConcertItems.length },
+                    { key: "open" as const, icon: "📅", label: "เปิดจอง", count: concerts.length },
+                    { key: "upcoming" as const, icon: "🕐", label: "เร็วๆ นี้", count: upcomingConcerts.length },
                   ]).map((f) => {
                     const active = concertFilter === f.key;
                     return (
                       <button
                         key={f.key}
-                        onClick={() => setConcertFilter(f.key)}
+                        onClick={() => { setConcertFilter(f.key); setConcertListExpanded(false); }}
                         style={{
-                          display: "flex", alignItems: "center", gap: 7, border: "none", cursor: "pointer",
-                          borderRadius: 999, padding: "8px 14px", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+                          display: "flex", flexDirection: "column", alignItems: "center", gap: 4, border: "none", cursor: "pointer",
+                          borderRadius: 14, padding: "10px 16px", minWidth: 84, fontFamily: "inherit",
                           background: active ? `linear-gradient(135deg, ${accent}, ${accent2})` : "#fff",
-                          color: active ? "#fff" : ink,
                           boxShadow: active ? `0 8px 18px -6px ${accentGlow}` : `inset 0 0 0 1.5px ${line}`,
                           transition: "all .15s",
                         }}
                       >
-                        {f.label}
-                        <span style={{
-                          background: active ? "rgba(255,255,255,0.3)" : accentSoft,
-                          color: active ? "#fff" : accentStrong,
-                          borderRadius: 999, padding: "1px 8px", fontSize: 11, fontWeight: 800, minWidth: 18, textAlign: "center",
-                        }}>{f.count}</span>
+                        <span style={{ fontSize: 17 }}>{f.icon}</span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, color: active ? "#fff" : ink }}>
+                          {f.label}
+                          <span style={{
+                            background: active ? "rgba(255,255,255,0.3)" : accentSoft,
+                            color: active ? "#fff" : accentStrong,
+                            borderRadius: 999, padding: "0 6px", fontSize: 10, fontWeight: 800, minWidth: 16, textAlign: "center",
+                          }}>{f.count}</span>
+                        </span>
                       </button>
                     );
                   })}
@@ -706,10 +714,17 @@ export default function PhoneRentalHome() {
                 </span>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
-                {filteredConcertItems.map((c) => {
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {(concertListExpanded ? filteredConcertItems : filteredConcertItems.slice(0, CONCERT_LIST_COLLAPSED_COUNT)).map((c) => {
                   const sel = selectedConcertId === c.id;
                   const isOpen = c._status === "open";
+                  const isSoldOut = isOpen && Boolean(c.sold_out);
+                  const badge = !isOpen
+                    ? { label: "กำลังจะเปิด", bg: violetSoft, fg: accent2 }
+                    : isSoldOut
+                    ? { label: "เต็มแล้ว", bg: criticalSoft, fg: critical }
+                    : { label: "เปิดจองอยู่", bg: goodSoft, fg: good };
+                  const dateToShow = isOpen ? c.next_session_at : c.publish_at;
                   return (
                     <div
                       key={c.id}
@@ -719,35 +734,45 @@ export default function PhoneRentalHome() {
                         try { await loadSessions(c.id); }
                         catch (e: unknown) { setPageError(e instanceof Error ? e.message : "โหลดรอบไม่สำเร็จ"); }
                       } : () => setUpcomingDetail(c)}
-                      style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 10, cursor: "pointer", position: "relative", transition: "all .15s", overflow: "hidden" }}
+                      style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 14, transition: "all .15s" }}
                     >
-                      <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 12, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", position: "relative" }}>
+                      <div style={{ width: 60, height: 60, borderRadius: 12, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", flexShrink: 0 }}>
                         {c.poster_url ? (
                           <img src={c.poster_url} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         ) : (
-                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, color: sub, fontSize: 12 }}>ไม่มีโปสเตอร์</div>
+                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🎫</div>
                         )}
-                        <div style={{
-                          position: "absolute", top: 8, left: 8, display: "flex", alignItems: "center", gap: 4,
-                          background: isOpen ? goodSoft : violetSoft, color: isOpen ? good : accent2,
-                          borderRadius: 999, padding: "3px 9px", fontSize: 10, fontWeight: 800,
-                          boxShadow: "0 2px 8px -2px rgba(36,31,28,0.25)",
-                        }}>
-                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: isOpen ? good : accent2, flexShrink: 0 }} />
-                          {isOpen ? "เปิดจอง" : "เร็วๆ นี้"}
-                        </div>
                       </div>
-                      <div style={{ marginTop: 8, color: ink }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{c.title}</div>
-                        <div style={{ fontSize: 11, color: sub, fontWeight: 500 }}>{c.venue_name ? `📍 ${c.venue_name}` : ""}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.title}</div>
+                        {c.venue_name && (
+                          <div style={{ fontSize: 12, color: sub, fontWeight: 500, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>📍 {c.venue_name}</div>
+                        )}
+                        {dateToShow && (
+                          <div style={{ fontSize: 12, color: sub, fontWeight: 500, marginTop: 2 }}>📅 {formatThaiDateTime(dateToShow)}</div>
+                        )}
                       </div>
-                      {sel && (
-                        <div style={{ position: "absolute", top: 10, right: 10, background: accentStrong, color: "#fff", borderRadius: 999, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>✓ เลือกแล้ว</div>
-                      )}
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 5, background: badge.bg, color: badge.fg, borderRadius: 999, padding: "4px 10px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: badge.fg, flexShrink: 0 }} />
+                          {badge.label}
+                        </span>
+                        <span style={{ fontSize: 17, fontWeight: 700, color: sel ? accentStrong : sub }}>{sel ? "✓" : "›"}</span>
+                      </div>
                     </div>
                   );
                 })}
               </div>
+
+              {!concertListExpanded && filteredConcertItems.length > CONCERT_LIST_COLLAPSED_COUNT && (
+                <button
+                  onClick={() => setConcertListExpanded(true)}
+                  style={{ ...doodle.btn, width: "100%", justifyContent: "center", marginTop: 12, padding: "12px 0", fontSize: 13 }}
+                >
+                  ดูคอนเสิร์ตเพิ่มเติม ({filteredConcertItems.length - CONCERT_LIST_COLLAPSED_COUNT}) ⌄
+                </button>
+              )}
+
               {filteredConcertItems.length === 0 && (
                 <div style={{ ...doodle.cardYellow, padding: 16, marginTop: 10, color: ink }}>
                   {concertFilter === "open" ? "ยังไม่มีคอนเสิร์ตที่เปิดจองตอนนี้"

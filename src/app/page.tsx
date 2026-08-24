@@ -1241,6 +1241,32 @@ export default function PhoneRentalHome() {
               <p style={{ fontSize: 15, color: sub, fontWeight: 500, marginBottom: 8, lineHeight: 1.6 }}>
                 ระบบยืนยันการจองแล้ว พบกันที่คอนเสิร์ต 🎶
               </p>
+
+              <div style={{ ...doodle.card, padding: 16, marginBottom: 16, textAlign: "left", color: ink }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: ink, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                  📌 ขั้นตอนถัดไป
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[
+                    { title: "เพิ่มเพื่อน LINE OA", desc: "เพื่อรับการแจ้งเตือนทันทีที่แอดมินยืนยันการจอง", icon: "🔔" },
+                    { title: "รอแอดมินอนุมัติ", desc: "แอดมินตรวจสอบสลิปและยืนยันคิวการจอง", icon: "🧾" },
+                    { title: "ไปรับเครื่องที่จุดนัดหมาย", desc: "ตามวัน-เวลาที่จอง", icon: "📍" },
+                    { title: "สนุกกับคอนเสิร์ต", desc: "เก็บภาพและวิดีโอให้เต็มที่!", icon: "🎉" },
+                  ].map((s, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, background: "#fff", border: `1px solid ${line}`, borderRadius: 14, padding: "12px 14px" }}>
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: accent2, color: "#fff", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {i + 1}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: ink }}>{s.title}</div>
+                        <div style={{ fontSize: 11, color: sub, fontWeight: 500, marginTop: 2 }}>{s.desc}</div>
+                      </div>
+                      <span style={{ fontSize: 22, flexShrink: 0 }}>{s.icon}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, background: violetSoft, border: `2px solid ${accent2}`, borderRadius: 20, padding: "20px 24px", marginBottom: 16, boxShadow: "0 10px 26px -8px rgba(131,84,232,0.45)" }}>
                 <span style={{ fontSize: 34, flexShrink: 0 }}>💌</span>
                 <span style={{ fontSize: 17, fontWeight: 800, color: accent2, lineHeight: 1.5, textAlign: "left" }}>

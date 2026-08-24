@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
   const venue_name = String(form.get("venue_name") ?? "").trim();
   const description = String(form.get("description") ?? "").trim();
   const publishAtRaw = String(form.get("publish_at") ?? "").trim();
+  const isVisibleRaw = form.get("is_visible");
   const poster = form.get("poster");
 
   if (!title) return NextResponse.json({ error: "missing title" }, { status: 400 });
@@ -46,6 +47,9 @@ export async function POST(req: NextRequest) {
     if (Number.isNaN(d.getTime())) return NextResponse.json({ error: "publish_at ไม่ถูกต้อง" }, { status: 400 });
     publish_at = d.toISOString();
   }
+
+  // ไม่ส่งมา = แสดงผลตามค่าเริ่มต้น (true), ส่งมาแล้วเป็น "false" เท่านั้นที่สร้างแบบซ่อนไว้ก่อน
+  const is_visible = isVisibleRaw === null ? true : isVisibleRaw === "true";
 
   const sb = supabase();
   let poster_url: string | null = null;
@@ -67,7 +71,7 @@ export async function POST(req: NextRequest) {
     poster_url = sb.storage.from("posters").getPublicUrl(fileName).data.publicUrl;
   }
 
-  const { data, error } = await sb.from("concerts").insert({ title, venue_name, description, poster_url, publish_at }).select().single();
+  const { data, error } = await sb.from("concerts").insert({ title, venue_name, description, poster_url, publish_at, is_visible }).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await logAdminAction({

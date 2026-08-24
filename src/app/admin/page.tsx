@@ -273,7 +273,7 @@ export default function AdminPage() {
   const [concerts, setConcerts] = useState<Concert[]>([]);
   const [sessions, setSessions] = useState<Record<string, Session[]>>({});
   const [expandedConcert, setExpandedConcert] = useState<string|null>(null);
-  const [concertForm, setConcertForm] = useState({ title:"", venue_name:"", description:"", publish_at:"" });
+  const [concertForm, setConcertForm] = useState({ title:"", venue_name:"", description:"", publish_at:"", is_visible:true });
   const [concertPoster, setConcertPoster] = useState<File|null>(null);
   const [sessionForm, setSessionForm] = useState({ start_at:"", note:"" });
   const [showArchived, setShowArchived] = useState(false);
@@ -593,12 +593,13 @@ export default function AdminPage() {
     form.append("venue_name", concertForm.venue_name.trim());
     form.append("description", concertForm.description.trim());
     if (concertForm.publish_at) form.append("publish_at", localToUTC(concertForm.publish_at) ?? "");
+    form.append("is_visible", String(concertForm.is_visible));
     if (concertPoster) form.append("poster", concertPoster);
     const res = await fetch("/api/admin/concerts", { method:"POST", body:form, cache:"no-store" });
     const out = await res.json().catch(()=>null);
     if (!res.ok) { showMsg(out?.error || "ไม่สำเร็จ", false); return; }
     showMsg("เพิ่มคอนเสิร์ตแล้ว");
-    setConcertForm({ title:"", venue_name:"", description:"", publish_at:"" }); setConcertPoster(null);
+    setConcertForm({ title:"", venue_name:"", description:"", publish_at:"", is_visible:true }); setConcertPoster(null);
     fetchConcerts();
   };
 
@@ -1714,6 +1715,19 @@ export default function AdminPage() {
                 <input type="datetime-local" value={concertForm.publish_at} onChange={e=>setConcertForm(p=>({...p,publish_at:e.target.value}))} style={{ ...inputStyle, maxWidth:240 }} />
                 <div style={{ fontSize:11, color:UI.muted, fontWeight:600, marginTop:4 }}>
                   ไม่ใส่ = เผยแพร่ทันที · ใส่ = ไปโชว์ใน &quot;เร็วๆ นี้&quot; ที่หน้าแรกก่อน แล้วเปิดให้จองอัตโนมัติเมื่อถึงเวลา
+                </div>
+              </div>
+              <div style={{ marginBottom:10 }}>
+                <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>สถานะการแสดงผล</div>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button type="button" onClick={()=>setConcertForm(p=>({...p,is_visible:true}))}
+                    style={{ ...btnStyle(concertForm.is_visible ? "green" : "white"), fontSize:12 }}>
+                    👁️ แสดงผล
+                  </button>
+                  <button type="button" onClick={()=>setConcertForm(p=>({...p,is_visible:false}))}
+                    style={{ ...btnStyle(!concertForm.is_visible ? "dark" : "white"), fontSize:12 }}>
+                    🙈 ซ่อนไว้ก่อน
+                  </button>
                 </div>
               </div>
               <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>

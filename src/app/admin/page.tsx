@@ -39,7 +39,7 @@ type Booking = {
   phones?: { model_name: string } | null;
 };
 
-type Concert = { id: string; title: string; venue_name: string | null; poster_url: string | null; description: string | null; archived: boolean | null; publish_at: string | null };
+type Concert = { id: string; title: string; venue_name: string | null; poster_url: string | null; description: string | null; archived: boolean | null; is_visible: boolean | null; publish_at: string | null };
 type Session = { id: string; start_at: string | null; end_at: string | null; note: string | null };
 type PhoneQuotaInfo = {
   phone_id: string;
@@ -608,6 +608,17 @@ export default function AdminPage() {
       cache:"no-store" });
     if (!res.ok) { showMsg(archive ? "archive ไม่สำเร็จ" : "restore ไม่สำเร็จ", false); return; }
     showMsg(archive ? "📦 archive แล้ว" : "✅ restore แล้ว");
+    fetchConcerts();
+  };
+
+  // สลับ "แสดงผล/ไม่แสดงผล" บนหน้าแรก — แยกจาก archive เอาไว้ซ่อนชั่วคราวได้โดยไม่ต้องย้ายไปแท็บ archive
+  const toggleConcertVisibility = async (id: string, currentlyVisible: boolean) => {
+    const nextVisible = !currentlyVisible;
+    const f = new FormData();
+    f.append("is_visible", String(nextVisible));
+    const res = await fetch(`/api/admin/concerts/${id}`, { method:"PATCH", body:f, cache:"no-store" });
+    if (!res.ok) { showMsg("เปลี่ยนสถานะแสดงผลไม่สำเร็จ", false); return; }
+    showMsg(nextVisible ? "👁️ แสดงผลแล้ว" : "🙈 ซ่อนแล้ว");
     fetchConcerts();
   };
 
@@ -1729,8 +1740,13 @@ export default function AdminPage() {
                         <div style={{ fontWeight:700, fontSize:15 }}>{c.title}</div>
                         {c.venue_name && <div style={{ fontSize:12, color:UI.muted, fontWeight:700 }}>📍 {c.venue_name}</div>}
                         {c.publish_at && new Date(c.publish_at).getTime() > Date.now() && (
-                          <span style={{ display:"inline-block", marginTop:6, fontSize:11, fontWeight:700, borderRadius:999, padding:"2px 10px", background:"#FFF9E6", color:"#8A6D2F" }}>
+                          <span style={{ display:"inline-block", marginTop:6, marginRight:6, fontSize:11, fontWeight:700, borderRadius:999, padding:"2px 10px", background:"#FFF9E6", color:"#8A6D2F" }}>
                             🕓 จะเผยแพร่ {fmtDT(c.publish_at)}
+                          </span>
+                        )}
+                        {!(c.archived ?? false) && (c.is_visible ?? true) === false && (
+                          <span style={{ display:"inline-block", marginTop:6, fontSize:11, fontWeight:700, borderRadius:999, padding:"2px 10px", background:"#F1EFE8", color:"#5F5E5A" }}>
+                            🙈 ซ่อนอยู่
                           </span>
                         )}
                       </div>
@@ -1739,6 +1755,9 @@ export default function AdminPage() {
                           <button onClick={()=>{ setEditConcert(c); setEditConcertForm({ title:c.title, venue_name:c.venue_name||"", description:c.description||"", publish_at: c.publish_at?.slice(0,16)||"" }); setEditConcertPoster(null); }} style={btnStyle("white")}>✏️ แก้ไข</button>
                           <button onClick={()=>{ setExpandedConcert(expandedConcert===c.id?null:c.id); if(expandedConcert!==c.id) fetchSessions(c.id); }} style={btnStyle("white")}>
                             {expandedConcert===c.id?"▲ ซ่อนรอบ":"▼ จัดการรอบ"}
+                          </button>
+                          <button onClick={()=>toggleConcertVisibility(c.id, c.is_visible ?? true)} style={btnStyle((c.is_visible ?? true) ? "green" : "white")}>
+                            {(c.is_visible ?? true) ? "👁️ แสดงผลอยู่" : "🙈 ซ่อนอยู่"}
                           </button>
                         </>}
                         <button onClick={()=>archiveConcert(c.id, !(c.archived ?? false))} style={btnStyle((c.archived ?? false)?"green":"red")}>

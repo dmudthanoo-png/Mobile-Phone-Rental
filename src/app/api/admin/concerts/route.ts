@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase()
     .from("concerts")
-    .select("id, title, venue_name, description, poster_url, archived, publish_at, created_at")
+    .select("id, title, venue_name, description, poster_url, archived, is_visible, publish_at, created_at")
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

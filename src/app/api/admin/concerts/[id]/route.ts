@@ -35,6 +35,10 @@ export async function PATCH(
   const archivedVal = form.get("archived");
   if (archivedVal !== null) updates.archived = archivedVal === "true";
 
+  // is_visible: สลับซ่อน/แสดงคอนเสิร์ตจากหน้าแรกได้ทันที แยกจาก archived
+  const visibleVal = form.get("is_visible");
+  if (visibleVal !== null) updates.is_visible = visibleVal === "true";
+
   // publish_at: ส่งมาว่างๆ = เคลียร์ให้เผยแพร่ทันที, ส่งมาเป็นวันที่ = ตั้งเวลาเผยแพร่ล่วงหน้า
   const publishAtVal = form.get("publish_at");
   if (publishAtVal !== null) {

@@ -23,15 +23,15 @@ export async function GET(
 
     const supabase = createClient(url, serviceKey);
 
-    // กันโชว์/จองรอบของคอนเสิร์ตที่ archive ไปแล้ว (ยังเปิดตรงๆ ผ่าน id ได้ถ้าไม่เช็ค)
+    // กันโชว์/จองรอบของคอนเสิร์ตที่ archive ไปแล้ว หรือแอดมินสั่งซ่อนไว้ (ยังเปิดตรงๆ ผ่าน id ได้ถ้าไม่เช็ค)
     const { data: concertRow, error: concertErr } = await supabase
       .from("concerts")
-      .select("archived, publish_at")
+      .select("archived, is_visible, publish_at")
       .eq("id", concertId)
       .maybeSingle();
 
     if (concertErr) return NextResponse.json({ error: concertErr.message }, { status: 500 });
-    if (!concertRow || concertRow.archived) {
+    if (!concertRow || concertRow.archived || concertRow.is_visible === false) {
       return NextResponse.json({ error: "concert not found" }, { status: 404 });
     }
 

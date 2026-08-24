@@ -28,6 +28,7 @@ export async function GET(_req: NextRequest) {
       .from("concerts")
       .select("id, title, poster_url, venue_name, description, publish_at, created_at")
       .eq("archived", false)
+      .eq("is_visible", true)
       .order("created_at", { ascending: false });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

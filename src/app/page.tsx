@@ -21,6 +21,8 @@ type Concert = {
   venue_name?: string | null;
   description?: string | null;
   publish_at?: string | null;
+  sold_out?: boolean;
+  next_session_at?: string | null;
 };
 
 type ConcertListItem = Concert & { _status: "open" | "upcoming" };
@@ -710,6 +712,13 @@ export default function PhoneRentalHome() {
                 {filteredConcertItems.map((c) => {
                   const sel = selectedConcertId === c.id;
                   const isOpen = c._status === "open";
+                  const isSoldOut = isOpen && Boolean(c.sold_out);
+                  const badge = !isOpen
+                    ? { label: "กำลังจะเปิด", bg: violetSoft, fg: accent2 }
+                    : isSoldOut
+                    ? { label: "เต็มแล้ว", bg: criticalSoft, fg: critical }
+                    : { label: "เปิดจองอยู่", bg: goodSoft, fg: good };
+                  const dateToShow = isOpen ? c.next_session_at : c.publish_at;
                   return (
                     <div
                       key={c.id}
@@ -721,29 +730,37 @@ export default function PhoneRentalHome() {
                       } : () => setUpcomingDetail(c)}
                       style={{ ...(sel ? doodle.cardPink : doodle.card), padding: 10, cursor: "pointer", position: "relative", transition: "all .15s", overflow: "hidden" }}
                     >
-                      <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 12, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", position: "relative" }}>
+                      <div style={{ width: "100%", aspectRatio: "4/3", borderRadius: 12, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", position: "relative" }}>
                         {c.poster_url ? (
                           <img src={c.poster_url} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         ) : (
                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, color: sub, fontSize: 12 }}>ไม่มีโปสเตอร์</div>
                         )}
-                        <div style={{
-                          position: "absolute", top: 8, left: 8, display: "flex", alignItems: "center", gap: 4,
-                          background: isOpen ? goodSoft : violetSoft, color: isOpen ? good : accent2,
-                          borderRadius: 999, padding: "3px 9px", fontSize: 10, fontWeight: 800,
-                          boxShadow: "0 2px 8px -2px rgba(36,31,28,0.25)",
-                        }}>
-                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: isOpen ? good : accent2, flexShrink: 0 }} />
-                          {isOpen ? "เปิดจอง" : "เร็วๆ นี้"}
+                        {sel && (
+                          <div style={{
+                            position: "absolute", top: 8, right: 8, width: 26, height: 26, borderRadius: "50%",
+                            background: "#fff", border: `2px solid ${accent}`, display: "flex", alignItems: "center", justifyContent: "center",
+                            boxShadow: "0 2px 8px -2px rgba(36,31,28,0.35)",
+                          }}>
+                            <span style={{ fontSize: 13, fontWeight: 900, color: accent, lineHeight: 1 }}>✓</span>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ marginTop: 10, color: ink }}>
+                        <div style={{ fontWeight: 800, fontSize: 13, lineHeight: 1.25 }}>{c.title}</div>
+                        {c.venue_name && (
+                          <div style={{ fontSize: 11, color: sub, fontWeight: 600, marginTop: 4 }}>📍 {c.venue_name}</div>
+                        )}
+                        {dateToShow && (
+                          <div style={{ fontSize: 11, color: sub, fontWeight: 600, marginTop: 2 }}>📅 {formatThaiDateTime(dateToShow)}</div>
+                        )}
+                        <div style={{ marginTop: 8 }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: badge.bg, color: badge.fg, borderRadius: 999, padding: "4px 10px", fontSize: 11, fontWeight: 800 }}>
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: badge.fg, flexShrink: 0 }} />
+                            {badge.label}
+                          </span>
                         </div>
                       </div>
-                      <div style={{ marginTop: 8, color: ink }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{c.title}</div>
-                        <div style={{ fontSize: 11, color: sub, fontWeight: 500 }}>{c.venue_name ? `📍 ${c.venue_name}` : ""}</div>
-                      </div>
-                      {sel && (
-                        <div style={{ position: "absolute", top: 10, right: 10, background: accentStrong, color: "#fff", borderRadius: 999, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>✓ เลือกแล้ว</div>
-                      )}
                     </div>
                   );
                 })}

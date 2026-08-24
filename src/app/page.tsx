@@ -213,6 +213,7 @@ export default function PhoneRentalHome() {
   const [renterName, setRenterName] = useState("");
   const [renterPhone, setRenterPhone] = useState("");
   const [copiedType, setCopiedType] = useState<string | null>(null);
+  const [qrSaved, setQrSaved] = useState(false);
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
   const [slipFile, setSlipFile] = useState<File | null>(null);
 
@@ -271,6 +272,26 @@ export default function PhoneRentalHome() {
     navigator.clipboard.writeText(text);
     setCopiedType(type);
     setTimeout(() => setCopiedType(null), 2000);
+  };
+
+  const handleSaveQr = async () => {
+    try {
+      const res = await fetch("/payment-qr.png");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "crabby-payment-qr.png";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // เบราว์เซอร์บางตัว (เช่น ในแอป LINE) อาจบล็อกการดาวน์โหลดแบบ blob — เปิดรูปให้กดค้างเพื่อบันทึกเองแทน
+      window.open("/payment-qr.png", "_blank");
+    }
+    setQrSaved(true);
+    setTimeout(() => setQrSaved(false), 2000);
   };
 
   const checkLineFriendStatus = async () => {
@@ -1141,8 +1162,14 @@ export default function PhoneRentalHome() {
                 <img
                   src="/payment-qr.png"
                   alt="QR พร้อมเพย์สำหรับโอนเงิน"
-                  style={{ width: "100%", maxWidth: 240, borderRadius: 14, border: `1px solid ${line}`, display: "block", margin: "0 auto" }}
+                  style={{ width: "100%", maxWidth: 320, borderRadius: 14, border: `1px solid ${line}`, display: "block", margin: "0 auto" }}
                 />
+                <button
+                  onClick={handleSaveQr}
+                  style={{ ...doodle.btn, marginTop: 12, padding: "10px 20px", display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, background: qrSaved ? goodSoft : "#fff", color: qrSaved ? good : ink }}
+                >
+                  {qrSaved ? "✓ บันทึกแล้ว" : "⬇️ บันทึกรูป QR"}
+                </button>
               </div>
 
               <div style={{ ...doodle.card, overflow: "hidden", marginBottom: 16, color: ink }}>

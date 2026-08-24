@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family:-apple-system,sans-serif;background:#FAF6F1;padding:24px;">
+  <div style="background:#fff;border:1px solid #F2E4D6;border-radius:16px;padding:16px 16px 18px;max-width:400px;margin:0 auto;text-align:center;color:#241F1C;">
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px;">📷 สแกน QR เพื่อโอนผ่านแอปธนาคาร</div>
+    <img id="qr" src="/payment-qr.png" alt="QR" style="width:100%;max-width:320px;border-radius:14px;border:1px solid #F2E4D6;display:block;margin:0 auto;" />
+    <button id="saveBtn" style="margin-top:12px;padding:10px 20px;display:inline-flex;align-items:center;gap:8px;font-size:13px;background:#fff;border:1px solid #F2E4D6;border-radius:999px;cursor:pointer;">
+      ⬇️ บันทึกรูป QR
+    </button>
+    <div id="status" style="margin-top:8px;font-size:12px;color:#7A6D61;"></div>
+  </div>
+  <script>
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/payment-qr.png');
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'crabby-payment-qr.png';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        document.getElementById('status').textContent = 'OK: blob size=' + blob.size + ' bytes, download triggered';
+      } catch (e) {
+        document.getElementById('status').textContent = 'ERROR: ' + e.message;
+      }
+    });
+  </script>
+</body>
+</html>

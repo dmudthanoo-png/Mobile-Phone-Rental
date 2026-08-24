@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Navbar from "./Navbar";
@@ -410,6 +410,21 @@ export default function PhoneRentalHome() {
     return () => clearInterval(id);
   }, []);
 
+  // ── auto-refresh รายการคอนเสิร์ตทันทีที่ publish_at ของ "เร็วๆ นี้" ถึงเวลาจริง ──
+  // ไม่ต้อง poll เดารอบ ใช้ nowTick ที่เดินอยู่แล้วเช็คว่าข้ามเวลาที่ตั้งไว้หรือยัง (แม่นตามรอบ tick 250ms)
+  // สุ่มหน่วงเล็กน้อย (0-3 วิ) ก่อนยิง refresh กันทุกเครื่องที่รอพร้อมกันยิง request พร้อมกันเป๊ะๆ ตอน T-0
+  const autoRefreshedConcertIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const c of upcomingConcerts) {
+      if (!c.publish_at) continue;
+      if (autoRefreshedConcertIds.current.has(c.id)) continue;
+      if (new Date(c.publish_at).getTime() > nowTick) continue;
+      autoRefreshedConcertIds.current.add(c.id);
+      const jitterMs = Math.random() * 3000;
+      setTimeout(() => { loadConcerts().catch(() => {}); }, jitterMs);
+    }
+  }, [nowTick, upcomingConcerts]);
+
   // ── กันเหนียวเพิ่ม: sync เวลาให้ตรงทันทีเมื่อกลับมาที่แท็บ/หน้าต่างนี้ ──
   // (บางเบราว์เซอร์/อุปกรณ์หยุด setInterval ตอนพับหน้าจอ/สลับแอพ แล้วไม่รีบไล่ตามให้)
   useEffect(() => {
@@ -476,6 +491,18 @@ export default function PhoneRentalHome() {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
+  };
+
+  // นับถอยหลังแบบยาว ใช้กับเวลาที่คอนเสิร์ตจะเปิดให้จอง (publish_at) ซึ่งอาจอยู่เป็นวัน ไม่ใช่แค่นาที
+  const formatCountdownLong = (ms: number) => {
+    const totalSec = Math.max(0, Math.floor(ms / 1000));
+    const days = Math.floor(totalSec / 86400);
+    const hours = Math.floor((totalSec % 86400) / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    if (days > 0) return `${days} วัน ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
   };
 
   const isNextDisabled = () => {
@@ -729,8 +756,12 @@ export default function PhoneRentalHome() {
                   const isOpen = c._status === "open";
                   const isSoldOut = isOpen && Boolean(c.sold_out);
                   const isNoSessions = isOpen && Boolean(c.no_sessions);
+                  const msUntilPublish = !isOpen && c.publish_at ? new Date(c.publish_at).getTime() - nowTick : null;
+                  const upcomingLabel = msUntilPublish !== null && msUntilPublish <= 24 * 60 * 60 * 1000
+                    ? `เปิดใน ${formatCountdownLong(msUntilPublish)}`
+                    : "กำลังจะเปิด";
                   const badge = !isOpen
-                    ? { label: "กำลังจะเปิด", bg: violetSoft, fg: accent2 }
+                    ? { label: upcomingLabel, bg: violetSoft, fg: accent2 }
                     : isNoSessions
                     ? { label: "ยังไม่มีรอบ", bg: line, fg: sub }
                     : isSoldOut
@@ -1337,6 +1368,9 @@ export default function PhoneRentalHome() {
                 <div style={{ background: violetSoft, borderRadius: 14, padding: "12px 16px", textAlign: "center" }}>
                   <div style={{ fontSize: 12, color: sub, fontWeight: 600, marginBottom: 2 }}>จะเปิดให้จองวันที่</div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: accent2 }}>{formatThaiDateTime(upcomingDetail.publish_at)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: accent2, marginTop: 6 }}>
+                    ⏳ เหลืออีก {formatCountdownLong(Math.max(0, new Date(upcomingDetail.publish_at).getTime() - nowTick))}
+                  </div>
                 </div>
               )}
             </div>

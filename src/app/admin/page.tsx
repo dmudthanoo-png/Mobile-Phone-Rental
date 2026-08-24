@@ -39,7 +39,7 @@ type Booking = {
   phones?: { model_name: string } | null;
 };
 
-type Concert = { id: string; title: string; venue_name: string | null; poster_url: string | null; description: string | null; archived: boolean | null };
+type Concert = { id: string; title: string; venue_name: string | null; poster_url: string | null; description: string | null; archived: boolean | null; publish_at: string | null };
 type Session = { id: string; start_at: string | null; end_at: string | null; note: string | null };
 type PhoneQuotaInfo = {
   phone_id: string;
@@ -273,12 +273,12 @@ export default function AdminPage() {
   const [concerts, setConcerts] = useState<Concert[]>([]);
   const [sessions, setSessions] = useState<Record<string, Session[]>>({});
   const [expandedConcert, setExpandedConcert] = useState<string|null>(null);
-  const [concertForm, setConcertForm] = useState({ title:"", venue_name:"", description:"" });
+  const [concertForm, setConcertForm] = useState({ title:"", venue_name:"", description:"", publish_at:"" });
   const [concertPoster, setConcertPoster] = useState<File|null>(null);
   const [sessionForm, setSessionForm] = useState({ start_at:"", note:"" });
   const [showArchived, setShowArchived] = useState(false);
   const [editConcert, setEditConcert] = useState<Concert|null>(null);
-  const [editConcertForm, setEditConcertForm] = useState({ title:"", venue_name:"", description:"" });
+  const [editConcertForm, setEditConcertForm] = useState({ title:"", venue_name:"", description:"", publish_at:"" });
   const [editConcertPoster, setEditConcertPoster] = useState<File|null>(null);
   const [editSession, setEditSession] = useState<Session|null>(null);
   const [editSessionForm, setEditSessionForm] = useState({ start_at:"", note:"" });
@@ -592,12 +592,13 @@ export default function AdminPage() {
     form.append("title", concertForm.title.trim());
     form.append("venue_name", concertForm.venue_name.trim());
     form.append("description", concertForm.description.trim());
+    if (concertForm.publish_at) form.append("publish_at", localToUTC(concertForm.publish_at) ?? "");
     if (concertPoster) form.append("poster", concertPoster);
     const res = await fetch("/api/admin/concerts", { method:"POST", body:form, cache:"no-store" });
     const out = await res.json().catch(()=>null);
     if (!res.ok) { showMsg(out?.error || "ไม่สำเร็จ", false); return; }
     showMsg("เพิ่มคอนเสิร์ตแล้ว");
-    setConcertForm({ title:"", venue_name:"", description:"" }); setConcertPoster(null);
+    setConcertForm({ title:"", venue_name:"", description:"", publish_at:"" }); setConcertPoster(null);
     fetchConcerts();
   };
 
@@ -630,6 +631,7 @@ export default function AdminPage() {
     form.append("title", editConcertForm.title.trim());
     form.append("venue_name", editConcertForm.venue_name.trim());
     form.append("description", editConcertForm.description.trim());
+    form.append("publish_at", localToUTC(editConcertForm.publish_at) ?? "");
     if (editConcertPoster) form.append("poster", editConcertPoster);
     const res = await fetch(`/api/admin/concerts/${editConcert.id}`, { method:"PATCH", body:form, cache:"no-store" });
     const out = await res.json().catch(()=>null);
@@ -1696,6 +1698,13 @@ export default function AdminPage() {
               </div>
               <textarea placeholder="รายละเอียด" value={concertForm.description} onChange={e=>setConcertForm(p=>({...p,description:e.target.value}))}
                 style={{ ...inputStyle, minHeight:60, resize:"vertical", marginBottom:10 }} />
+              <div style={{ marginBottom:10 }}>
+                <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>⏰ ตั้งเวลาเผยแพร่ล่วงหน้า (ไม่บังคับ)</div>
+                <input type="datetime-local" value={concertForm.publish_at} onChange={e=>setConcertForm(p=>({...p,publish_at:e.target.value}))} style={{ ...inputStyle, maxWidth:240 }} />
+                <div style={{ fontSize:11, color:UI.muted, fontWeight:600, marginTop:4 }}>
+                  ไม่ใส่ = เผยแพร่ทันที · ใส่ = ไปโชว์ใน &quot;เร็วๆ นี้&quot; ที่หน้าแรกก่อน แล้วเปิดให้จองอัตโนมัติเมื่อถึงเวลา
+                </div>
+              </div>
               <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
                 <label style={{ ...btnStyle("white"), cursor:"pointer" }}>
                   🖼 {concertPoster ? concertPoster.name : "เลือกโปสเตอร์"}
@@ -1719,10 +1728,15 @@ export default function AdminPage() {
                       <div style={{ flex:1 }}>
                         <div style={{ fontWeight:700, fontSize:15 }}>{c.title}</div>
                         {c.venue_name && <div style={{ fontSize:12, color:UI.muted, fontWeight:700 }}>📍 {c.venue_name}</div>}
+                        {c.publish_at && new Date(c.publish_at).getTime() > Date.now() && (
+                          <span style={{ display:"inline-block", marginTop:6, fontSize:11, fontWeight:700, borderRadius:999, padding:"2px 10px", background:"#FFF9E6", color:"#8A6D2F" }}>
+                            🕓 จะเผยแพร่ {fmtDT(c.publish_at)}
+                          </span>
+                        )}
                       </div>
                       <div style={{ display:"flex", gap:8 }}>
                         {!(c.archived ?? false) && <>
-                          <button onClick={()=>{ setEditConcert(c); setEditConcertForm({ title:c.title, venue_name:c.venue_name||"", description:c.description||"" }); setEditConcertPoster(null); }} style={btnStyle("white")}>✏️ แก้ไข</button>
+                          <button onClick={()=>{ setEditConcert(c); setEditConcertForm({ title:c.title, venue_name:c.venue_name||"", description:c.description||"", publish_at: c.publish_at?.slice(0,16)||"" }); setEditConcertPoster(null); }} style={btnStyle("white")}>✏️ แก้ไข</button>
                           <button onClick={()=>{ setExpandedConcert(expandedConcert===c.id?null:c.id); if(expandedConcert!==c.id) fetchSessions(c.id); }} style={btnStyle("white")}>
                             {expandedConcert===c.id?"▲ ซ่อนรอบ":"▼ จัดการรอบ"}
                           </button>
@@ -1791,6 +1805,11 @@ export default function AdminPage() {
                       <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>รายละเอียด</div>
                       <textarea value={editConcertForm.description} onChange={e=>setEditConcertForm(p=>({...p,description:e.target.value}))}
                         style={{ ...inputStyle, minHeight:60, resize:"vertical" }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>⏰ เวลาเผยแพร่ (ไม่บังคับ)</div>
+                      <input type="datetime-local" value={editConcertForm.publish_at} onChange={e=>setEditConcertForm(p=>({...p,publish_at:e.target.value}))} style={inputStyle} />
+                      <div style={{ fontSize:11, color:UI.muted, fontWeight:600, marginTop:4 }}>ลบให้ว่าง = เผยแพร่ทันที</div>
                     </div>
                     <div>
                       <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>โปสเตอร์</div>

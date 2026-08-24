@@ -26,13 +26,22 @@ export async function GET(
     // กันโชว์/จองรอบของคอนเสิร์ตที่ archive ไปแล้ว (ยังเปิดตรงๆ ผ่าน id ได้ถ้าไม่เช็ค)
     const { data: concertRow, error: concertErr } = await supabase
       .from("concerts")
-      .select("archived")
+      .select("archived, publish_at")
       .eq("id", concertId)
       .maybeSingle();
 
     if (concertErr) return NextResponse.json({ error: concertErr.message }, { status: 500 });
     if (!concertRow || concertRow.archived) {
       return NextResponse.json({ error: "concert not found" }, { status: 404 });
+    }
+
+    // คอนเสิร์ตที่ตั้งเวลาเผยแพร่ไว้ล่วงหน้าและยังไม่ถึงเวลา — กันจองข้ามขั้นตอนผ่าน id ตรงๆ
+    // (ฝั่ง UI จะกดเข้ามาถึงหน้านี้ไม่ได้อยู่แล้ว แต่กันไว้เผื่อเรียก API ตรงๆ)
+    if (concertRow.publish_at && new Date(concertRow.publish_at).getTime() > Date.now()) {
+      return NextResponse.json(
+        { error: "ยังไม่เปิดให้จอง", publish_at: concertRow.publish_at },
+        { status: 403 }
+      );
     }
 
     // ดึง sessions พร้อม inventory ของแต่ละ session — เอาเฉพาะรอบที่ยังไม่ผ่านไป

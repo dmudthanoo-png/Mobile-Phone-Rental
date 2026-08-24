@@ -20,6 +20,7 @@ type Concert = {
   poster_url?: string | null;
   venue_name?: string | null;
   description?: string | null;
+  publish_at?: string | null;
 };
 
 type ConcertSession = {
@@ -194,6 +195,8 @@ export default function PhoneRentalHome() {
   const [refNumber, setRefNumber] = useState<string | null>(null);
 
   const [concerts, setConcerts] = useState<Concert[]>([]);
+  const [upcomingConcerts, setUpcomingConcerts] = useState<Concert[]>([]);
+  const [upcomingDetail, setUpcomingDetail] = useState<Concert | null>(null);
   const [sessions, setSessions] = useState<ConcertSession[]>([]);
   const [phones, setPhones] = useState<PhoneOption[]>([]);
 
@@ -297,6 +300,7 @@ export default function PhoneRentalHome() {
     }
     const out = raw ? JSON.parse(raw) : null;
     setConcerts(out?.concerts ?? []);
+    setUpcomingConcerts(out?.upcoming ?? []);
   }
 
   async function loadSessions(concertId: string) {
@@ -682,6 +686,38 @@ export default function PhoneRentalHome() {
               {concerts.length === 0 && (
                 <div style={{ ...doodle.cardYellow, padding: 16, marginTop: 10, color: ink }}>ยังไม่มีคอนเสิร์ตในระบบ</div>
               )}
+
+              {upcomingConcerts.length > 0 && (
+                <div style={{ marginTop: 28 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                    <span style={{ width: 26, height: 26, borderRadius: 8, background: violetSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>🔜</span>
+                    <span style={{ fontWeight: 700, fontSize: 17, color: ink }}>เร็วๆ นี้</span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
+                    {upcomingConcerts.map((c) => (
+                      <div key={c.id} onClick={() => setUpcomingDetail(c)} style={{ ...doodle.card, padding: 10, cursor: "pointer", position: "relative", overflow: "hidden" }}>
+                        <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 12, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", filter: "grayscale(35%)", opacity: 0.85 }}>
+                          {c.poster_url ? (
+                            <img src={c.poster_url} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          ) : (
+                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, color: sub, fontSize: 12 }}>ไม่มีโปสเตอร์</div>
+                          )}
+                        </div>
+                        <div style={{ marginTop: 8, color: ink }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{c.title}</div>
+                          <div style={{ fontSize: 11, color: sub, fontWeight: 500 }}>{c.venue_name ? `📍 ${c.venue_name}` : ""}</div>
+                        </div>
+                        {c.publish_at && (
+                          <div style={{ position: "absolute", top: 10, right: 10, background: violetSoft, color: accent2, borderRadius: 999, padding: "2px 10px", fontSize: 10, fontWeight: 700 }}>
+                            🔜 {formatThaiDateTime(c.publish_at)}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <HowToBookAndFaq />
             </div>
           )}
@@ -1044,10 +1080,9 @@ export default function PhoneRentalHome() {
 
               <div style={{ ...doodle.card, overflow: "hidden", marginBottom: 16, color: ink }}>
                 {[
-                  { bg: "#003D6B", label: "พร้อมเพย์", num: "081-234-5678", name: "บจก. คอนเสิร์ต เรนทัล", val: "0812345678", key: "pp" },
-                  { bg: "#138F2D", label: "KBank",     num: "123-4-56789-0", name: "บจก. คอนเสิร์ต เรนทัล", val: "1234567890", key: "bk" },
-                ].map(({ bg, label, num, name, val, key }, i) => (
-                  <div key={key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderBottom: i === 0 ? `1px solid ${line}` : "none" }}>
+                  { bg: "#003D6B", label: "พร้อมเพย์", num: "014000009934092", name: "รหัสร้านค้า (Merchant ID) · ธาราธร เสมียนรัมย์", val: "014000009934092", key: "pp" },
+                ].map(({ bg, label, num, name, val, key }, i, arr) => (
+                  <div key={key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderBottom: i < arr.length - 1 ? `1px solid ${line}` : "none" }}>
                     <div style={{ width: 42, height: 42, background: bg, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 700, textAlign: "center", lineHeight: 1.2, flexShrink: 0 }}>{label}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{num}</div>
@@ -1182,6 +1217,46 @@ export default function PhoneRentalHome() {
       {step === 1 && !selectedConcertId && (
         <div style={{ width: "100%" }}>
           <Footer />
+        </div>
+      )}
+
+      {/* Upcoming Concert Detail Modal */}
+      {upcomingDetail && (
+        <div
+          onClick={() => setUpcomingDetail(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(36,31,28,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#fff", borderRadius: 18, border: `1px solid ${line}`, maxWidth: 420, width: "100%", maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column" }}
+          >
+            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${line}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+              <span style={{ fontWeight: 700, fontSize: 15, color: ink }}>รายละเอียดคอนเสิร์ต</span>
+              <button onClick={() => setUpcomingDetail(null)} aria-label="ปิดหน้าต่างรายละเอียด" style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: sub, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✕</button>
+            </div>
+            <div style={{ padding: "16px 18px", overflowY: "auto" }}>
+              <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 14, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", marginBottom: 14 }}>
+                {upcomingDetail.poster_url ? (
+                  <img src={upcomingDetail.poster_url} alt={upcomingDetail.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                ) : (
+                  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, color: sub, fontSize: 13 }}>ไม่มีโปสเตอร์</div>
+                )}
+              </div>
+              <div style={{ fontWeight: 800, fontSize: 17, color: ink, marginBottom: 4 }}>{upcomingDetail.title}</div>
+              {upcomingDetail.venue_name && (
+                <div style={{ fontSize: 13, color: sub, fontWeight: 600, marginBottom: 10 }}>📍 {upcomingDetail.venue_name}</div>
+              )}
+              {upcomingDetail.description && (
+                <p style={{ fontSize: 13, color: ink, lineHeight: 1.7, fontWeight: 500, marginBottom: 14 }}>{upcomingDetail.description}</p>
+              )}
+              {upcomingDetail.publish_at && (
+                <div style={{ background: violetSoft, borderRadius: 14, padding: "12px 16px", textAlign: "center" }}>
+                  <div style={{ fontSize: 12, color: sub, fontWeight: 600, marginBottom: 2 }}>จะเปิดให้จองวันที่</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: accent2 }}>{formatThaiDateTime(upcomingDetail.publish_at)}</div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

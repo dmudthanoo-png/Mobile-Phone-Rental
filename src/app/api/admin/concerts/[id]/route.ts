@@ -35,6 +35,19 @@ export async function PATCH(
   const archivedVal = form.get("archived");
   if (archivedVal !== null) updates.archived = archivedVal === "true";
 
+  // publish_at: ส่งมาว่างๆ = เคลียร์ให้เผยแพร่ทันที, ส่งมาเป็นวันที่ = ตั้งเวลาเผยแพร่ล่วงหน้า
+  const publishAtVal = form.get("publish_at");
+  if (publishAtVal !== null) {
+    const raw = String(publishAtVal).trim();
+    if (!raw) {
+      updates.publish_at = null;
+    } else {
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return NextResponse.json({ error: "publish_at ไม่ถูกต้อง" }, { status: 400 });
+      updates.publish_at = d.toISOString();
+    }
+  }
+
   // อัปโหลดโปสเตอร์ใหม่ถ้ามี
   if (posterFile instanceof File && posterFile.size > 0) {
     const imgErr = validateImageUpload(posterFile);

@@ -212,7 +212,6 @@ export default function PhoneRentalHome() {
 
   const [renterName, setRenterName] = useState("");
   const [renterPhone, setRenterPhone] = useState("");
-  const [copiedType, setCopiedType] = useState<string | null>(null);
   const [qrSaved, setQrSaved] = useState(false);
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
   const [slipFile, setSlipFile] = useState<File | null>(null);
@@ -266,12 +265,6 @@ export default function PhoneRentalHome() {
   const handleSignOut = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
-  };
-
-  const handleCopy = (text: string, type: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedType(type);
-    setTimeout(() => setCopiedType(null), 2000);
   };
 
   const handleSaveQr = async () => {
@@ -1174,17 +1167,14 @@ export default function PhoneRentalHome() {
 
               <div style={{ ...doodle.card, overflow: "hidden", marginBottom: 16, color: ink }}>
                 {[
-                  { bg: "#003D6B", label: "🏦", num: "014000009934092", name: "รหัสร้านค้า (Merchant ID) · ธาราธร เสมียนรัมย์", val: "014000009934092", key: "pp" },
-                ].map(({ bg, label, num, name, val, key }, i, arr) => (
+                  { bg: "#003D6B", label: "🏦", num: "014000009934092", name: "รหัสร้านค้า (Merchant ID) · ธาราธร เสมียนรัมย์", key: "pp" },
+                ].map(({ bg, label, num, name, key }, i, arr) => (
                   <div key={key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderBottom: i < arr.length - 1 ? `1px solid ${line}` : "none" }}>
                     <div style={{ width: 42, height: 42, background: bg, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 700, textAlign: "center", lineHeight: 1.2, flexShrink: 0 }}>{label}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{num}</div>
                       <div style={{ fontSize: 11, color: sub, fontWeight: 500 }}>{name}</div>
                     </div>
-                    <button onClick={() => handleCopy(val, key)} style={{ ...doodle.btn, padding: "6px 12px", minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, background: copiedType === key ? goodSoft : "#fff", color: copiedType === key ? good : ink, flexShrink: 0 }}>
-                      {copiedType === key ? "✓ แล้ว!" : "คัดลอก"}
-                    </button>
                   </div>
                 ))}
               </div>

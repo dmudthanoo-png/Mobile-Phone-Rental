@@ -678,15 +678,9 @@ export default function PhoneRentalHome() {
     setStep((s) => Math.min(5, s + 1));
   };
 
-  if (loading) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#FFF9F3", fontFamily: uiFont, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
-        <Image src="/crabby-logo.png" alt="Crabby" width={835} height={771} style={{ width: 56, height: "auto" }} />
-        <div style={{ fontSize: 13, fontWeight: 600, color: sub }}>กำลังโหลด...</div>
-      </div>
-    );
-  }
-
+  // เดิม gate ทั้งหน้า (navbar/หัวข้อ/แบนเนอร์) ไว้หลัง loading ตัวเดียว ทำให้กด F5 แล้วจอขาวรอ
+  // เปล่าๆ 3-4 วิก่อนเห็นอะไรเลย — ย้ายมาโชว์เฉพาะจุด "รายชื่อคอนเสิร์ต" แทน ส่วนโครงหน้าที่เหลือ
+  // ไม่ต้องพึ่งข้อมูลจาก loadConcerts()/เช็ค login เลย ขึ้นได้ทันทีไม่ต้องรอ
   const showBottomNav = step < 5 && !(step === 1 && !selectedConcertId);
 
   return (
@@ -763,6 +757,10 @@ export default function PhoneRentalHome() {
                 <span style={{ fontWeight: 700, fontSize: 17, color: ink }}>เลือกคอนเสิร์ต</span>
               </div>
 
+              {loading ? (
+                <div style={{ fontSize: 13, fontWeight: 500, color: sub }}>⏳ กำลังโหลดคอนเสิร์ต...</div>
+              ) : (
+                <>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {([
@@ -868,6 +866,8 @@ export default function PhoneRentalHome() {
                     : concertFilter === "upcoming" ? "ยังไม่มีคอนเสิร์ตที่จะเปิดเร็วๆ นี้"
                     : "ยังไม่มีคอนเสิร์ตในระบบ"}
                 </div>
+              )}
+              </>
               )}
 
               <HowToBookAndFaq />

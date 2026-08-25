@@ -254,6 +254,7 @@ export default function PhoneRentalHome() {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
+  const [customTerms, setCustomTerms] = useState<string | null>(null);
 
   const timeLeft = timerExpiresAt !== null ? Math.max(0, Math.round((timerExpiresAt - nowTick) / 1000)) : null;
 
@@ -438,6 +439,14 @@ export default function PhoneRentalHome() {
     };
     run();
   }, [router]);
+
+  // ── ดึงข้อความ "ข้อตกลงและเงื่อนไข" ที่แอดมินอาจตั้งไว้เอง (ยิงเงียบๆ ไม่บล็อกหน้าแรก) ──
+  useEffect(() => {
+    fetch("/api/settings", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((out) => { if (out?.terms_conditions) setCustomTerms(out.terms_conditions); })
+      .catch(() => {});
+  }, []);
 
   const resetSlip = () => {
     setSlipFile(null);
@@ -1544,12 +1553,18 @@ export default function PhoneRentalHome() {
               <button onClick={() => setShowTermsModal(false)} aria-label="ปิดหน้าต่างข้อตกลง" style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: sub, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✕</button>
             </div>
             <div style={{ padding: "16px 18px", overflowY: "auto", fontSize: 13, color: ink, lineHeight: 1.8, fontWeight: 500 }}>
-              <p>1. ผู้เช่าต้องแสดงบัตรประชาชนตัวจริงเพื่อยืนยันตัวตนก่อนรับเครื่อง</p>
-              <p>2. มัดจำที่โอนมาจะคืนให้เมื่อส่งคืนเครื่องในสภาพปกติ ไม่มีความเสียหาย</p>
-              <p>3. หากทำเครื่องเสียหายหรือสูญหาย ผู้เช่าต้องรับผิดชอบค่าซ่อม/ค่าเครื่องตามราคาประเมิน</p>
-              <p>4. กรุณามารับและคืนเครื่องตรงตามวัน-เวลาที่ระบุไว้ในรอบที่จอง</p>
-              <p>5. การจองจะสมบูรณ์เมื่อโอนมัดจำและแนบสลิปเรียบร้อยแล้วเท่านั้น</p>
-              <p style={{ color: sub, fontSize: 12, marginTop: 12 }}>* รายละเอียดนี้เป็นตัวอย่างเบื้องต้น ผู้ให้บริการสามารถแก้ไขข้อความให้ตรงกับเงื่อนไขจริงได้</p>
+              {customTerms ? (
+                customTerms.split("\n").map((line, i) => line.trim() ? <p key={i}>{line}</p> : null)
+              ) : (
+                <>
+                  <p>1. ผู้เช่าต้องแสดงบัตรประชาชนตัวจริงเพื่อยืนยันตัวตนก่อนรับเครื่อง</p>
+                  <p>2. มัดจำที่โอนมาจะคืนให้เมื่อส่งคืนเครื่องในสภาพปกติ ไม่มีความเสียหาย</p>
+                  <p>3. หากทำเครื่องเสียหายหรือสูญหาย ผู้เช่าต้องรับผิดชอบค่าซ่อม/ค่าเครื่องตามราคาประเมิน</p>
+                  <p>4. กรุณามารับและคืนเครื่องตรงตามวัน-เวลาที่ระบุไว้ในรอบที่จอง</p>
+                  <p>5. การจองจะสมบูรณ์เมื่อโอนมัดจำและแนบสลิปเรียบร้อยแล้วเท่านั้น</p>
+                  <p style={{ color: sub, fontSize: 12, marginTop: 12 }}>* รายละเอียดนี้เป็นตัวอย่างเบื้องต้น ผู้ให้บริการสามารถแก้ไขข้อความให้ตรงกับเงื่อนไขจริงได้</p>
+                </>
+              )}
             </div>
             <div style={{ padding: "12px 18px", borderTop: `1px solid ${line}`, flexShrink: 0 }}>
               <button

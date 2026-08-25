@@ -550,11 +550,15 @@ export default function AdminPage() {
 
   // ── toggle เปิด/ปิดตรวจสอบสลิปอัตโนมัติ (เผื่อโควต้า SlipOK หมด) ──
   const [slipOkEnabled, setSlipOkEnabled] = useState(true);
+  // ── ข้อความ "ข้อตกลงและเงื่อนไข" ที่แสดงในหน้าจอง (ว่าง = ใช้ข้อความ default ในแอป) ──
+  const [termsForm, setTermsForm] = useState("");
+  const [termsSaving, setTermsSaving] = useState(false);
   const fetchSettings = async () => {
     const res = await fetch("/api/admin/settings", { cache:"no-store" });
     if (res.ok) {
       const out = await res.json();
       setSlipOkEnabled(out.slipok_enabled ?? true);
+      setTermsForm(out.terms_conditions ?? "");
     }
   };
   const toggleSlipOk = async () => {
@@ -570,6 +574,20 @@ export default function AdminPage() {
       return;
     }
     showMsg(next ? "✅ เปิดตรวจสอบสลิปอัตโนมัติแล้ว" : "⏸️ ปิดตรวจสอบสลิปอัตโนมัติแล้ว");
+  };
+  const saveTerms = async () => {
+    setTermsSaving(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method:"POST", headers:{"content-type":"application/json"},
+        body: JSON.stringify({ terms_conditions: termsForm }), cache:"no-store",
+      });
+      const out = await res.json().catch(()=>null);
+      if (!res.ok) { showMsg(out?.error || "บันทึกไม่สำเร็จ", false); return; }
+      showMsg("✅ บันทึกข้อตกลงและเงื่อนไขแล้ว");
+    } finally {
+      setTermsSaving(false);
+    }
   };
 
   // ── concerts ──
@@ -2253,6 +2271,22 @@ export default function AdminPage() {
 
               <button onClick={saveAnnouncement} disabled={annSaving} style={btnStyle("dark", annSaving)}>
                 {annSaving ? "⏳ กำลังบันทึก..." : "💾 บันทึกประกาศ"}
+              </button>
+            </div>
+
+            <div style={{ ...card, padding:16 }}>
+              <div style={{ fontWeight:700, fontSize:15, marginBottom:10 }}>📜 ข้อตกลงและเงื่อนไข (หน้าจอง)</div>
+              <div style={{ fontSize:12, fontWeight:600, color:UI.muted, marginBottom:10, lineHeight:1.6 }}>
+                ข้อความนี้จะแสดงในหน้าจองตอนลูกค้ากด &quot;ข้อตกลงและเงื่อนไข&quot; — พิมพ์แต่ละข้อขึ้นบรรทัดใหม่ ปล่อยว่างไว้ = ใช้ข้อความตัวอย่างเริ่มต้นของระบบ
+              </div>
+              <textarea
+                placeholder={"1. ผู้เช่าต้องแสดงบัตรประชาชนตัวจริง...\n2. มัดจำที่โอนมาจะคืนให้เมื่อ...\n3. ..."}
+                value={termsForm}
+                onChange={e=>setTermsForm(e.target.value)}
+                style={{ ...inputStyle, width:"100%", minHeight:180, resize:"vertical", fontFamily:"inherit", lineHeight:1.7 }}
+              />
+              <button onClick={saveTerms} disabled={termsSaving} style={{ ...btnStyle("dark", termsSaving), marginTop:12 }}>
+                {termsSaving ? "⏳ กำลังบันทึก..." : "💾 บันทึกข้อตกลงและเงื่อนไข"}
               </button>
             </div>
           </div>

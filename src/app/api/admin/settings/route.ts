@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from("app_settings")
-    .select("slipok_enabled")
+    .select("slipok_enabled, terms_conditions")
     .eq("id", true)
     .maybeSingle();
 
@@ -30,32 +30,51 @@ export async function GET(req: NextRequest) {
   // ถ้ายังไม่มีแถวเลย (ยังไม่ได้รัน migration ครบ) ให้ default เป็นเปิด
   return NextResponse.json({
     slipok_enabled: data?.slipok_enabled ?? true,
+    terms_conditions: data?.terms_conditions ?? null,
   });
 }
 
-// POST /api/admin/settings — แก้ไขค่าตั้งค่า { slipok_enabled: boolean }
+// POST /api/admin/settings — แก้ไขค่าตั้งค่า (ส่งเฉพาะฟิลด์ที่ต้องการแก้ไข)
+// { slipok_enabled?: boolean, terms_conditions?: string }
 export async function POST(req: NextRequest) {
   const admin = await requireAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const body = await req.json().catch(() => null);
-  const slipokEnabled = (body as { slipok_enabled?: boolean } | null)?.slipok_enabled;
-  if (typeof slipokEnabled !== "boolean") {
-    return NextResponse.json({ error: "slipok_enabled must be boolean" }, { status: 400 });
+  const body = await req.json().catch(() => null) as
+    | { slipok_enabled?: boolean; terms_conditions?: string }
+    | null;
+
+  const updates: Record<string, unknown> = { id: true, updated_at: new Date().toISOString() };
+  const logParts: string[] = [];
+
+  if (body && Object.prototype.hasOwnProperty.call(body, "slipok_enabled")) {
+    if (typeof body.slipok_enabled !== "boolean") {
+      return NextResponse.json({ error: "slipok_enabled must be boolean" }, { status: 400 });
+    }
+    updates.slipok_enabled = body.slipok_enabled;
+    logParts.push(`slipok_enabled: ${body.slipok_enabled}`);
+  }
+
+  if (body && Object.prototype.hasOwnProperty.call(body, "terms_conditions")) {
+    const raw = String(body.terms_conditions ?? "").trim();
+    updates.terms_conditions = raw ? raw : null;
+    logParts.push("terms_conditions updated");
+  }
+
+  if (Object.keys(updates).length <= 2) {
+    return NextResponse.json({ error: "no fields to update" }, { status: 400 });
   }
 
   const supabase = getSupabase();
-  const { error } = await supabase
-    .from("app_settings")
-    .upsert({ id: true, slipok_enabled: slipokEnabled, updated_at: new Date().toISOString() });
+  const { error } = await supabase.from("app_settings").upsert(updates);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
     action: "อัปเดตการตั้งค่าระบบ",
-    detail: `slipok_enabled: ${slipokEnabled}`,
+    detail: logParts.join(", "),
   });
 
-  return NextResponse.json({ ok: true, slipok_enabled: slipokEnabled });
+  return NextResponse.json({ ok: true, ...updates });
 }

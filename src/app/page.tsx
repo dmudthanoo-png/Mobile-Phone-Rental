@@ -180,6 +180,21 @@ function AmbientGlow() {
   );
 }
 
+// กล่อง shimmer สำหรับ loading state — ไล่สีชมพู-ม่วงตามธีมหลักของแอป แทนที่จะเป็นเทาทึมๆ ทั่วไป
+function Skeleton({ style }: { style?: React.CSSProperties }) {
+  return (
+    <div
+      style={{
+        background: "linear-gradient(90deg, #F2E4D6 25%, #FFE3EE 50%, #F2E4D6 75%)",
+        backgroundSize: "400% 100%",
+        animation: "crabby-shimmer 1.4s ease-in-out infinite",
+        borderRadius: 8,
+        ...style,
+      }}
+    />
+  );
+}
+
 function formatThaiDateTime(iso: string) {
   return new Intl.DateTimeFormat("th-TH", {
     timeZone: "Asia/Bangkok",
@@ -685,6 +700,7 @@ export default function PhoneRentalHome() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#FFF9F3", fontFamily: uiFont, display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: showBottomNav ? 100 : 0, position: "relative", isolation: "isolate" }}>
+      <style>{`@keyframes crabby-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }`}</style>
       <AmbientGlow />
       <div style={{ width: "100%" }}>
         <Navbar user={meUser} onSignOut={handleSignOut} onGoHome={goToStep1} />
@@ -758,7 +774,19 @@ export default function PhoneRentalHome() {
               </div>
 
               {loading ? (
-                <div style={{ fontSize: 13, fontWeight: 500, color: sub }}>⏳ กำลังโหลดคอนเสิร์ต...</div>
+                <div role="status">
+                  <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>กำลังโหลดคอนเสิร์ต...</span>
+                  <div aria-hidden="true" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} style={{ ...doodle.card, padding: 10 }}>
+                        <Skeleton style={{ width: "100%", aspectRatio: "1/1", borderRadius: 12, animationDelay: `${i * 0.15}s` }} />
+                        <Skeleton style={{ marginTop: 10, height: 14, width: "85%", animationDelay: `${i * 0.15}s` }} />
+                        <Skeleton style={{ marginTop: 6, height: 11, width: "55%", animationDelay: `${i * 0.15}s` }} />
+                        <Skeleton style={{ marginTop: 8, height: 20, width: 92, borderRadius: 999, animationDelay: `${i * 0.15}s` }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ) : (
                 <>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
@@ -918,7 +946,16 @@ export default function PhoneRentalHome() {
                       </button>
                     );
                   })}
-                  {sessionsLoading && <div style={{ fontSize: 13, fontWeight: 500, color: sub }}>⏳ กำลังโหลดรอบ...</div>}
+                  {sessionsLoading && (
+                    <div role="status">
+                      <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>กำลังโหลดรอบ...</span>
+                      <div aria-hidden="true" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {[0, 1].map((i) => (
+                          <Skeleton key={i} style={{ height: 44, borderRadius: 12, animationDelay: `${i * 0.15}s` }} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {!sessionsLoading && sessions.length === 0 && <div style={{ fontSize: 13, fontWeight: 500, color: sub }}>ยังไม่มีรอบ</div>}
                 </div>
               </div>
@@ -936,7 +973,20 @@ export default function PhoneRentalHome() {
                 {!selectedSessionId ? (
                   <div style={{ fontSize: 13, fontWeight: 500, color: sub }}>กรุณาเลือกรอบก่อน</div>
                 ) : phonesLoading ? (
-                  <div style={{ fontSize: 13, fontWeight: 500, color: sub }}>⏳ กำลังโหลดมือถือ...</div>
+                  <div role="status">
+                    <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>กำลังโหลดมือถือ...</span>
+                    <div aria-hidden="true" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {[0, 1, 2].map((i) => (
+                        <div key={i} style={{ ...doodle.card, padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
+                          <Skeleton style={{ width: 52, height: 52, borderRadius: 12, flexShrink: 0, animationDelay: `${i * 0.15}s` }} />
+                          <div style={{ flex: 1 }}>
+                            <Skeleton style={{ height: 14, width: "60%", animationDelay: `${i * 0.15}s` }} />
+                            <Skeleton style={{ marginTop: 6, height: 11, width: "35%", animationDelay: `${i * 0.15}s` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {phones.filter((p) => p.remaining > 0).map((p) => {

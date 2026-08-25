@@ -66,17 +66,21 @@ export async function PATCH(
     }
   } else {
     // เปลี่ยนได้เฉพาะรายการที่กำลังรอตรวจสอบ เพื่อกันการกดซ้ำแล้วส่ง LINE ซ้ำ
+    // + ต้องยังไม่หมดเวลา pending (ถ้ามีการตั้ง pending_expires_at ไว้และหมดเวลาไปแล้ว ห้ามยืนยัน
+    // เพราะ SQL ฝั่งนับสต็อกไม่นับรายการหมดเวลาเป็นสต็อกอยู่แล้ว ถ้ายังยืนยันได้จะจองเกิน quota ได้)
+    const nowIso = new Date().toISOString();
     const { data: updatedBooking, error } = await supabase
       .from("bookings")
       .update({ status })
       .eq("id", id)
       .in("status", ["pending", "waiting_review"])
+      .or(`pending_expires_at.is.null,pending_expires_at.gt.${nowIso}`)
       .select("id")
       .maybeSingle();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!updatedBooking) {
       return NextResponse.json(
-        { error: "booking ไม่ได้อยู่ในสถานะรอตรวจสอบ" },
+        { error: "booking ไม่ได้อยู่ในสถานะรอตรวจสอบ หรือหมดเวลาการจองไปแล้ว" },
         { status: 409 }
       );
     }

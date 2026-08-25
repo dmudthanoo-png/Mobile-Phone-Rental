@@ -280,6 +280,13 @@ export async function POST(req: NextRequest) {
       if (msg.includes("LENS_NOT_CONFIGURED_FOR_SESSION")) {
         return NextResponse.json({ error: "lens_sold_out" }, { status: 409 });
       }
+      if (msg.includes("TOO_MANY_PENDING")) {
+        // เผื่อยิง request จองพร้อมกันหลายอันแซงการเช็คด่านแรกไปได้ — RPC เองก็กันซ้ำอีกชั้นด้วย advisory lock
+        return NextResponse.json(
+          { error: "มีการจองที่รอยืนยันอยู่แล้ว กรุณารอให้แอดมินตรวจสอบก่อน" },
+          { status: 429 }
+        );
+      }
       return NextResponse.json({ error: msg }, { status: 500 });
     }
 

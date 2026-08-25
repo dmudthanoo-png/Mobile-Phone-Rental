@@ -28,10 +28,19 @@ alter table public.session_lens_inventory enable row level security;
 revoke all on table public.session_lens_inventory from public, anon, authenticated;
 grant select, insert, update, delete on table public.session_lens_inventory to service_role;
 
--- backfill: ทุกรอบที่ยังไม่ผ่านไปแล้ว x ทุกเลนส์ที่ active ให้โควต้าเริ่มต้น = จำนวนรวมทั้งร้าน
--- (คงพฤติกรรมเดิมไว้ก่อน ไม่ทำให้จองไม่ได้ทันทีหลัง deploy)
+-- backfill: ให้โควต้าเริ่มต้น = จำนวนรวมทั้งร้าน แต่ถ้าวันเดียวกันมีหลายรอบ ให้เต็มแค่ "รอบแรกสุด
+-- ของวันนั้น" เท่านั้น (รอบอื่นในวันเดียวกันได้ 0 ไปก่อน) กันจองเกินจริงตั้งแต่ backfill เลย
+-- (คงพฤติกรรมเดิมไว้สำหรับวันที่มีแค่รอบเดียว ไม่ทำให้จองไม่ได้ทันทีหลัง deploy — ส่วนวันที่มีหลาย
+-- รอบชนกัน แอดมินต้องไปจัดสรรโควต้าที่เหลือของวันนั้นเองผ่านหน้าตั้งโควต้า)
 insert into public.session_lens_inventory (session_id, lens_id, qty)
-select cs.id, l.id, l.qty
+select cs.id, l.id,
+  case
+    when row_number() over (
+      partition by l.id, (cs.start_at at time zone 'Asia/Bangkok')::date
+      order by cs.start_at asc, cs.id asc
+    ) = 1 then l.qty
+    else 0
+  end
 from public.concert_sessions cs
 cross join public.lenses l
 where cs.start_at >= now()

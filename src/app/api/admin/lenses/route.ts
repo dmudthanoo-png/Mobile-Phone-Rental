@@ -95,6 +95,29 @@ export async function PATCH(req: NextRequest) {
   if (body?.qty !== undefined) {
     const q = Number(body.qty);
     if (!Number.isFinite(q) || !Number.isInteger(q) || q < 0) return NextResponse.json({ error: "qty must be a non-negative integer" }, { status: 400 });
+
+    // ถ้าลดจำนวนเลนส์รวม ต้องไม่ต่ำกว่าโควต้าที่จัดสรรให้รอบต่างๆ ไปแล้วรวมกันในวันใดวันหนึ่ง
+    // (กันลด stock รวมแล้วโควต้าเดิมที่ตั้งไว้เกินจำนวนเลนส์จริงแบบไม่รู้ตัว — เหมือนที่ทำไว้กับมือถือ)
+    const { data: allocRows, error: allocErr } = await supabase
+      .from("session_lens_inventory")
+      .select("qty, concert_sessions ( start_at )")
+      .eq("lens_id", id);
+    if (allocErr) return NextResponse.json({ error: allocErr.message }, { status: 500 });
+
+    const totalByDay: Record<string, number> = {};
+    for (const row of allocRows ?? []) {
+      const startAt = (row.concert_sessions as unknown as { start_at: string } | null)?.start_at;
+      if (!startAt) continue;
+      const dayKey = new Date(startAt).toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+      totalByDay[dayKey] = (totalByDay[dayKey] ?? 0) + Number(row.qty ?? 0);
+    }
+    const maxDayTotal = Object.values(totalByDay).reduce((max, v) => Math.max(max, v), 0);
+    if (q < maxDayTotal) {
+      return NextResponse.json(
+        { error: `ลดจำนวนเลนส์รวมต่ำกว่า ${maxDayTotal} ไม่ได้ เพราะมีวันที่จัดสรรโควต้าให้รอบต่างๆ ไปแล้วรวมกัน ${maxDayTotal} ชิ้น กรุณาลดโควต้าของรอบนั้นๆ ก่อน` },
+        { status: 400 }
+      );
+    }
     updates.qty = q;
   }
   if (body?.active !== undefined) updates.active = Boolean(body.active);

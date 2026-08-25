@@ -23,6 +23,23 @@ export async function GET(
 
     const supabase = createClient(url, serviceKey);
 
+    // กันรอบของคอนเสิร์ตที่ซ่อนอยู่/ยังไม่ถึงเวลาเผยแพร่ โชว์ข้อมูลสต็อกออกมาได้ผ่าน session_id ตรงๆ
+    // (endpoint จองจริงกันไว้แล้ว แต่ endpoint นี้เป็นแค่ query ข้อมูล ไม่ได้เช็คมาก่อน)
+    const { data: sessionCheck, error: sessionCheckErr } = await supabase
+      .from("concert_sessions")
+      .select("id, concerts ( archived, is_visible, publish_at )")
+      .eq("id", sessionId)
+      .maybeSingle();
+
+    if (sessionCheckErr) return NextResponse.json({ error: sessionCheckErr.message }, { status: 500 });
+    const concertRow = sessionCheck?.concerts as unknown as { archived: boolean; is_visible: boolean | null; publish_at: string | null } | null;
+    if (!sessionCheck || !concertRow || concertRow.archived || concertRow.is_visible === false) {
+      return NextResponse.json({ error: "session not found" }, { status: 404 });
+    }
+    if (concertRow.publish_at && new Date(concertRow.publish_at).getTime() > Date.now()) {
+      return NextResponse.json({ error: "concert not published yet" }, { status: 403 });
+    }
+
     const { data, error } = await supabase.rpc("get_session_phones", { p_session_id: sessionId });
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

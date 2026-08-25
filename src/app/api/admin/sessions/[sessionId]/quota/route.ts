@@ -234,9 +234,7 @@ export async function POST(
 
   const supabase = getSupabase();
 
-  // ตั้ง/แก้โควต้าทีละรุ่นผ่าน RPC เดียว ที่ล็อกแถวมือถือ/เลนส์รุ่นนั้นไว้ก่อนเช็ค+เขียนในทรานแซกชันเดียวกัน
-  // (กัน race condition ถ้าแอดมิน 2 คนตั้งโควต้ารุ่นเดียวกันพร้อมกัน — ดู scripts/add_set_session_phone_quota_rpc.sql
-  // และ scripts/add_session_lens_quota_and_deposit_amount.sql)
+  // validate ก่อนส่งเข้า RPC
   for (const item of items) {
     const phoneId = String(item.phone_id ?? "").trim();
     const qty = Number(item.qty);
@@ -244,20 +242,7 @@ export async function POST(
     if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty < 0) {
       return NextResponse.json({ error: `invalid qty for phone_id ${phoneId}` }, { status: 400 });
     }
-
-    const { data, error } = await supabase.rpc("set_session_phone_quota", {
-      p_session_id: sessionId,
-      p_phone_id: phoneId,
-      p_qty: qty,
-    });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    const result = data as { ok?: boolean; error?: string } | null;
-    if (result?.error) {
-      return NextResponse.json({ error: `phone_id ${phoneId}: ${result.error}` }, { status: 400 });
-    }
   }
-
   for (const item of lensItems) {
     const lensId = String(item.lens_id ?? "").trim();
     const qty = Number(item.qty);
@@ -265,18 +250,17 @@ export async function POST(
     if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty < 0) {
       return NextResponse.json({ error: `invalid qty for lens_id ${lensId}` }, { status: 400 });
     }
+  }
 
-    const { data, error } = await supabase.rpc("set_session_lens_quota", {
-      p_session_id: sessionId,
-      p_lens_id: lensId,
-      p_qty: qty,
-    });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    const result = data as { ok?: boolean; error?: string } | null;
-    if (result?.error) {
-      return NextResponse.json({ error: `lens_id ${lensId}: ${result.error}` }, { status: 400 });
-    }
+  // ตั้งโควต้ามือถือ+เลนส์ทั้งหมดในคำสั่งเดียวแบบ atomic — ผิดรายการไหนก็ยกเลิกทั้งหมด ไม่ให้
+  // รายการก่อนหน้าที่สำเร็จไปแล้วค้างอยู่ (ดู scripts/fix_lens_quota_backfill_and_atomic_batch.sql)
+  const { error } = await supabase.rpc("set_session_quota_batch", {
+    p_session_id: sessionId,
+    p_phone_items: items.map((it) => ({ phone_id: String(it.phone_id ?? "").trim(), qty: Number(it.qty) })),
+    p_lens_items: lensItems.map((it) => ({ lens_id: String(it.lens_id ?? "").trim(), qty: Number(it.qty) })),
+  });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
   await logAdminAction({

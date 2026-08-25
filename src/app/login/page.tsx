@@ -198,6 +198,18 @@ export default function LoginPage() {
             </>
           )}
 
+          <p style={{ fontSize: 11, color: sub, lineHeight: 1.65, margin: "20px 0 14px", fontWeight: 500 }}>
+            ก่อนเข้าสู่ระบบ ระบบจะใช้ LINE User ID ชื่อโปรไฟล์ และรูปโปรไฟล์เพื่อยืนยันตัวตนและให้บริการจอง{" "}
+            <a
+              href="/privacy-policy"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: accent2, fontWeight: 700, textDecoration: "underline" }}
+            >
+              อ่านนโยบายความเป็นส่วนตัว
+            </a>
+          </p>
+
           {/* Line Button */}
           {showButton && (
             <button

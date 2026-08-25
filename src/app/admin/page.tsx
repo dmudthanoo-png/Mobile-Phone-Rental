@@ -50,6 +50,15 @@ type PhoneQuotaInfo = {
   current_quota: number | null;
   already_booked: number;
 };
+type LensQuotaInfo = {
+  lens_id: string;
+  name: string;
+  total_qty: number;
+  allocated_elsewhere: number;
+  available_to_allocate: number;
+  current_quota: number | null;
+  already_booked: number;
+};
 type Phone   = { id: string; model_name: string; price: number; deposit: number; qty: number; image_url: string | null; active: boolean };
 type Lens    = { id: string; name: string; focal_mm: number | null; price: number; qty: number; active: boolean };
 type Announcement = { id: string; title: string | null; subtitle: string | null; emoji: string | null; image_url: string | null; active: boolean };
@@ -67,7 +76,7 @@ type AdminUser = {
   booking_count: number;
   total_spent: number;
 };
-type Summary = { total: number; pending: number; confirmed: number; rejected: number; revenue: number };
+type Summary = { total: number; pending: number; confirmed: number; rejected: number; revenue: number; deposit_received: number };
 type LineQuota = {
   status: "loading" | "connected" | "not_configured" | "error";
   quotaType?: "limited" | "none";
@@ -264,7 +273,7 @@ export default function AdminPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bStatus, setBStatus] = useState<"pending"|"confirmed"|"rejected"|"all">("pending");
   const [bQ, setBQ] = useState("");
-  const [summary, setSummary] = useState<Summary>({ total:0, pending:0, confirmed:0, rejected:0, revenue:0 });
+  const [summary, setSummary] = useState<Summary>({ total:0, pending:0, confirmed:0, rejected:0, revenue:0, deposit_received:0 });
   const [slipModal, setSlipModal] = useState<string|null>(null);
   const [viewingSlipId, setViewingSlipId] = useState<string|null>(null);
   const [lineQuota, setLineQuota] = useState<LineQuota>({ status:"loading", loading:true });
@@ -289,6 +298,8 @@ export default function AdminPage() {
   const [quotaSaving, setQuotaSaving] = useState(false);
   const [quotaData, setQuotaData] = useState<PhoneQuotaInfo[]>([]);
   const [quotaInputs, setQuotaInputs] = useState<Record<string, string>>({});
+  const [quotaLensData, setQuotaLensData] = useState<LensQuotaInfo[]>([]);
+  const [quotaLensInputs, setQuotaLensInputs] = useState<Record<string, string>>({});
 
   // phones + inventory
   const [phones, setPhones] = useState<Phone[]>([]);
@@ -710,25 +721,39 @@ export default function AdminPage() {
         inputs[p.phone_id] = String(p.current_quota != null ? p.current_quota : p.available_to_allocate);
       }
       setQuotaInputs(inputs);
+
+      const lensList: LensQuotaInfo[] = out.lenses ?? [];
+      setQuotaLensData(lensList);
+      const lensInputs: Record<string, string> = {};
+      for (const l of lensList) {
+        lensInputs[l.lens_id] = String(l.current_quota != null ? l.current_quota : l.available_to_allocate);
+      }
+      setQuotaLensInputs(lensInputs);
     } finally {
       setQuotaLoading(false);
     }
   };
 
-  const closeQuotaManager = () => { setQuotaSession(null); setQuotaData([]); setQuotaInputs({}); };
+  const closeQuotaManager = () => {
+    setQuotaSession(null); setQuotaData([]); setQuotaInputs({});
+    setQuotaLensData([]); setQuotaLensInputs({});
+  };
 
   const saveQuota = async () => {
     if (!quotaSession) return;
     const items = Object.entries(quotaInputs)
       .filter(([, v]) => v.trim() !== "")
       .map(([phone_id, v]) => ({ phone_id, qty: Number(v) }));
-    if (items.length === 0) { showMsg("ยังไม่ได้กรอกจำนวนเลย", false); return; }
+    const lensItems = Object.entries(quotaLensInputs)
+      .filter(([, v]) => v.trim() !== "")
+      .map(([lens_id, v]) => ({ lens_id, qty: Number(v) }));
+    if (items.length === 0 && lensItems.length === 0) { showMsg("ยังไม่ได้กรอกจำนวนเลย", false); return; }
 
     setQuotaSaving(true);
     try {
       const res = await fetch(`/api/admin/sessions/${quotaSession.id}/quota`, {
         method:"POST", headers:{"content-type":"application/json"},
-        body: JSON.stringify({ items }), cache:"no-store",
+        body: JSON.stringify({ items, lens_items: lensItems }), cache:"no-store",
       });
       const out = await res.json().catch(() => null);
       if (!res.ok) { showMsg(out?.error || "บันทึกไม่สำเร็จ", false); return; }
@@ -794,6 +819,17 @@ export default function AdminPage() {
     const res = await fetch(`/api/admin/phones?id=${id}`, { method:"DELETE", cache:"no-store" });
     if (!res.ok) { showMsg("ลบไม่สำเร็จ", false); return; }
     showMsg("ลบแล้ว"); fetchPhones();
+  };
+
+  const togglePhoneActive = async (id: string, currentlyActive: boolean) => {
+    const nextActive = !currentlyActive;
+    const form = new FormData();
+    form.append("id", id);
+    form.append("active", String(nextActive));
+    const res = await fetch("/api/admin/phones", { method:"PATCH", body:form, cache:"no-store" });
+    if (!res.ok) { showMsg("เปลี่ยนสถานะไม่สำเร็จ", false); return; }
+    showMsg(nextActive ? "✅ เปิดใช้งานแล้ว" : "⏸️ ปิดใช้งานแล้ว");
+    fetchPhones();
   };
 
   // ── lenses (stock แยก) ──
@@ -1402,7 +1438,8 @@ export default function AdminPage() {
             { icon:"⏳", val:summary.pending,   label:"รอยืนยัน",    bg:"#FFF9E6" },
             { icon:"✅", val:summary.confirmed,  label:"ยืนยันแล้ว",  bg:"#EFFFF2" },
             { icon:"❌", val:summary.rejected,   label:"ปฏิเสธแล้ว", bg:"#FFF1F2" },
-            { icon:"💰", val:money(summary.revenue), label:"รายได้รวม", bg:"#FFEFF7" },
+            { icon:"💵", val:money(summary.deposit_received), label:"มัดจำที่รับจริงแล้ว", bg:"#EFFFF2" },
+            { icon:"💰", val:money(summary.revenue), label:"มูลค่าจองรวม (คาดการณ์)", bg:"#FFEFF7" },
           ].map(s => (
             <div key={s.label} style={{ flex:"1 1 160px", background:s.bg, borderRadius:14, border:`1px solid ${UI.border}`, boxShadow:UI.shadowSm, padding:"10px 14px" }}>
               <div style={{ fontSize:20 }}>{s.icon}</div>
@@ -1970,6 +2007,68 @@ export default function AdminPage() {
                     </div>
                   )}
 
+                  {!quotaLoading && quotaLensData.length > 0 && (
+                    <>
+                      <div style={{ fontWeight:700, fontSize:16, marginBottom:4 }}>🔭 ตั้งโควต้าเลนส์ของรอบนี้</div>
+                      <div style={{ fontSize:11, color:UI.muted, fontWeight:700, marginBottom:14 }}>
+                        เลนส์เป็นของเสริมที่ใช้ได้กับหลายรุ่นมือถือ ต้องตั้งโควต้าแยกต่อรอบเหมือนมือถือ ไม่งั้นจองเลนส์ไม่ได้
+                      </div>
+                      <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:16 }}>
+                        {quotaLensData.map((l) => {
+                          const shared = l.allocated_elsewhere > 0;
+                          return (
+                            <div key={l.lens_id} style={{
+                              borderRadius:14,
+                              border: `1.5px solid ${shared ? "#F3D9A8" : UI.border}`,
+                              background: shared ? "#FFFBF3" : "#fff",
+                              padding:14,
+                              boxShadow: UI.shadowSm,
+                            }}>
+                              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, marginBottom:10 }}>
+                                <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
+                                  <span style={{ fontSize:20, flexShrink:0 }}>🔭</span>
+                                  <span style={{ fontWeight:700, fontSize:14, color:UI.ink, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{l.name}</span>
+                                </div>
+                                <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                                  <input
+                                    value={quotaLensInputs[l.lens_id] ?? ""}
+                                    onChange={e=>setQuotaLensInputs(prev=>({ ...prev, [l.lens_id]: e.target.value.replace(/\D/g,"") }))}
+                                    placeholder="0"
+                                    style={{ ...inputStyle, width:64, textAlign:"center", fontWeight:800, fontSize:16, border:`1.5px solid ${UI.accent2}`, color:UI.accent2 }}
+                                  />
+                                  <span style={{ fontSize:12, color:UI.muted, fontWeight:700 }}>ชิ้น</span>
+                                </div>
+                              </div>
+
+                              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                                <span style={{ borderRadius:999, padding:"3px 10px", fontSize:11, fontWeight:700, background:"#F5F3F1", color:UI.muted }}>
+                                  มีทั้งหมด {l.total_qty}
+                                </span>
+                                {shared && (
+                                  <span style={{ borderRadius:999, padding:"3px 10px", fontSize:11, fontWeight:700, background:"#FFF3D6", color:"#8A6D2F" }}>
+                                    ⚠️ รอบอื่นวันนี้ใช้ไป {l.allocated_elsewhere}
+                                  </span>
+                                )}
+                                {l.already_booked > 0 && (
+                                  <span style={{ borderRadius:999, padding:"3px 10px", fontSize:11, fontWeight:700, background:"#EFE6FF", color:UI.accent2 }}>
+                                    🎫 จองแล้ว {l.already_booked}
+                                  </span>
+                                )}
+                                <span style={{
+                                  borderRadius:999, padding:"3px 10px", fontSize:11, fontWeight:700,
+                                  background: l.available_to_allocate > 0 ? "#E1FAEC" : "#FFF1F2",
+                                  color: l.available_to_allocate > 0 ? "#0F9D4E" : "#C43D5C",
+                                }}>
+                                  {l.available_to_allocate > 0 ? "✅" : "🚫"} เหลือให้จัดสรร {l.available_to_allocate}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+
                   <div style={{ display:"flex", gap:8 }}>
                     <button onClick={saveQuota} disabled={quotaSaving||quotaLoading} style={{ ...btnStyle("dark", quotaSaving||quotaLoading), flex:1, justifyContent:"center" }}>
                       {quotaSaving ? "⏳ กำลังบันทึก..." : "💾 บันทึกโควต้า"}
@@ -2012,6 +2111,9 @@ export default function AdminPage() {
                   <div style={{ fontSize:12, fontWeight:700, color: (p.qty ?? 0) > 0 ? "#0F9D4E" : "#C43D5C", marginTop:4, marginBottom:10 }}>
                     คงเหลือ {p.qty ?? 0} เครื่อง
                   </div>
+                  <button onClick={()=>togglePhoneActive(p.id, p.active ?? true)} style={{ ...btnStyle((p.active ?? true) ? "green" : "white"), width:"100%", justifyContent:"center", marginBottom:6 }}>
+                    {(p.active ?? true) ? "🟢 เปิดใช้งานอยู่" : "⏸️ ปิดใช้งานอยู่"}
+                  </button>
                   <div style={{ display:"flex", gap:6, marginBottom:6 }}>
                     <button onClick={()=>openEditPhone(p)} style={{ ...btnStyle("white"), flex:1, justifyContent:"center" }}>✏️ แก้ไข</button>
                     <button onClick={()=>deletePhone(p.id)} style={btnStyle("red")}>🗑</button>

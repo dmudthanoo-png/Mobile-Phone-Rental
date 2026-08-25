@@ -9,6 +9,15 @@ function getSupabase() {
   return createClient(url, serviceKey);
 }
 
+// หาช่วงเวลา "วันเดียวกัน" ตามเวลาไทย (UTC+7 ไม่มี DST) — เหมือนกับที่ใช้ในหน้าตั้งโควต้ามือถือ
+function getThaiDayRangeUtc(iso: string): { start: string; end: string } {
+  const d = new Date(iso);
+  const thaiDateStr = d.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+  const dayStart = new Date(`${thaiDateStr}T00:00:00+07:00`);
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+  return { start: dayStart.toISOString(), end: dayEnd.toISOString() };
+}
+
 // GET /api/admin/concerts/[id]/sessions
 export async function GET(
   req: NextRequest,
@@ -102,6 +111,57 @@ export async function PATCH(
   if (!start_at) return NextResponse.json({ error: "start_at is required" }, { status: 400 });
 
   const supabase = getSupabase();
+
+  // ย้ายวันของรอบนี้แล้ว โควต้ามือถือที่ตั้งไว้ของรอบนี้ (ถ้ามี) ต้องไม่รวมกับรอบอื่นที่วันใหม่
+  // นั้นเกินสต็อกจริง (กันย้ายวันแบบไม่รู้ตัวแล้วโควต้าเดิมของรอบนี้ทับซ้อนกับรอบอื่นเกิน stock)
+  const { data: existingQuota, error: existingQuotaErr } = await supabase
+    .from("session_phone_inventory")
+    .select("phone_id, qty")
+    .eq("session_id", session_id);
+  if (existingQuotaErr) return NextResponse.json({ error: existingQuotaErr.message }, { status: 500 });
+
+  if (existingQuota && existingQuota.length > 0) {
+    const { start: newDayStart, end: newDayEnd } = getThaiDayRangeUtc(start_at);
+
+    const { data: newDaySessions, error: newDaySessionsErr } = await supabase
+      .from("concert_sessions")
+      .select("id")
+      .gte("start_at", newDayStart)
+      .lt("start_at", newDayEnd)
+      .neq("id", session_id);
+    if (newDaySessionsErr) return NextResponse.json({ error: newDaySessionsErr.message }, { status: 500 });
+    const newDaySessionIds = (newDaySessions ?? []).map((s) => s.id);
+
+    for (const row of existingQuota) {
+      const { data: phone, error: phoneErr } = await supabase
+        .from("phones")
+        .select("model_name, qty")
+        .eq("id", row.phone_id)
+        .maybeSingle();
+      if (phoneErr) return NextResponse.json({ error: phoneErr.message }, { status: 500 });
+
+      let allocatedElsewhere = 0;
+      if (newDaySessionIds.length > 0) {
+        const { data: elsewhereRows, error: elsewhereErr } = await supabase
+          .from("session_phone_inventory")
+          .select("qty")
+          .in("session_id", newDaySessionIds)
+          .eq("phone_id", row.phone_id);
+        if (elsewhereErr) return NextResponse.json({ error: elsewhereErr.message }, { status: 500 });
+        allocatedElsewhere = (elsewhereRows ?? []).reduce((sum, r) => sum + Number(r.qty ?? 0), 0);
+      }
+
+      const totalQty = Number(phone?.qty ?? 0);
+      if (allocatedElsewhere + Number(row.qty ?? 0) > totalQty) {
+        return NextResponse.json(
+          {
+            error: `ย้ายวันไม่ได้: โควต้า ${phone?.model_name ?? row.phone_id} ของรอบนี้ (${row.qty} เครื่อง) รวมกับรอบอื่นในวันใหม่ (${allocatedElsewhere} เครื่อง) จะเกินสต็อกจริง (${totalQty} เครื่อง) กรุณาปรับโควต้าก่อนย้ายวัน`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+  }
 
   const { error, count } = await supabase
     .from("concert_sessions")

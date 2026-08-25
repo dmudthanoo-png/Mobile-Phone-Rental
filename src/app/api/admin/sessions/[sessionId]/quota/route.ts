@@ -29,6 +29,16 @@ type PhoneQuotaInfo = {
   already_booked: number;
 };
 
+type LensQuotaInfo = {
+  lens_id: string;
+  name: string;
+  total_qty: number;
+  allocated_elsewhere: number;
+  available_to_allocate: number;
+  current_quota: number | null;
+  already_booked: number;
+};
+
 // GET /api/admin/sessions/[sessionId]/quota — ดูโควต้ามือถือของรอบนี้ + เหลือให้จัดสรรได้อีกเท่าไหร่
 // (คำนวณจากรอบอื่นที่ "วันเดียวกัน" เท่านั้น รอบวันอื่นไม่กระทบกันเพราะเครื่องคืนแล้วใช้ซ้ำได้)
 export async function GET(
@@ -73,69 +83,134 @@ export async function GET(
 
   if (phonesErr) return NextResponse.json({ error: phonesErr.message }, { status: 500 });
 
-  const phoneIds = (phones ?? []).map((p) => p.id);
-  if (phoneIds.length === 0) {
-    return NextResponse.json({ session_start_at: session.start_at, phones: [] });
-  }
+  const { data: lenses, error: lensesErr } = await supabase
+    .from("lenses")
+    .select("id, name, qty")
+    .eq("active", true)
+    .order("name", { ascending: true });
 
-  // โควต้าที่ให้รอบอื่น (วันเดียวกัน) ไปแล้ว
-  const elsewhereByPhone: Record<string, number> = {};
-  if (sameDaySessionIds.length > 0) {
-    const { data: elsewhereRows, error: elsewhereErr } = await supabase
+  if (lensesErr) return NextResponse.json({ error: lensesErr.message }, { status: 500 });
+
+  const phoneIds = (phones ?? []).map((p) => p.id);
+  const lensIds = (lenses ?? []).map((l) => l.id);
+  const nowIso = new Date().toISOString();
+
+  let phoneResult: PhoneQuotaInfo[] = [];
+  if (phoneIds.length > 0) {
+    // โควต้าที่ให้รอบอื่น (วันเดียวกัน) ไปแล้ว
+    const elsewhereByPhone: Record<string, number> = {};
+    if (sameDaySessionIds.length > 0) {
+      const { data: elsewhereRows, error: elsewhereErr } = await supabase
+        .from("session_phone_inventory")
+        .select("phone_id, qty")
+        .in("session_id", sameDaySessionIds)
+        .in("phone_id", phoneIds);
+
+      if (elsewhereErr) return NextResponse.json({ error: elsewhereErr.message }, { status: 500 });
+      for (const r of elsewhereRows ?? []) {
+        elsewhereByPhone[r.phone_id] = (elsewhereByPhone[r.phone_id] ?? 0) + Number(r.qty ?? 0);
+      }
+    }
+
+    // โควต้าปัจจุบันของรอบนี้เอง
+    const { data: currentRows, error: currentErr } = await supabase
       .from("session_phone_inventory")
       .select("phone_id, qty")
-      .in("session_id", sameDaySessionIds)
+      .eq("session_id", sessionId)
       .in("phone_id", phoneIds);
 
-    if (elsewhereErr) return NextResponse.json({ error: elsewhereErr.message }, { status: 500 });
-    for (const r of elsewhereRows ?? []) {
-      elsewhereByPhone[r.phone_id] = (elsewhereByPhone[r.phone_id] ?? 0) + Number(r.qty ?? 0);
+    if (currentErr) return NextResponse.json({ error: currentErr.message }, { status: 500 });
+    const currentByPhone: Record<string, number> = {};
+    for (const r of currentRows ?? []) currentByPhone[r.phone_id] = Number(r.qty ?? 0);
+
+    // ยอดที่ถูกจองไปแล้วจริงของรอบนี้ (กันตั้งโควต้าต่ำกว่ายอดจอง)
+    const { data: bookedRows, error: bookedErr } = await supabase
+      .from("bookings")
+      .select("phone_id, qty")
+      .eq("session_id", sessionId)
+      .in("phone_id", phoneIds)
+      .or(
+        `status.eq.confirmed,and(status.eq.pending,pending_expires_at.is.null),and(status.eq.pending,pending_expires_at.gt.${nowIso})`
+      );
+
+    if (bookedErr) return NextResponse.json({ error: bookedErr.message }, { status: 500 });
+    const bookedByPhone: Record<string, number> = {};
+    for (const r of bookedRows ?? []) {
+      if (r.phone_id) bookedByPhone[r.phone_id] = (bookedByPhone[r.phone_id] ?? 0) + Number(r.qty ?? 1);
     }
+
+    phoneResult = (phones ?? []).map((p) => {
+      const totalQty = Number(p.qty ?? 0);
+      const allocatedElsewhere = elsewhereByPhone[p.id] ?? 0;
+      return {
+        phone_id: p.id,
+        model_name: p.model_name,
+        total_qty: totalQty,
+        allocated_elsewhere: allocatedElsewhere,
+        available_to_allocate: Math.max(0, totalQty - allocatedElsewhere),
+        current_quota: currentByPhone[p.id] ?? null,
+        already_booked: bookedByPhone[p.id] ?? 0,
+      };
+    });
   }
 
-  // โควต้าปัจจุบันของรอบนี้เอง
-  const { data: currentRows, error: currentErr } = await supabase
-    .from("session_phone_inventory")
-    .select("phone_id, qty")
-    .eq("session_id", sessionId)
-    .in("phone_id", phoneIds);
+  let lensResult: LensQuotaInfo[] = [];
+  if (lensIds.length > 0) {
+    const elsewhereByLens: Record<string, number> = {};
+    if (sameDaySessionIds.length > 0) {
+      const { data: elsewhereRows, error: elsewhereErr } = await supabase
+        .from("session_lens_inventory")
+        .select("lens_id, qty")
+        .in("session_id", sameDaySessionIds)
+        .in("lens_id", lensIds);
 
-  if (currentErr) return NextResponse.json({ error: currentErr.message }, { status: 500 });
-  const currentByPhone: Record<string, number> = {};
-  for (const r of currentRows ?? []) currentByPhone[r.phone_id] = Number(r.qty ?? 0);
+      if (elsewhereErr) return NextResponse.json({ error: elsewhereErr.message }, { status: 500 });
+      for (const r of elsewhereRows ?? []) {
+        elsewhereByLens[r.lens_id] = (elsewhereByLens[r.lens_id] ?? 0) + Number(r.qty ?? 0);
+      }
+    }
 
-  // ยอดที่ถูกจองไปแล้วจริงของรอบนี้ (กันตั้งโควต้าต่ำกว่ายอดจอง)
-  const nowIso = new Date().toISOString();
-  const { data: bookedRows, error: bookedErr } = await supabase
-    .from("bookings")
-    .select("phone_id, qty")
-    .eq("session_id", sessionId)
-    .in("phone_id", phoneIds)
-    .or(
-      `status.eq.confirmed,and(status.eq.pending,pending_expires_at.is.null),and(status.eq.pending,pending_expires_at.gt.${nowIso})`
-    );
+    const { data: currentRows, error: currentErr } = await supabase
+      .from("session_lens_inventory")
+      .select("lens_id, qty")
+      .eq("session_id", sessionId)
+      .in("lens_id", lensIds);
 
-  if (bookedErr) return NextResponse.json({ error: bookedErr.message }, { status: 500 });
-  const bookedByPhone: Record<string, number> = {};
-  for (const r of bookedRows ?? []) {
-    if (r.phone_id) bookedByPhone[r.phone_id] = (bookedByPhone[r.phone_id] ?? 0) + Number(r.qty ?? 1);
+    if (currentErr) return NextResponse.json({ error: currentErr.message }, { status: 500 });
+    const currentByLens: Record<string, number> = {};
+    for (const r of currentRows ?? []) currentByLens[r.lens_id] = Number(r.qty ?? 0);
+
+    const { data: bookedRows, error: bookedErr } = await supabase
+      .from("bookings")
+      .select("lens_id, lens_qty")
+      .eq("session_id", sessionId)
+      .in("lens_id", lensIds)
+      .or(
+        `status.eq.confirmed,and(status.eq.pending,pending_expires_at.is.null),and(status.eq.pending,pending_expires_at.gt.${nowIso})`
+      );
+
+    if (bookedErr) return NextResponse.json({ error: bookedErr.message }, { status: 500 });
+    const bookedByLens: Record<string, number> = {};
+    for (const r of bookedRows ?? []) {
+      if (r.lens_id) bookedByLens[r.lens_id] = (bookedByLens[r.lens_id] ?? 0) + Number(r.lens_qty ?? 0);
+    }
+
+    lensResult = (lenses ?? []).map((l) => {
+      const totalQty = Number(l.qty ?? 0);
+      const allocatedElsewhere = elsewhereByLens[l.id] ?? 0;
+      return {
+        lens_id: l.id,
+        name: l.name,
+        total_qty: totalQty,
+        allocated_elsewhere: allocatedElsewhere,
+        available_to_allocate: Math.max(0, totalQty - allocatedElsewhere),
+        current_quota: currentByLens[l.id] ?? null,
+        already_booked: bookedByLens[l.id] ?? 0,
+      };
+    });
   }
 
-  const result: PhoneQuotaInfo[] = (phones ?? []).map((p) => {
-    const totalQty = Number(p.qty ?? 0);
-    const allocatedElsewhere = elsewhereByPhone[p.id] ?? 0;
-    return {
-      phone_id: p.id,
-      model_name: p.model_name,
-      total_qty: totalQty,
-      allocated_elsewhere: allocatedElsewhere,
-      available_to_allocate: Math.max(0, totalQty - allocatedElsewhere),
-      current_quota: currentByPhone[p.id] ?? null,
-      already_booked: bookedByPhone[p.id] ?? 0,
-    };
-  });
-
-  return NextResponse.json({ session_start_at: session.start_at, phones: result });
+  return NextResponse.json({ session_start_at: session.start_at, phones: phoneResult, lenses: lensResult });
 }
 
 // POST /api/admin/sessions/[sessionId]/quota — ตั้ง/แก้โควต้ามือถือของรอบนี้
@@ -151,36 +226,17 @@ export async function POST(
   if (!sessionId) return NextResponse.json({ error: "missing sessionId" }, { status: 400 });
 
   const body = await req.json().catch(() => null);
-  const items = (body as { items?: { phone_id?: string; qty?: unknown }[] } | null)?.items;
-  if (!Array.isArray(items) || items.length === 0) {
-    return NextResponse.json({ error: "items must be a non-empty array" }, { status: 400 });
+  const items = (body as { items?: { phone_id?: string; qty?: unknown }[] } | null)?.items ?? [];
+  const lensItems = (body as { lens_items?: { lens_id?: string; qty?: unknown }[] } | null)?.lens_items ?? [];
+  if (items.length === 0 && lensItems.length === 0) {
+    return NextResponse.json({ error: "items หรือ lens_items ต้องมีอย่างน้อย 1 รายการ" }, { status: 400 });
   }
 
   const supabase = getSupabase();
 
-  const { data: session, error: sessionErr } = await supabase
-    .from("concert_sessions")
-    .select("id, start_at")
-    .eq("id", sessionId)
-    .maybeSingle();
-
-  if (sessionErr) return NextResponse.json({ error: sessionErr.message }, { status: 500 });
-  if (!session?.start_at) return NextResponse.json({ error: "ไม่พบรอบนี้ หรือยังไม่ได้ตั้งวันเวลา" }, { status: 404 });
-
-  const { start, end } = getThaiDayRangeUtc(session.start_at);
-
-  const { data: sameDaySessions, error: sameDayErr } = await supabase
-    .from("concert_sessions")
-    .select("id")
-    .gte("start_at", start)
-    .lt("start_at", end)
-    .neq("id", sessionId);
-
-  if (sameDayErr) return NextResponse.json({ error: sameDayErr.message }, { status: 500 });
-  const sameDaySessionIds = (sameDaySessions ?? []).map((s) => s.id);
-
-  const nowIso = new Date().toISOString();
-
+  // ตั้ง/แก้โควต้าทีละรุ่นผ่าน RPC เดียว ที่ล็อกแถวมือถือ/เลนส์รุ่นนั้นไว้ก่อนเช็ค+เขียนในทรานแซกชันเดียวกัน
+  // (กัน race condition ถ้าแอดมิน 2 คนตั้งโควต้ารุ่นเดียวกันพร้อมกัน — ดู scripts/add_set_session_phone_quota_rpc.sql
+  // และ scripts/add_session_lens_quota_and_deposit_amount.sql)
   for (const item of items) {
     const phoneId = String(item.phone_id ?? "").trim();
     const qty = Number(item.qty);
@@ -189,65 +245,44 @@ export async function POST(
       return NextResponse.json({ error: `invalid qty for phone_id ${phoneId}` }, { status: 400 });
     }
 
-    const { data: phone, error: phoneErr } = await supabase
-      .from("phones")
-      .select("qty")
-      .eq("id", phoneId)
-      .maybeSingle();
-    if (phoneErr) return NextResponse.json({ error: phoneErr.message }, { status: 500 });
-    if (!phone) return NextResponse.json({ error: `ไม่พบมือถือ id ${phoneId}` }, { status: 404 });
+    const { data, error } = await supabase.rpc("set_session_phone_quota", {
+      p_session_id: sessionId,
+      p_phone_id: phoneId,
+      p_qty: qty,
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    // 1) ห้ามตั้งต่ำกว่ายอดที่ถูกจองไปแล้วจริงของรอบนี้ (รวม qty ต่อรายการ ไม่ใช่แค่นับจำนวนแถว
-    //    เพราะ 1 booking อาจจองมากกว่า 1 เครื่อง)
-    const { data: bookedRowsForPhone, error: bookedErr } = await supabase
-      .from("bookings")
-      .select("qty")
-      .eq("session_id", sessionId)
-      .eq("phone_id", phoneId)
-      .or(
-        `status.eq.confirmed,and(status.eq.pending,pending_expires_at.is.null),and(status.eq.pending,pending_expires_at.gt.${nowIso})`
-      );
-    if (bookedErr) return NextResponse.json({ error: bookedErr.message }, { status: 500 });
-    const bookedQtySum = (bookedRowsForPhone ?? []).reduce((sum, r) => sum + Number(r.qty ?? 1), 0);
-    if (qty < bookedQtySum) {
-      return NextResponse.json(
-        { error: `phone_id ${phoneId} ตั้งได้ต่ำสุด ${bookedQtySum} เพราะมีการจองอยู่แล้ว ${bookedQtySum} เครื่อง` },
-        { status: 400 }
-      );
+    const result = data as { ok?: boolean; error?: string } | null;
+    if (result?.error) {
+      return NextResponse.json({ error: `phone_id ${phoneId}: ${result.error}` }, { status: 400 });
+    }
+  }
+
+  for (const item of lensItems) {
+    const lensId = String(item.lens_id ?? "").trim();
+    const qty = Number(item.qty);
+    if (!lensId) return NextResponse.json({ error: "each lens item must have lens_id" }, { status: 400 });
+    if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty < 0) {
+      return NextResponse.json({ error: `invalid qty for lens_id ${lensId}` }, { status: 400 });
     }
 
-    // 2) ห้ามตั้งให้รวมกับโควต้าที่ให้รอบอื่น (วันเดียวกัน) แล้วเกินจำนวนที่ร้านมีจริง
-    let allocatedElsewhere = 0;
-    if (sameDaySessionIds.length > 0) {
-      const { data: elsewhereRows, error: elsewhereErr } = await supabase
-        .from("session_phone_inventory")
-        .select("qty")
-        .in("session_id", sameDaySessionIds)
-        .eq("phone_id", phoneId);
-      if (elsewhereErr) return NextResponse.json({ error: elsewhereErr.message }, { status: 500 });
-      allocatedElsewhere = (elsewhereRows ?? []).reduce((sum, r) => sum + Number(r.qty ?? 0), 0);
-    }
+    const { data, error } = await supabase.rpc("set_session_lens_quota", {
+      p_session_id: sessionId,
+      p_lens_id: lensId,
+      p_qty: qty,
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    const availableToAllocate = Number(phone.qty ?? 0) - allocatedElsewhere;
-    if (qty > availableToAllocate) {
-      return NextResponse.json(
-        {
-          error: `phone_id ${phoneId} ตั้งได้สูงสุด ${availableToAllocate} เพราะมีรอบอื่นในวันเดียวกันจัดสรรไปแล้ว ${allocatedElsewhere} จากทั้งหมด ${phone.qty}`,
-        },
-        { status: 400 }
-      );
+    const result = data as { ok?: boolean; error?: string } | null;
+    if (result?.error) {
+      return NextResponse.json({ error: `lens_id ${lensId}: ${result.error}` }, { status: 400 });
     }
-
-    const { error: upsertErr } = await supabase
-      .from("session_phone_inventory")
-      .upsert({ session_id: sessionId, phone_id: phoneId, qty }, { onConflict: "session_id,phone_id" });
-    if (upsertErr) return NextResponse.json({ error: upsertErr.message }, { status: 500 });
   }
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
-    action: "ตั้งโควต้ามือถือของรอบ",
-    detail: `session_id: ${sessionId}, items: ${items.length} รายการ`,
+    action: "ตั้งโควต้าของรอบ",
+    detail: `session_id: ${sessionId}, มือถือ: ${items.length} รายการ, เลนส์: ${lensItems.length} รายการ`,
   });
 
   return NextResponse.json({ ok: true });

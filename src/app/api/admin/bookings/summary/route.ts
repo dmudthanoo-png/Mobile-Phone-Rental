@@ -30,10 +30,12 @@ export async function GET(req: NextRequest) {
     .select("id", { count: "exact", head: true })
     .eq("status", "rejected");
 
-  // ✅ revenue รวมเฉพาะ confirmed
+  // ✅ revenue รวมเฉพาะ confirmed — เป็นมูลค่าการจองรวม (คาดการณ์) ไม่ใช่เงินที่ได้รับจริงทั้งหมด
+  // เพราะ total_amount รวมส่วนที่ลูกค้าจ่ายวันรับเครื่องด้วย ซึ่งไม่เคยผ่านแอปนี้เลย
+  // ยอดที่ยืนยันรับจริงผ่านแอป (โอนมัดจำ+ตรวจสลิปแล้ว) คือ deposit_received ต่างหาก
   const confirmedAmounts = await supabase
     .from("bookings")
-    .select("total_amount")
+    .select("total_amount, deposit_amount")
     .eq("status", "confirmed");
 
   // ถ้ามี error อันไหน ให้แจ้ง
@@ -55,13 +57,22 @@ export async function GET(req: NextRequest) {
       0
     );
 
+  // deposit_amount เป็น null สำหรับ booking เก่าที่จองก่อนมีคอลัมน์นี้ (ไม่ได้ backfill ไว้) — นับเฉพาะที่มีค่าจริง
+  const depositReceived =
+    (confirmedAmounts.data ?? []).reduce(
+      (acc: number, row: { deposit_amount: number | string | null }) =>
+        acc + (Number(row.deposit_amount) || 0),
+      0
+    );
+
   return NextResponse.json(
     {
       total: total.count ?? 0,
       pending: pending.count ?? 0,
       confirmed: confirmed.count ?? 0,
       rejected: rejected.count ?? 0,
-      revenue, // ✅ เพิ่มตัวนี้
+      revenue, // ✅ มูลค่าการจองรวม (คาดการณ์) — รวมส่วนที่จ่ายวันรับเครื่องด้วย
+      deposit_received: depositReceived, // ✅ ยอดมัดจำที่ยืนยันรับจริงผ่านแอป
     },
     { headers: { "Cache-Control": "no-store" } }
   );

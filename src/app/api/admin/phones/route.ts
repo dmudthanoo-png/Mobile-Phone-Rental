@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from("phones")
-    .select("id, model_name, image_url, price, deposit, qty")
+    .select("id, model_name, image_url, price, deposit, qty, active")
     .order("model_name", { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabase
     .from("phones")
     .insert({ model_name, price, deposit, image_url, qty })
-    .select("id, model_name, image_url, price, deposit, qty")
+    .select("id, model_name, image_url, price, deposit, qty, active")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -115,9 +115,11 @@ export async function PATCH(req: NextRequest) {
   const price      = form.get("price");
   const deposit    = form.get("deposit");
   const qty        = form.get("qty");
+  const active     = form.get("active");
   const imageFile  = form.get("image");
 
   if (model_name) updates.model_name = model_name;
+  if (active !== null) updates.active = active === "true";
   if (price !== null && price !== "") {
     const p = Number(price);
     if (!Number.isFinite(p) || p <= 0) return NextResponse.json({ error: "price must be a finite number > 0" }, { status: 400 });
@@ -131,6 +133,29 @@ export async function PATCH(req: NextRequest) {
   if (qty !== null && qty !== "") {
     const q = Number(qty);
     if (!Number.isFinite(q) || !Number.isInteger(q) || q < 0) return NextResponse.json({ error: "qty must be a non-negative integer" }, { status: 400 });
+
+    // ถ้าลดจำนวนเครื่องรวม ต้องไม่ต่ำกว่าโควต้าที่จัดสรรให้รอบต่างๆ ไปแล้วรวมกันในวันใดวันหนึ่ง
+    // (กันลด stock รวมแล้วโควต้าเดิมที่ตั้งไว้เกินจำนวนเครื่องจริงแบบไม่รู้ตัว)
+    const { data: allocRows, error: allocErr } = await supabase
+      .from("session_phone_inventory")
+      .select("qty, concert_sessions ( start_at )")
+      .eq("phone_id", id);
+    if (allocErr) return NextResponse.json({ error: allocErr.message }, { status: 500 });
+
+    const totalByDay: Record<string, number> = {};
+    for (const row of allocRows ?? []) {
+      const startAt = (row.concert_sessions as unknown as { start_at: string } | null)?.start_at;
+      if (!startAt) continue;
+      const dayKey = new Date(startAt).toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+      totalByDay[dayKey] = (totalByDay[dayKey] ?? 0) + Number(row.qty ?? 0);
+    }
+    const maxDayTotal = Object.values(totalByDay).reduce((max, v) => Math.max(max, v), 0);
+    if (q < maxDayTotal) {
+      return NextResponse.json(
+        { error: `ลดจำนวนเครื่องรวมต่ำกว่า ${maxDayTotal} ไม่ได้ เพราะมีวันที่จัดสรรโควต้าให้รอบต่างๆ ไปแล้วรวมกัน ${maxDayTotal} เครื่อง กรุณาลดโควต้าของรอบนั้นๆ ก่อน` },
+        { status: 400 }
+      );
+    }
     updates.qty = q;
   }
 

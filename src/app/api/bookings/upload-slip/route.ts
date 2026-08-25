@@ -137,16 +137,22 @@ export async function POST(req: NextRequest) {
 
     // 2.5) verify session ว่ามีอยู่จริง + คอนเสิร์ตยังไม่ archive (กันจองรอบที่เก็บเข้าคลังไปแล้ว)
     //      + รอบยังไม่ผ่านไปแล้ว (กันจองย้อนหลังรอบที่จบไปแล้วจาก session_id เก่าที่ค้างอยู่)
+    //      + คอนเสิร์ตต้องแสดงผลอยู่ และถึงเวลาเผยแพร่แล้ว (กันจองข้ามขั้นตอนผ่าน session_id/phone_id ตรงๆ
+    //      โดยไม่ผ่านหน้าเว็บที่ซ่อน/ยังไม่เปิดคอนเสิร์ตนี้ไว้ — เหมือนที่กันไว้แล้วใน /api/concerts/[id])
     const { data: sessionCheck, error: sessionCheckErr } = await supabaseAdmin
       .from("concert_sessions")
-      .select("id, start_at, concerts ( archived )")
+      .select("id, start_at, concerts ( archived, is_visible, publish_at )")
       .eq("id", session_id)
       .maybeSingle();
 
     if (sessionCheckErr) return NextResponse.json({ error: sessionCheckErr.message }, { status: 500 });
     if (!sessionCheck) return NextResponse.json({ error: "session not found" }, { status: 404 });
-    const concertArchived = (sessionCheck.concerts as unknown as { archived: boolean } | null)?.archived;
-    if (concertArchived) return NextResponse.json({ error: "concert archived" }, { status: 400 });
+    const concertRow = sessionCheck.concerts as unknown as { archived: boolean; is_visible: boolean | null; publish_at: string | null } | null;
+    if (concertRow?.archived) return NextResponse.json({ error: "concert archived" }, { status: 400 });
+    if (concertRow?.is_visible === false) return NextResponse.json({ error: "concert hidden" }, { status: 400 });
+    if (concertRow?.publish_at && new Date(concertRow.publish_at).getTime() > Date.now()) {
+      return NextResponse.json({ error: "concert not published yet" }, { status: 400 });
+    }
     if (sessionCheck.start_at && new Date(sessionCheck.start_at).getTime() < Date.now()) {
       return NextResponse.json({ error: "session already passed" }, { status: 400 });
     }
@@ -256,6 +262,7 @@ export async function POST(req: NextRequest) {
       p_total_amount: verifiedAmount,
       p_slip_url:     slip_url,
       p_ref_number:   null,
+      p_deposit_amount: Math.round(deposit * qty),
     });
 
     if (rpc.error) {
@@ -269,6 +276,9 @@ export async function POST(req: NextRequest) {
       }
       if (msg.includes("PHONE_NOT_CONFIGURED_FOR_SESSION")) {
         return NextResponse.json({ error: "sold_out" }, { status: 409 });
+      }
+      if (msg.includes("LENS_NOT_CONFIGURED_FOR_SESSION")) {
+        return NextResponse.json({ error: "lens_sold_out" }, { status: 409 });
       }
       return NextResponse.json({ error: msg }, { status: 500 });
     }

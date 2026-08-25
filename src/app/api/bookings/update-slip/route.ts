@@ -145,6 +145,9 @@ export async function POST(req: NextRequest) {
   // ✅ อัปเดต slip_url + reset status → pending ให้ admin รู้ว่ามีสลิปใหม่ พร้อมนับจำนวนครั้ง +
   // บันทึกเวลาล่าสุด (กันสแปม) — ผูก .eq("slip_update_count", updateCount) ไว้ด้วยเป็น optimistic lock
   // กัน race condition ถ้ามี request อื่นมาอัปเดตพร้อมกันแล้วนับซ้ำ/ข้าม limit ไปได้
+  // ✅ reset ผลตรวจสลิปเก่าทิ้งด้วยเสมอ (slip_verified/message/amount/ref/verified_at) — ไม่งั้นถ้า
+  // SlipOK ปิดอยู่หรือเรียกไม่สำเร็จตอนตรวจสลิปใหม่ (แค่ log แล้วไปต่อแบบ best-effort ด้านล่าง)
+  // ค่าผลตรวจของสลิป "ใบเก่า" จะค้างแสดงเป็นผลของสลิปใหม่ให้แอดมินเห็นผิดๆ
   const { error: upRowErr, count: updatedCount } = await supabaseAdmin
     .from("bookings")
     .update(
@@ -153,6 +156,11 @@ export async function POST(req: NextRequest) {
         status: "pending",
         slip_update_count: updateCount + 1,
         last_slip_update_at: new Date().toISOString(),
+        slip_verified: false,
+        slip_verify_message: null,
+        slip_verify_amount: null,
+        slip_verify_ref: null,
+        slip_verified_at: null,
       },
       { count: "exact" }
     )

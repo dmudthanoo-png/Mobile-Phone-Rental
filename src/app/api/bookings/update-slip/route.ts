@@ -130,8 +130,9 @@ export async function POST(req: NextRequest) {
   }
 
   const ext = sniffedType === "image/png" ? "png" : sniffedType === "image/webp" ? "webp" : "jpg";
-  // Do not put a LINE identifier in an object path; use an opaque server-generated name instead.
-  const fileName = "bookings/" + crypto.randomUUID() + "." + ext;
+  // ห้ามใส่ LINE sub ลงใน object path — ใช้ user_id (uuid ภายในระบบ ไม่ใช่ LINE ID) + uuid สุ่มแทน
+  // ให้พาธมีโครงสร้างสอดคล้องกับ upload-slip/route.ts (scope ตาม user_id เหมือนกัน)
+  const fileName = `bookings/${user_id}/${bookingId}/${crypto.randomUUID()}.${ext}`;
 
   const { error: upErr } = await supabaseAdmin.storage
     .from("slips").upload(fileName, buffer, { contentType: sniffedType, upsert: true });

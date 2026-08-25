@@ -181,9 +181,11 @@ export default function Navbar({
               <div style={{ width: 1, height: 14, background: glassBorder }} />
               <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                 {user.picture ? (
-                  <img
+                  <Image
                     src={user.picture}
                     alt="profile"
+                    width={24}
+                    height={24}
                     style={{ width: 24, height: 24, borderRadius: "50%", objectFit: "cover" }}
                   />
                 ) : (
@@ -294,7 +296,7 @@ export default function Navbar({
           {user && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", marginBottom: 4 }}>
               {user.picture ? (
-                <img src={user.picture} alt="profile" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
+                <Image src={user.picture} alt="profile" width={32} height={32} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
               ) : (
                 <div
                   style={{

@@ -829,7 +829,7 @@ export default function PhoneRentalHome() {
                     >
                       <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 12, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", position: "relative", flexShrink: 0 }}>
                         {c.poster_url ? (
-                          <img src={c.poster_url} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          <Image src={c.poster_url} alt={c.title} fill sizes="(max-width: 640px) 45vw, 200px" style={{ objectFit: "cover" }} />
                         ) : (
                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, color: sub, fontSize: 12 }}>ไม่มีโปสเตอร์</div>
                         )}
@@ -883,9 +883,9 @@ export default function PhoneRentalHome() {
               </div>
               {selectedConcert && (
                 <div style={{ ...doodle.cardYellow, padding: 14, marginBottom: 12, color: ink, display: "flex", gap: 14, alignItems: "center" }}>
-                  <div style={{ width: 100, aspectRatio: "3/4", borderRadius: 14, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", flexShrink: 0 }}>
+                  <div style={{ width: 100, aspectRatio: "3/4", borderRadius: 14, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", flexShrink: 0, position: "relative" }}>
                     {selectedConcert.poster_url ? (
-                      <img src={selectedConcert.poster_url} alt={selectedConcert.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      <Image src={selectedConcert.poster_url} alt={selectedConcert.title} fill sizes="100px" style={{ objectFit: "cover" }} />
                     ) : (
                       <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28 }}>🎫</div>
                     )}
@@ -954,8 +954,8 @@ export default function PhoneRentalHome() {
                             }}
                             style={{ display: "flex", gap: 10, alignItems: "center", cursor: "pointer" }}
                           >
-                            <div style={{ width: 52, height: 52, borderRadius: 12, border: `1px solid ${line}`, overflow: "hidden", background: "#fafafa", flexShrink: 0 }}>
-                              {p.image_url ? <img src={p.image_url} alt={p.model_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: muted, fontSize: 18 }}>📱</div>}
+                            <div style={{ width: 52, height: 52, borderRadius: 12, border: `1px solid ${line}`, overflow: "hidden", background: "#fafafa", flexShrink: 0, position: "relative" }}>
+                              {p.image_url ? <Image src={p.image_url} alt={p.model_name} fill sizes="52px" style={{ objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: muted, fontSize: 18 }}>📱</div>}
                             </div>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 700, fontSize: 14 }}>{p.model_name}</div>
@@ -1235,10 +1235,12 @@ export default function PhoneRentalHome() {
 
               <div style={{ ...doodle.card, padding: "16px 16px 18px", marginBottom: 16, textAlign: "center", color: ink }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: ink, marginBottom: 10 }}>📷 สแกน QR เพื่อโอนผ่านแอปธนาคาร</div>
-                <img
+                <Image
                   src="/payment-qr.png"
                   alt="QR พร้อมเพย์สำหรับโอนเงิน"
-                  style={{ width: "100%", maxWidth: 320, borderRadius: 14, border: `1px solid ${line}`, display: "block", margin: "0 auto" }}
+                  width={656}
+                  height={643}
+                  style={{ width: "100%", maxWidth: 320, height: "auto", borderRadius: 14, border: `1px solid ${line}`, display: "block", margin: "0 auto" }}
                 />
                 <button
                   onClick={handleSaveQr}
@@ -1266,6 +1268,8 @@ export default function PhoneRentalHome() {
                 <div style={{ border: `1.5px dashed ${slipPreview ? good : borderStrong}`, borderRadius: 16, padding: 20, textAlign: "center", background: slipPreview ? goodSoft : "#fff", transition: "all .2s" }}>
                   {slipPreview ? (
                     <div>
+                      {/* blob: URL ตัวอย่างไฟล์ที่เพิ่งเลือกในเครื่อง — next/image เพิ่ม optimize ให้ไม่ได้ (ไม่มี server ให้ไปดึง) */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={slipPreview} alt="slip" style={{ maxHeight: 140, borderRadius: 10, objectFit: "contain", margin: "0 auto", display: "block" }} />
                       <p style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: good }}>แนบสลิปแล้ว แตะเพื่อเปลี่ยน</p>
                     </div>
@@ -1447,9 +1451,9 @@ export default function PhoneRentalHome() {
               <button onClick={() => setUpcomingDetail(null)} aria-label="ปิดหน้าต่างรายละเอียด" style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: sub, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✕</button>
             </div>
             <div style={{ padding: "16px 18px", overflowY: "auto" }}>
-              <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 14, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", marginBottom: 14 }}>
+              <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: 14, border: `1px solid ${line}`, background: "#fafafa", overflow: "hidden", marginBottom: 14, position: "relative" }}>
                 {upcomingDetail.poster_url ? (
-                  <img src={upcomingDetail.poster_url} alt={upcomingDetail.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  <Image src={upcomingDetail.poster_url} alt={upcomingDetail.title} fill sizes="380px" style={{ objectFit: "cover" }} />
                 ) : (
                   <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, color: sub, fontSize: 13 }}>ไม่มีโปสเตอร์</div>
                 )}

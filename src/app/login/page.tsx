@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 const ink = "#332E2C";
 const sub = "#A39A93";
@@ -108,9 +109,11 @@ export default function LoginPage() {
     >
       <div style={{ width: "100%", maxWidth: 380, textAlign: "center" }}>
         {/* Logo */}
-        <img
+        <Image
           src="/crabby-logo.png"
           alt="Crabby เช่ามือถือ"
+          width={835}
+          height={771}
           style={{
             display: "block",
             width: 170,

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import Navbar from "../Navbar";
 import Footer from "../Footer";
 
@@ -169,7 +170,7 @@ export default function ReviewPage() {
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: "#FFF9F3", fontFamily: uiFont, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
-        <img src="/crabby-logo.png" alt="Crabby" style={{ width: 56, height: "auto" }} />
+        <Image src="/crabby-logo.png" alt="Crabby" width={835} height={771} style={{ width: 56, height: "auto" }} />
         <div style={{ fontSize: 13, fontWeight: 600, color: sub }}>กำลังโหลด...</div>
       </div>
     );

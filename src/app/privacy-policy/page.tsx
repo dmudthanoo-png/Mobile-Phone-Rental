@@ -72,7 +72,7 @@ export default function PrivacyPolicyPage() {
       style={{
         minHeight: "100vh",
         background:
-          "radial-gradient(60vw 60vw circle at 10% 0%, rgba(242,70,126,0.20), rgba(242,70,126,0) 70%), radial-gradient(55vw 55vw circle at 100% 20%, rgba(131,84,232,0.16), rgba(131,84,232,0) 70%), #FFFBF7",
+          "radial-gradient(60vw circle at 10% 0%, rgba(242,70,126,0.20), rgba(242,70,126,0) 70%), radial-gradient(55vw circle at 100% 20%, rgba(131,84,232,0.16), rgba(131,84,232,0) 70%), #FFFBF7",
         fontFamily: pageFont,
       }}
     >

@@ -114,9 +114,9 @@ function AmbientGlow() {
         zIndex: 0,
         pointerEvents: "none",
         background:
-          "radial-gradient(60vw 60vw circle at 12% 0%, rgba(242,70,126,0.30), rgba(242,70,126,0) 70%)," +
-          "radial-gradient(55vw 55vw circle at 100% 15%, rgba(131,84,232,0.26), rgba(131,84,232,0) 70%)," +
-          "radial-gradient(60vw 60vw circle at 82% 100%, rgba(35,201,214,0.22), rgba(35,201,214,0) 72%)",
+          "radial-gradient(60vw circle at 12% 0%, rgba(242,70,126,0.30), rgba(242,70,126,0) 70%)," +
+          "radial-gradient(55vw circle at 100% 15%, rgba(131,84,232,0.26), rgba(131,84,232,0) 70%)," +
+          "radial-gradient(60vw circle at 82% 100%, rgba(35,201,214,0.22), rgba(35,201,214,0) 72%)",
       }}
     />
   );

@@ -5,6 +5,7 @@ import { syncBookingToSheet } from "@/lib/sheetsSync";
 import { verifySlipForBooking } from "@/lib/slipOk";
 import { findOrCreateLineUser } from "@/lib/lineSession";
 import { sniffImageMimeType } from "@/lib/imageUpload";
+import { PRIVACY_NOTICE_VERSION } from "@/lib/privacyNotice";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,6 +81,20 @@ export async function POST(req: NextRequest) {
     }
 
     const user_id = linkedUser.userId;
+
+    // 1.5) ต้องรับทราบนโยบายความเป็นส่วนตัวเวอร์ชันปัจจุบันก่อนเสมอ — เช็คฝั่ง server
+    //      ห้ามพึ่งแค่ลำดับการกดปุ่มฝั่ง client เพราะ endpoint นี้เรียกตรงได้โดยข้ามหน้า UI
+    const { data: ack, error: ackErr } = await supabaseAdmin
+      .from("privacy_notice_acknowledgements")
+      .select("user_id")
+      .eq("user_id", user_id)
+      .eq("policy_version", PRIVACY_NOTICE_VERSION)
+      .maybeSingle();
+
+    if (ackErr) return NextResponse.json({ error: ackErr.message }, { status: 500 });
+    if (!ack) {
+      return NextResponse.json({ error: "privacy_notice_not_acknowledged" }, { status: 403 });
+    }
 
     // 2) parse form-data
     const form = await req.formData();

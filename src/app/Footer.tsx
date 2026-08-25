@@ -19,6 +19,7 @@ const quickLinks = [
   { href: "/#events", label: "อีเวนต์" },
   { href: "/how-to-book", label: "วิธีการจอง" },
   { href: "/#faq", label: "FAQ" },
+  { href: "/privacy-policy", label: "นโยบายความเป็นส่วนตัว" },
 ];
 
 function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {

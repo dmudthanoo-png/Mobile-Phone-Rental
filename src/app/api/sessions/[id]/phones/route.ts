@@ -33,12 +33,38 @@ export async function GET(
       return NextResponse.json({ phones: [] }, { headers: { "Cache-Control": "no-store" } });
     }
 
-    // 2) ดึงเลนส์ที่ผูกกับมือถือแต่ละรุ่น (join ผ่าน phone_lenses)
+    // 2-4) ทั้งสามคำสั่งนี้ไม่ต้องรอกันเอง (แค่ต้องมี phoneIds/sessionId จากขั้นตอนที่ 1) เดิม await
+    // ทีละคำสั่งทำให้รวมเวลารอ 3 round-trip ต่อกัน ยิงพร้อมกันเลยลดเวลารอเหลือแค่ตัวที่ช้าที่สุดตัวเดียว
     const phoneIds = phoneRows.map((p) => p.id);
-    const { data: linkRows, error: linkErr } = await supabase
-      .from("phone_lenses")
-      .select("phone_id, lenses ( id, name, focal_mm, price, qty, active )")
-      .in("phone_id", phoneIds);
+    const nowIso = new Date().toISOString();
+
+    const [
+      { data: linkRows, error: linkErr },
+      { data: invRows, error: invErr },
+      { data: bookedRows, error: bkErr },
+    ] = await Promise.all([
+      // 2) ดึงเลนส์ที่ผูกกับมือถือแต่ละรุ่น (join ผ่าน phone_lenses)
+      supabase
+        .from("phone_lenses")
+        .select("phone_id, lenses ( id, name, focal_mm, price, qty, active )")
+        .in("phone_id", phoneIds),
+      // 3) จำนวนที่ตั้งไว้เฉพาะรอบนี้ — ต้องตั้งไว้ก่อนถึงจะจองรุ่นนั้นได้ (บังคับ ไม่ fallback ไปจำนวนรวมร้านแล้ว
+      //    เพราะจำนวนรวมร้านอาจถูกจัดสรรให้รอบอื่นในวันเดียวกันไปแล้วบางส่วน ตรงกับที่ RPC ฝั่งจองจริงบังคับ)
+      supabase
+        .from("session_phone_inventory")
+        .select("phone_id, qty")
+        .eq("session_id", sessionId)
+        .in("phone_id", phoneIds),
+      // 4) นับจำนวนมือถือที่ถูกจองอยู่ (confirmed + pending ที่ยังไม่หมดอายุ) เฉพาะ "รอบนี้" เท่านั้น
+      //    (มือถือ/เลนส์คืนหลังจบแต่ละรอบ ดังนั้นสต็อกต้องรีเซ็ตต่อรอบ ไม่ใช่รวมทุกรอบของคอนเสิร์ต)
+      supabase
+        .from("bookings")
+        .select("phone_id, qty, lens_id, lens_qty")
+        .eq("session_id", sessionId)
+        .or(
+          `status.eq.confirmed,and(status.eq.pending,pending_expires_at.is.null),and(status.eq.pending,pending_expires_at.gt.${nowIso})`
+        ),
+    ]);
 
     if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 500 });
 
@@ -52,31 +78,12 @@ export async function GET(
       lensesByPhone[r.phone_id] = arr;
     }
 
-    // 3) จำนวนที่ตั้งไว้เฉพาะรอบนี้ — ต้องตั้งไว้ก่อนถึงจะจองรุ่นนั้นได้ (บังคับ ไม่ fallback ไปจำนวนรวมร้านแล้ว
-    //    เพราะจำนวนรวมร้านอาจถูกจัดสรรให้รอบอื่นในวันเดียวกันไปแล้วบางส่วน ตรงกับที่ RPC ฝั่งจองจริงบังคับ)
-    const { data: invRows, error: invErr } = await supabase
-      .from("session_phone_inventory")
-      .select("phone_id, qty")
-      .eq("session_id", sessionId)
-      .in("phone_id", phoneIds);
-
     if (invErr) return NextResponse.json({ error: invErr.message }, { status: 500 });
 
     const sessionQtyByPhone: Record<string, number> = {};
     for (const r of invRows ?? []) {
       if (r.phone_id) sessionQtyByPhone[r.phone_id] = Number(r.qty ?? 0);
     }
-
-    // 4) นับจำนวนมือถือที่ถูกจองอยู่ (confirmed + pending ที่ยังไม่หมดอายุ) เฉพาะ "รอบนี้" เท่านั้น
-    //    (มือถือ/เลนส์คืนหลังจบแต่ละรอบ ดังนั้นสต็อกต้องรีเซ็ตต่อรอบ ไม่ใช่รวมทุกรอบของคอนเสิร์ต)
-    const nowIso = new Date().toISOString();
-    const { data: bookedRows, error: bkErr } = await supabase
-      .from("bookings")
-      .select("phone_id, qty, lens_id, lens_qty")
-      .eq("session_id", sessionId)
-      .or(
-        `status.eq.confirmed,and(status.eq.pending,pending_expires_at.is.null),and(status.eq.pending,pending_expires_at.gt.${nowIso})`
-      );
 
     if (bkErr) return NextResponse.json({ error: bkErr.message }, { status: 500 });
 

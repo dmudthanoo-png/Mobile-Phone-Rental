@@ -17,5 +17,5 @@ create index if not exists privacy_notice_acknowledgements_user_id_idx
 alter table public.privacy_notice_acknowledgements enable row level security;
 
 revoke all on table public.privacy_notice_acknowledgements from public, anon, authenticated;
-grant select, insert, update, delete on table public.privacy_notice_acknowledgements to service_role;
+grant select, insert, update on table public.privacy_notice_acknowledgements to service_role;
 grant usage, select on sequence public.privacy_notice_acknowledgements_id_seq to service_role;

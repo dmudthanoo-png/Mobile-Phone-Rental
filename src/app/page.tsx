@@ -205,6 +205,10 @@ export default function PhoneRentalHome() {
   const [concertFilter, setConcertFilter] = useState<"all" | "open" | "upcoming">("all");
   const [sessions, setSessions] = useState<ConcertSession[]>([]);
   const [phones, setPhones] = useState<PhoneOption[]>([]);
+  // แยก loading ออกจาก "โหลดเสร็จแล้วแต่ไม่มีข้อมูล" ไม่งั้นระหว่างรอ fetch จะโผล่ข้อความ
+  // "ยังไม่มีรอบ"/"ยังไม่มีมือถือในระบบ" วาบขึ้นมาก่อนสักครู่แล้วค่อยเปลี่ยนเป็นข้อมูลจริง ดูเหมือนหน่วง/บั๊ก
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [phonesLoading, setPhonesLoading] = useState(false);
 
   const [selectedConcertId, setSelectedConcertId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -335,18 +339,25 @@ export default function PhoneRentalHome() {
   }
 
   async function loadSessions(concertId: string) {
-    const res = await fetch(`/api/concerts/${concertId}`, { cache: "no-store" });
-    const raw = await res.text();
-    if (!res.ok) {
-      const parsed = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
-      if (await redirectIfBanned(res.status, parsed)) return;
-      throw new Error(raw || "failed to load sessions");
+    setSessionsLoading(true);
+    try {
+      const res = await fetch(`/api/concerts/${concertId}`, { cache: "no-store" });
+      const raw = await res.text();
+      if (!res.ok) {
+        const parsed = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
+        if (await redirectIfBanned(res.status, parsed)) return;
+        throw new Error(raw || "failed to load sessions");
+      }
+      const out = raw ? JSON.parse(raw) : null;
+      setSessions(out?.sessions ?? []);
+    } finally {
+      setSessionsLoading(false);
     }
-    const out = raw ? JSON.parse(raw) : null;
-    setSessions(out?.sessions ?? []);
   }
 
   async function loadPhones(sessionId: string) {
+    setPhonesLoading(true);
+    try {
     const res = await fetch(`/api/sessions/${sessionId}/phones`, { cache: "no-store" });
     const raw = await res.text();
     if (!res.ok) {
@@ -356,6 +367,9 @@ export default function PhoneRentalHome() {
     }
     const out = raw ? JSON.parse(raw) : null;
     setPhones(out?.phones ?? []);
+    } finally {
+      setPhonesLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -873,7 +887,8 @@ export default function PhoneRentalHome() {
                       </button>
                     );
                   })}
-                  {sessions.length === 0 && <div style={{ fontSize: 13, fontWeight: 500, color: sub }}>ยังไม่มีรอบ</div>}
+                  {sessionsLoading && <div style={{ fontSize: 13, fontWeight: 500, color: sub }}>⏳ กำลังโหลดรอบ...</div>}
+                  {!sessionsLoading && sessions.length === 0 && <div style={{ fontSize: 13, fontWeight: 500, color: sub }}>ยังไม่มีรอบ</div>}
                 </div>
               </div>
               <div style={{ ...doodle.card, padding: 14, color: ink }}>
@@ -889,6 +904,8 @@ export default function PhoneRentalHome() {
                 </div>
                 {!selectedSessionId ? (
                   <div style={{ fontSize: 13, fontWeight: 500, color: sub }}>กรุณาเลือกรอบก่อน</div>
+                ) : phonesLoading ? (
+                  <div style={{ fontSize: 13, fontWeight: 500, color: sub }}>⏳ กำลังโหลดมือถือ...</div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {phones.filter((p) => p.remaining > 0).map((p) => {

@@ -334,12 +334,40 @@ export default function PhoneRentalHome() {
       throw new Error(raw || "failed to load concerts");
     }
     const out = raw ? JSON.parse(raw) : null;
-    setConcerts(out?.concerts ?? []);
+    const liveConcerts: Concert[] = out?.concerts ?? [];
+    setConcerts(liveConcerts);
     setUpcomingConcerts(out?.upcoming ?? []);
+
+    // ยิงโหลดรอบของทุกคอนเสิร์ตที่เปิดจองอยู่ไว้ล่วงหน้าเงียบๆ (fire-and-forget ไม่ await)
+    // พอผู้ใช้กดเลือกคอนเสิร์ตจริง จะได้ขึ้นรอบให้ทันทีจาก cache ไม่ต้องรอโหลดใหม่
+    liveConcerts.forEach((c) => { prefetchSessions(c.id); });
   }
 
+  // เก็บผลรอบของแต่ละคอนเสิร์ตไว้ใน cache กันโหลดซ้ำ — แค่เติม cache เฉยๆ ไม่แตะ state
+  // ที่กำลังโชว์อยู่ เพื่อไม่ให้ prefetch คอนเสิร์ตอื่นไปทับหน้าจอที่ผู้ใช้เลือกอยู่ปัจจุบัน
+  const sessionsCacheRef = useRef<Record<string, ConcertSession[]>>({});
+  async function prefetchSessions(concertId: string) {
+    if (sessionsCacheRef.current[concertId]) return;
+    try {
+      const res = await fetch(`/api/concerts/${concertId}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const out = await res.json().catch(() => null);
+      sessionsCacheRef.current[concertId] = out?.sessions ?? [];
+    } catch {
+      // prefetch เบื้องหลัง เงียบไว้พอ ถ้าพลาดก็แค่ไปโหลดสดตอนกดเลือกจริงแทน
+    }
+  }
+
+  const selectedConcertIdRef = useRef<string | null>(null);
+  useEffect(() => { selectedConcertIdRef.current = selectedConcertId; }, [selectedConcertId]);
+
   async function loadSessions(concertId: string) {
-    setSessionsLoading(true);
+    const cached = sessionsCacheRef.current[concertId];
+    if (cached) {
+      setSessions(cached); // มี cache แล้วโชว์ได้ทันทีเลย ไม่ต้องขึ้น spinner
+    } else {
+      setSessionsLoading(true);
+    }
     try {
       const res = await fetch(`/api/concerts/${concertId}`, { cache: "no-store" });
       const raw = await res.text();
@@ -349,24 +377,27 @@ export default function PhoneRentalHome() {
         throw new Error(raw || "failed to load sessions");
       }
       const out = raw ? JSON.parse(raw) : null;
-      setSessions(out?.sessions ?? []);
+      const list = out?.sessions ?? [];
+      sessionsCacheRef.current[concertId] = list;
+      // ผู้ใช้อาจสลับไปเลือกคอนเสิร์ตอื่นแล้วระหว่างรอ fetch นี้ค้างอยู่ — อัปเดตแค่ตอนยังเลือกอันนี้อยู่จริง
+      if (selectedConcertIdRef.current === concertId) setSessions(list);
     } finally {
-      setSessionsLoading(false);
+      if (!cached) setSessionsLoading(false);
     }
   }
 
   async function loadPhones(sessionId: string) {
     setPhonesLoading(true);
     try {
-    const res = await fetch(`/api/sessions/${sessionId}/phones`, { cache: "no-store" });
-    const raw = await res.text();
-    if (!res.ok) {
-      const parsed = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
-      if (await redirectIfBanned(res.status, parsed)) return;
-      throw new Error(raw || "failed to load phones");
-    }
-    const out = raw ? JSON.parse(raw) : null;
-    setPhones(out?.phones ?? []);
+      const res = await fetch(`/api/sessions/${sessionId}/phones`, { cache: "no-store" });
+      const raw = await res.text();
+      if (!res.ok) {
+        const parsed = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
+        if (await redirectIfBanned(res.status, parsed)) return;
+        throw new Error(raw || "failed to load phones");
+      }
+      const out = raw ? JSON.parse(raw) : null;
+      setPhones(out?.phones ?? []);
     } finally {
       setPhonesLoading(false);
     }

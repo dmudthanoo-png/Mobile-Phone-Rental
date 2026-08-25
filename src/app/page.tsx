@@ -628,11 +628,16 @@ export default function PhoneRentalHome() {
         });
         if (!acknowledgementRes.ok) {
           const out = await acknowledgementRes.json().catch(() => null);
-          throw new Error(out?.error || "ไม่สามารถบันทึกการรับทราบนโยบายความเป็นส่วนตัวได้");
+          if (await redirectIfBanned(acknowledgementRes.status, out)) return;
+          if (acknowledgementRes.status === 401) {
+            router.push("/login");
+            return;
+          }
+          throw new Error("ไม่สามารถบันทึกการรับทราบนโยบายความเป็นส่วนตัวได้ กรุณาลองใหม่อีกครั้ง");
         }
         setStep(4);
       } catch (e: unknown) {
-        setPageError(e instanceof Error ? e.message : "ไม่สามารถบันทึกการรับทราบนโยบายความเป็นส่วนตัวได้");
+        setPageError(e instanceof Error ? e.message : "ไม่สามารถบันทึกการรับทราบนโยบายความเป็นส่วนตัวได้ กรุณาลองใหม่อีกครั้ง");
       } finally {
         setAcknowledgingPrivacyNotice(false);
       }
@@ -1261,46 +1266,57 @@ export default function PhoneRentalHome() {
                 </div>
               </div>
 
-              {/* ── Terms Consent ── */}
-              <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 16, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={agreedTerms}
-                  onChange={(e) => setAgreedTerms(e.target.checked)}
-                  style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0, accentColor: accent }}
-                />
-                <span style={{ fontSize: 13, fontWeight: 500, color: ink, lineHeight: 1.5 }}>
-                  ข้าพเจ้ายอมรับ{" "}
-                  <span
-                    onClick={(e) => { e.preventDefault(); setShowTermsModal(true); }}
-                    style={{ color: accentStrong, fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}
-                  >
-                    ข้อตกลงและเงื่อนไข
-                  </span>
-                </span>
-              </label>
+              {/* ── สิ่งที่ต้องยินยอมก่อนดำเนินการต่อ — แยกกล่องให้เห็นชัดว่าเป็นคนละข้อกัน ── */}
+              <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 12, background: "#FAF7F3", border: `1px solid ${borderStrong}` }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: sub, marginBottom: 10 }}>
+                  โปรดยืนยัน 2 ข้อนี้ก่อนดำเนินการต่อ
+                </div>
 
-              {/* Privacy Notice acknowledgement is separate from the rental agreement. */}
-              <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={privacyNoticeAcknowledged}
-                  onChange={(e) => setPrivacyNoticeAcknowledged(e.target.checked)}
-                  style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0, accentColor: accent }}
-                />
-                <span style={{ fontSize: 13, fontWeight: 500, color: ink, lineHeight: 1.5 }}>
-                  ข้าพเจ้าได้อ่านและรับทราบ{" "}
-                  <a
-                    href="/privacy-policy"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ color: accentStrong, fontWeight: 700, textDecoration: "underline" }}
-                  >
-                    นโยบายความเป็นส่วนตัว
-                  </a>
-                </span>
-              </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={agreedTerms}
+                    onChange={(e) => setAgreedTerms(e.target.checked)}
+                    style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0, accentColor: accent }}
+                  />
+                  <span style={{ fontSize: 13, fontWeight: 500, color: ink, lineHeight: 1.5 }}>
+                    ข้าพเจ้าตกลงยินยอมตาม{" "}
+                    <span
+                      onClick={(e) => { e.preventDefault(); setShowTermsModal(true); }}
+                      style={{ color: accentStrong, fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}
+                    >
+                      ข้อตกลงและเงื่อนไข
+                    </span>
+                  </span>
+                </label>
+
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 10, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={privacyNoticeAcknowledged}
+                    onChange={(e) => setPrivacyNoticeAcknowledged(e.target.checked)}
+                    style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0, accentColor: accent }}
+                  />
+                  <span style={{ fontSize: 13, fontWeight: 500, color: ink, lineHeight: 1.5 }}>
+                    ข้าพเจ้าได้อ่านและรับทราบ{" "}
+                    <a
+                      href="/privacy-policy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ color: accentStrong, fontWeight: 700, textDecoration: "underline" }}
+                    >
+                      นโยบายความเป็นส่วนตัว
+                    </a>
+                  </span>
+                </label>
+
+                {(!agreedTerms || !privacyNoticeAcknowledged) && (
+                  <div style={{ fontSize: 11.5, fontWeight: 600, color: sub, marginTop: 10 }}>
+                    ติ๊กให้ครบทั้ง 2 ข้อ ปุ่ม &quot;ต่อไป&quot; จะกดได้เมื่อยินยอมครบแล้ว
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

@@ -170,36 +170,36 @@ function lineNotificationDiagnostic(notification: {
 
 // ─────────────────────────────── UI tokens ───────────────────────────────
 const UI = {
-  bg: "#FFFBF7", ink: "#332E2C", muted: "#A39A93", border: "#F0E9E2",
-  accent: "#F2679E", accent2: "#7A57D1", accentSoft: "#FDF0F5",
-  font: "var(--font-itim), 'Kanit', 'Segoe UI', sans-serif",
-  shadow: "0 4px 16px rgba(51,46,44,0.06)", shadowSm: "0 1px 3px rgba(51,46,44,0.05)", radius: 16,
+  bg: "#FFFBF7", ink: "#241F1C", muted: "#8A7F76", border: "#F2E4D6",
+  accent: "#F2467E", accent2: "#8354E8", accentSoft: "#FFE3EE", accent2Soft: "#EDE6FB",
+  font: "var(--font-noto-thai), 'Segoe UI', 'Leelawadee UI', -apple-system, system-ui, Roboto, sans-serif",
+  shadow: "0 10px 30px -14px rgba(36,31,28,0.20)", shadowSm: "0 2px 8px rgba(36,31,28,0.06)", radius: 20,
 };
 
 const btnStyle = (variant: "white"|"dark"|"green"|"red"|"blue" = "white", disabled = false): React.CSSProperties => {
   const colors: Record<string, [string, string]> = {
     white: ["#fff", UI.ink],
-    dark: [`linear-gradient(135deg, ${UI.accent}, #E1477F)`, "#fff"],
+    dark: [`linear-gradient(135deg, ${UI.accent}, #D81F5E)`, "#fff"],
     green: ["#06C755", "#fff"],
     red: ["#FFF1F2", "#C43D5C"],
-    blue: [UI.accent2, "#fff"],
+    blue: [`linear-gradient(135deg, ${UI.accent2}, #6B3FD1)`, "#fff"],
   };
   const [bg, color] = colors[variant];
   return {
     borderRadius: 999,
     border: variant === "white" ? `1px solid ${UI.border}` : "none",
-    boxShadow: disabled ? "none" : variant === "white" ? "none" : "0 3px 10px rgba(51,46,44,0.12)",
+    boxShadow: disabled ? "none" : variant === "white" ? UI.shadowSm : "0 6px 16px -6px rgba(51,46,44,0.28)",
     padding: "9px 14px", fontWeight: 700, cursor: disabled ? "not-allowed" : "pointer",
-    background: disabled ? "#F1F0EE" : bg, color: disabled ? "#B4B6BC" : color,
+    background: disabled ? "#F1EEE9" : bg, color: disabled ? "#B4AA9F" : color,
     fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6,
-    fontFamily: UI.font,
+    fontFamily: UI.font, transition: "transform .12s ease, box-shadow .12s ease",
   };
 };
 
 const inputStyle: React.CSSProperties = {
-  borderRadius: 12, border: `1px solid ${UI.border}`, padding: "9px 12px",
-  fontSize: 13, outline: "none", background: "#fff", color: UI.ink, fontWeight: 500,
-  fontFamily: UI.font, width: "100%", boxSizing: "border-box",
+  borderRadius: 12, border: `1px solid ${UI.border}`, padding: "10px 13px",
+  fontSize: 13, outline: "none", background: "#FEFCFA", color: UI.ink, fontWeight: 500,
+  fontFamily: UI.font, width: "100%", boxSizing: "border-box", transition: "border-color .12s ease",
 };
 
 const card: React.CSSProperties = {
@@ -1245,7 +1245,11 @@ export default function AdminPage() {
     }
 
     return (
-      <div style={{ minHeight:"100vh", background:UI.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:UI.font, color:UI.ink }}>
+      <div style={{
+        minHeight:"100vh",
+        background: "radial-gradient(60vw circle at 10% 0%, rgba(242,70,126,0.16), rgba(242,70,126,0) 70%), radial-gradient(55vw circle at 100% 100%, rgba(131,84,232,0.14), rgba(131,84,232,0) 70%), " + UI.bg,
+        display:"flex", alignItems:"center", justifyContent:"center", padding:20, fontFamily:UI.font, color:UI.ink,
+      }}>
         <div style={{ ...card, width:"100%", maxWidth:400, padding:24 }}>
           <div style={{ fontWeight:700, fontSize:22, marginBottom:6 }}>🔐 Admin Login</div>
           <input value={loginUsername} onChange={e=>setLoginUsername(e.target.value)}
@@ -1269,12 +1273,18 @@ export default function AdminPage() {
   const sidebarW = sidebarCollapsed ? 68 : 216;
 
   return (
-    <div style={{ minHeight:"100vh", background:UI.bg, fontFamily:UI.font, color:UI.ink, display:"flex", flexDirection: isMobile ? "column" : "row" }}>
+    <div style={{
+      minHeight:"100vh",
+      background: "radial-gradient(50vw circle at 100% 0%, rgba(242,70,126,0.10), rgba(242,70,126,0) 65%), radial-gradient(45vw circle at 0% 100%, rgba(131,84,232,0.08), rgba(131,84,232,0) 65%), " + UI.bg,
+      fontFamily:UI.font, color:UI.ink, display:"flex", flexDirection: isMobile ? "column" : "row",
+    }}>
 
       {/* ═══════════════ SIDEBAR (desktop/tablet) ═══════════════ */}
       {!isMobile && (
         <div style={{
-          width: sidebarW, flexShrink: 0, background:"#fff", borderRight:`1px solid ${UI.border}`,
+          width: sidebarW, flexShrink: 0,
+          background:"rgba(255,255,255,0.72)", backdropFilter:"blur(18px) saturate(160%)", WebkitBackdropFilter:"blur(18px) saturate(160%)",
+          borderRight:`1px solid ${UI.border}`,
           display:"flex", flexDirection:"column", position:"sticky", top:0, height:"100vh",
           transition:"width .18s ease", overflow:"hidden",
         }}>
@@ -1302,10 +1312,11 @@ export default function AdminPage() {
                     justifyContent: sidebarCollapsed ? "center" : "flex-start",
                     padding: sidebarCollapsed ? "10px 0" : "10px 12px",
                     borderRadius:12, border:"none", cursor:"pointer",
-                    background: active ? UI.accentSoft : "transparent",
+                    background: active ? `linear-gradient(135deg, ${UI.accentSoft}, ${UI.accent2Soft})` : "transparent",
                     color: active ? UI.accent2 : UI.ink,
+                    boxShadow: active ? "0 2px 8px -3px rgba(131,84,232,0.35)" : "none",
                     fontWeight: active ? 700 : 600, fontSize:13.5, fontFamily:UI.font,
-                    textAlign:"left", width:"100%", position:"relative",
+                    textAlign:"left", width:"100%", position:"relative", transition:"background .12s ease",
                   }}
                 >
                   <span style={{ fontSize:16, flexShrink:0 }}>{item.icon}</span>
@@ -1346,7 +1357,7 @@ export default function AdminPage() {
 
       {/* ═══════════════ TOP NAV (mobile) ═══════════════ */}
       {isMobile && (
-        <div style={{ position:"sticky", top:0, zIndex:20, background:"#fff", borderBottom:`1px solid ${UI.border}` }}>
+        <div style={{ position:"sticky", top:0, zIndex:20, background:"rgba(255,255,255,0.82)", backdropFilter:"blur(18px) saturate(160%)", WebkitBackdropFilter:"blur(18px) saturate(160%)", borderBottom:`1px solid ${UI.border}` }}>
           <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px 8px" }}>
             <img src="/crabby-logo.png" alt="Crabby" style={{ width:30, height:30, objectFit:"contain", borderRadius:8, flexShrink:0 }} />
             <div style={{ minWidth:0 }}>
@@ -1365,7 +1376,7 @@ export default function AdminPage() {
                   style={{
                     display:"flex", alignItems:"center", gap:6, flexShrink:0,
                     minHeight:44, padding:"0 14px", borderRadius:999, border:"none", cursor:"pointer",
-                    background: active ? UI.accentSoft : "#F5F1ED",
+                    background: active ? `linear-gradient(135deg, ${UI.accentSoft}, ${UI.accent2Soft})` : "#F5F1ED",
                     color: active ? UI.accent2 : UI.ink,
                     fontWeight: active ? 700 : 600, fontSize:13, fontFamily:UI.font,
                     whiteSpace:"nowrap", position:"relative",
@@ -1396,7 +1407,11 @@ export default function AdminPage() {
         {/* Header */}
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:14 }}>
           <div>
-            <div style={{ fontSize:24, fontWeight:700, color:UI.accent }}>หน้าต่างแอดมิน</div>
+            <div style={{
+              fontSize:24, fontWeight:800,
+              background: `linear-gradient(135deg, ${UI.accent}, ${UI.accent2})`,
+              WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text",
+            }}>หน้าต่างแอดมิน</div>
             <div style={{ fontSize:12, color:UI.muted, fontWeight:800 }}>ระบบเช่ามือถือ</div>
           </div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
@@ -1435,16 +1450,20 @@ export default function AdminPage() {
         {/* Stat cards */}
         <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:14 }}>
           {[
-            { icon:"⏳", val:summary.pending,   label:"รอยืนยัน",    bg:"#FFF9E6" },
-            { icon:"✅", val:summary.confirmed,  label:"ยืนยันแล้ว",  bg:"#EFFFF2" },
-            { icon:"❌", val:summary.rejected,   label:"ปฏิเสธแล้ว", bg:"#FFF1F2" },
-            { icon:"💵", val:money(summary.deposit_received), label:"มัดจำที่รับจริงแล้ว", bg:"#EFFFF2" },
-            { icon:"💰", val:money(summary.revenue), label:"มูลค่าจองรวม (คาดการณ์)", bg:"#FFEFF7" },
+            { icon:"⏳", val:summary.pending,   label:"รอยืนยัน",    accentSoft:"#FFF6DF" },
+            { icon:"✅", val:summary.confirmed,  label:"ยืนยันแล้ว",  accentSoft:"#E7FBEF" },
+            { icon:"❌", val:summary.rejected,   label:"ปฏิเสธแล้ว", accentSoft:"#FFEEF1" },
+            { icon:"💵", val:money(summary.deposit_received), label:"มัดจำที่รับจริงแล้ว", accentSoft:"#E7FBEF" },
+            { icon:"💰", val:money(summary.revenue), label:"มูลค่าจองรวม (คาดการณ์)", accentSoft:UI.accentSoft },
           ].map(s => (
-            <div key={s.label} style={{ flex:"1 1 160px", background:s.bg, borderRadius:14, border:`1px solid ${UI.border}`, boxShadow:UI.shadowSm, padding:"10px 14px" }}>
-              <div style={{ fontSize:20 }}>{s.icon}</div>
-              <div style={{ fontWeight:700, fontSize:20 }}>{s.val}</div>
-              <div style={{ fontSize:11, fontWeight:800, color:UI.muted }}>{s.label}</div>
+            <div key={s.label} style={{ flex:"1 1 170px", ...card, padding:16, display:"flex", flexDirection:"column", gap:10 }}>
+              <div style={{ width:38, height:38, borderRadius:12, background:s.accentSoft, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>
+                {s.icon}
+              </div>
+              <div>
+                <div style={{ fontWeight:800, fontSize:22, color:UI.ink, lineHeight:1.15 }}>{s.val}</div>
+                <div style={{ fontSize:11.5, fontWeight:700, color:UI.muted, marginTop:2 }}>{s.label}</div>
+              </div>
             </div>
           ))}
         </div>

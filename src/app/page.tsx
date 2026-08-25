@@ -253,6 +253,8 @@ export default function PhoneRentalHome() {
   const [timerStepKey, setTimerStepKey] = useState<number | null>(null); // step ไหนที่ตัวจับเวลานี้ผูกอยู่
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [agreedTerms, setAgreedTerms] = useState(false);
+  const [privacyNoticeAcknowledged, setPrivacyNoticeAcknowledged] = useState(false);
+  const [acknowledgingPrivacyNotice, setAcknowledgingPrivacyNotice] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [customTerms, setCustomTerms] = useState<string | null>(null);
 
@@ -458,6 +460,7 @@ export default function PhoneRentalHome() {
     setSelectedConcertId(null);
     resetBelowConcert();
     setAgreedTerms(false);
+    setPrivacyNoticeAcknowledged(false);
     setTimerExpiresAt(null);
     setTimerStepKey(null);
     setStep(1);
@@ -579,10 +582,16 @@ export default function PhoneRentalHome() {
   };
 
   const isNextDisabled = () => {
-    if (submitting || submitted) return true;
+    if (submitting || submitted || acknowledgingPrivacyNotice) return true;
     if (step === 1) return !selectedConcertId;
     if (step === 2) return !selectedSessionId || !selectedPhoneId;
-    if (step === 3) return !renterName.trim() || !renterPhone.trim() || renterPhone.trim().length !== 10 || !agreedTerms;
+    if (step === 3) {
+      return !renterName.trim()
+        || !renterPhone.trim()
+        || renterPhone.trim().length !== 10
+        || !agreedTerms
+        || !privacyNoticeAcknowledged;
+    }
     if (step === 4) return !slipFile;
     return false;
   };
@@ -594,6 +603,7 @@ export default function PhoneRentalHome() {
 
   const handleNext = async () => {
     setPageError("");
+    if (acknowledgingPrivacyNotice) return;
 
     if (step === 3) {
       if (!selectedSessionId || !selectedPhoneId || !selectedPhone) {
@@ -605,7 +615,27 @@ export default function PhoneRentalHome() {
         setPageError("กรุณากรอกข้อมูลผู้เช่าให้ครบ");
         return;
       }
-      setStep(4);
+      if (!agreedTerms || !privacyNoticeAcknowledged) {
+        setPageError("กรุณายอมรับข้อตกลงและรับทราบนโยบายความเป็นส่วนตัวก่อนดำเนินการ");
+        return;
+      }
+
+      setAcknowledgingPrivacyNotice(true);
+      try {
+        const acknowledgementRes = await fetch("/api/privacy-notice/acknowledge", {
+          method: "POST",
+          cache: "no-store",
+        });
+        if (!acknowledgementRes.ok) {
+          const out = await acknowledgementRes.json().catch(() => null);
+          throw new Error(out?.error || "ไม่สามารถบันทึกการรับทราบนโยบายความเป็นส่วนตัวได้");
+        }
+        setStep(4);
+      } catch (e: unknown) {
+        setPageError(e instanceof Error ? e.message : "ไม่สามารถบันทึกการรับทราบนโยบายความเป็นส่วนตัวได้");
+      } finally {
+        setAcknowledgingPrivacyNotice(false);
+      }
       return;
     }
 
@@ -1240,13 +1270,35 @@ export default function PhoneRentalHome() {
                   style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0, accentColor: accent }}
                 />
                 <span style={{ fontSize: 13, fontWeight: 500, color: ink, lineHeight: 1.5 }}>
-                  ข้าพเจ้าตกลงยินยอมตาม{" "}
+                  ข้าพเจ้ายอมรับ{" "}
                   <span
                     onClick={(e) => { e.preventDefault(); setShowTermsModal(true); }}
                     style={{ color: accentStrong, fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}
                   >
                     ข้อตกลงและเงื่อนไข
                   </span>
+                </span>
+              </label>
+
+              {/* Privacy Notice acknowledgement is separate from the rental agreement. */}
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 12, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={privacyNoticeAcknowledged}
+                  onChange={(e) => setPrivacyNoticeAcknowledged(e.target.checked)}
+                  style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0, accentColor: accent }}
+                />
+                <span style={{ fontSize: 13, fontWeight: 500, color: ink, lineHeight: 1.5 }}>
+                  ข้าพเจ้าได้อ่านและรับทราบ{" "}
+                  <a
+                    href="/privacy-policy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ color: accentStrong, fontWeight: 700, textDecoration: "underline" }}
+                  >
+                    นโยบายความเป็นส่วนตัว
+                  </a>
                 </span>
               </label>
             </div>
@@ -1482,7 +1534,11 @@ export default function PhoneRentalHome() {
                 </button>
               )}
               <button onClick={handleNext} disabled={isNextDisabled()} style={{ ...(isNextDisabled() ? doodle.btnGray : step === 4 ? doodle.btnGreen : doodle.btnPrimary), flex: 1, padding: "13px 0", fontSize: 15 }}>
-                {step === 4 ? (submitting ? "กำลังบันทึก..." : "✓ ฉันโอนแล้ว!") : "ต่อไป →"}
+                {step === 4
+                  ? (submitting ? "กำลังบันทึก..." : "✓ ฉันโอนแล้ว!")
+                  : step === 3 && acknowledgingPrivacyNotice
+                    ? "กำลังบันทึกการรับทราบ..."
+                    : "ต่อไป →"}
               </button>
             </div>
           </div>

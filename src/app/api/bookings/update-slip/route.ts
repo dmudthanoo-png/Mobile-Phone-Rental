@@ -130,7 +130,8 @@ export async function POST(req: NextRequest) {
   }
 
   const ext = sniffedType === "image/png" ? "png" : sniffedType === "image/webp" ? "webp" : "jpg";
-  const fileName = `${lineSub}_${Date.now()}.${ext}`;
+  // Do not put a LINE identifier in an object path; use an opaque server-generated name instead.
+  const fileName = "bookings/" + crypto.randomUUID() + "." + ext;
 
   const { error: upErr } = await supabaseAdmin.storage
     .from("slips").upload(fileName, buffer, { contentType: sniffedType, upsert: true });

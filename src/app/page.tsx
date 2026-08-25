@@ -7,6 +7,7 @@ import Navbar from "./Navbar";
 import AnnouncementBanner from "./AnnouncementBanner";
 import HowToBookAndFaq from "./HowToBookAndFaq";
 import Footer from "./Footer";
+import PrivacyPolicyContent from "./privacy-policy/PrivacyPolicyContent";
 
 type MeUser = {
   line_sub: string;
@@ -256,6 +257,7 @@ export default function PhoneRentalHome() {
   const [privacyNoticeAcknowledged, setPrivacyNoticeAcknowledged] = useState(false);
   const [acknowledgingPrivacyNotice, setAcknowledgingPrivacyNotice] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [customTerms, setCustomTerms] = useState<string | null>(null);
 
   const timeLeft = timerExpiresAt !== null ? Math.max(0, Math.round((timerExpiresAt - nowTick) / 1000)) : null;
@@ -890,6 +892,11 @@ export default function PhoneRentalHome() {
                     <div
                       key={c.id}
                       onClick={isOpen ? async () => {
+                        if (selectedConcertId === c.id) {
+                          setSelectedConcertId(null);
+                          resetBelowConcert();
+                          return;
+                        }
                         setSelectedConcertId(c.id);
                         resetBelowConcert();
                         try { await loadSessions(c.id); }
@@ -1299,15 +1306,12 @@ export default function PhoneRentalHome() {
                   />
                   <span style={{ fontSize: 13, fontWeight: 500, color: ink, lineHeight: 1.5 }}>
                     ข้าพเจ้าได้อ่านและรับทราบ{" "}
-                    <a
-                      href="/privacy-policy"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ color: accentStrong, fontWeight: 700, textDecoration: "underline" }}
+                    <span
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowPrivacyModal(true); }}
+                      style={{ color: accentStrong, fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}
                     >
                       นโยบายความเป็นส่วนตัว
-                    </a>
+                    </span>
                   </span>
                 </label>
 
@@ -1644,6 +1648,35 @@ export default function PhoneRentalHome() {
                 style={{ ...doodle.btnPrimary, width: "100%", padding: "12px 0", fontSize: 14 }}
               >
                 รับทราบและยินยอม
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Privacy Policy Modal — เปิดเป็นหน้าต่างแทนการเปลี่ยนหน้า กันข้อมูลจองที่กรอกไว้หายตอนกดย้อนกลับบนมือถือ */}
+      {showPrivacyModal && (
+        <div
+          onClick={() => setShowPrivacyModal(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(36,31,28,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#fff", borderRadius: 18, border: `1px solid ${line}`, maxWidth: 480, width: "100%", maxHeight: "80vh", overflow: "hidden", display: "flex", flexDirection: "column" }}
+          >
+            <div style={{ padding: "14px 18px", borderBottom: `1px solid ${line}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+              <span style={{ fontWeight: 700, fontSize: 15, color: ink }}>นโยบายความเป็นส่วนตัว</span>
+              <button onClick={() => setShowPrivacyModal(false)} aria-label="ปิดหน้าต่างนโยบายความเป็นส่วนตัว" style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: sub, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>✕</button>
+            </div>
+            <div style={{ padding: "16px 18px", overflowY: "auto" }}>
+              <PrivacyPolicyContent />
+            </div>
+            <div style={{ padding: "12px 18px", borderTop: `1px solid ${line}`, flexShrink: 0 }}>
+              <button
+                onClick={() => { setPrivacyNoticeAcknowledged(true); setShowPrivacyModal(false); }}
+                style={{ ...doodle.btnPrimary, width: "100%", padding: "12px 0", fontSize: 14 }}
+              >
+                รับทราบ
               </button>
             </div>
           </div>

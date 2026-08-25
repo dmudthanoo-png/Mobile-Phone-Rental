@@ -1253,7 +1253,7 @@ export default function PhoneRentalHome() {
                   ["มือถือ",      selectedPhone ? `${selectedPhone.model_name} x${phoneQty}` : "-"],
                   ["ค่าเช่า",     selectedPhone ? `฿${selectedPhone.price} x ${phoneQty} = ฿${selectedPhone.price * phoneQty}` : "-"],
                   ...(selectedLens && lensQty > 0 ? [["เลนส์เสริม", `${selectedLens.name} x${lensQty} = ฿${lensPrice}`]] : []),
-                  ["🎁 ของแถมฟรี", "Power Bank 10,000 mAh · ซิมอินเทอร์เน็ต · กระเป๋าใส่อุปกรณ์"],
+                  ["อุปกรณ์เสริม", "Power Bank 10,000 mAh · ซิมอินเทอร์เน็ต · กระเป๋าใส่อุปกรณ์"],
                 ].map(([k, v]) => (
                   <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600, marginBottom: 8, paddingBottom: 8, borderBottom: `1px dashed ${borderStrong}` }}>
                     <span style={{ color: sub }}>{k}</span>

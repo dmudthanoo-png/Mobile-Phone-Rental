@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { syncBookingToSheet } from "@/lib/sheetsSync";
@@ -69,35 +69,19 @@ export async function POST(req: NextRequest) {
     // เพื่อให้ bookings.user_id มีแถวอ้างอิงครบทั้ง auth.users และ profiles
     const displayName = typeof payload.name === "string" ? payload.name : null;
     const picture = typeof payload.picture === "string" ? payload.picture : null;
-    const linkedUser = await findOrCreateLineUser(
-      supabaseAdmin,
-      lineSub,
-      displayName,
-      picture
-    );
+
+    // 1.5+2) หา/สร้างผู้ใช้ กับ อ่าน multipart body (รวมไฟล์สลิป) พร้อมกัน — สองอย่างนี้ไม่ขึ้นต่อกัน
+    // เดิมทำต่อคิวกันทำให้ต้องรอ round-trip ฐานข้อมูลจบก่อนถึงจะเริ่มรับไฟล์
+    const [linkedUser, form] = await Promise.all([
+      findOrCreateLineUser(supabaseAdmin, lineSub, displayName, picture),
+      req.formData(),
+    ]);
 
     if ("error" in linkedUser) {
       return NextResponse.json({ error: linkedUser.error }, { status: 500 });
     }
 
     const user_id = linkedUser.userId;
-
-    // 1.5) ต้องรับทราบนโยบายความเป็นส่วนตัวเวอร์ชันปัจจุบันก่อนเสมอ — เช็คฝั่ง server
-    //      ห้ามพึ่งแค่ลำดับการกดปุ่มฝั่ง client เพราะ endpoint นี้เรียกตรงได้โดยข้ามหน้า UI
-    const { data: ack, error: ackErr } = await supabaseAdmin
-      .from("privacy_notice_acknowledgements")
-      .select("user_id")
-      .eq("user_id", user_id)
-      .eq("policy_version", PRIVACY_NOTICE_VERSION)
-      .maybeSingle();
-
-    if (ackErr) return NextResponse.json({ error: ackErr.message }, { status: 500 });
-    if (!ack) {
-      return NextResponse.json({ error: "privacy_notice_not_acknowledged" }, { status: 403 });
-    }
-
-    // 2) parse form-data
-    const form = await req.formData();
 
     const session_id   = String(form.get("session_id")   ?? "").trim();
     const phone_id     = String(form.get("phone_id")     ?? "").trim();
@@ -135,19 +119,68 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `unsupported file type: ${slip.type}` }, { status: 400 });
     }
 
-    // 2.5) verify session ว่ามีอยู่จริง + คอนเสิร์ตยังไม่ archive (กันจองรอบที่เก็บเข้าคลังไปแล้ว)
-    //      + รอบยังไม่ผ่านไปแล้ว (กันจองย้อนหลังรอบที่จบไปแล้วจาก session_id เก่าที่ค้างอยู่)
-    //      + คอนเสิร์ตต้องแสดงผลอยู่ และถึงเวลาเผยแพร่แล้ว (กันจองข้ามขั้นตอนผ่าน session_id/phone_id ตรงๆ
-    //      โดยไม่ผ่านหน้าเว็บที่ซ่อน/ยังไม่เปิดคอนเสิร์ตนี้ไว้ — เหมือนที่กันไว้แล้วใน /api/concerts/[id])
-    const { data: sessionCheck, error: sessionCheckErr } = await supabaseAdmin
-      .from("concert_sessions")
-      .select("id, start_at, concerts ( archived, is_visible, publish_at )")
-      .eq("id", session_id)
-      .maybeSingle();
+    // 2.5-4) ตรวจทุกอย่างที่ไม่ขึ้นต่อกันพร้อมกันในรอบเดียว (เดิมยิงต่อคิวทีละ query รวม 7 round-trip
+    // ทำให้ผู้ใช้ต้องรอสะสม) — ลำดับการ "เช็คผลลัพธ์" ยังเหมือนเดิมทุกประการ ข้อความ error จึงไม่เปลี่ยน
+    // หมายเหตุ: รวม query concert_sessions ที่เดิมยิงซ้ำ 2 รอบ (เช็คสิทธิ์ + ดึงชื่อไป Google Sheet) เหลือรอบเดียว
+    const [ackRes, sessionRes, phoneRes, priceRes, lensRes, pendingRes] = await Promise.all([
+      // ต้องรับทราบนโยบายความเป็นส่วนตัวเวอร์ชันปัจจุบันก่อนเสมอ — เช็คฝั่ง server
+      // ห้ามพึ่งแค่ลำดับการกดปุ่มฝั่ง client เพราะ endpoint นี้เรียกตรงได้โดยข้ามหน้า UI
+      supabaseAdmin
+        .from("privacy_notice_acknowledgements")
+        .select("user_id")
+        .eq("user_id", user_id)
+        .eq("policy_version", PRIVACY_NOTICE_VERSION)
+        .maybeSingle(),
+      // verify session ว่ามีอยู่จริง + คอนเสิร์ตยังไม่ archive (กันจองรอบที่เก็บเข้าคลังไปแล้ว)
+      // + รอบยังไม่ผ่านไปแล้ว (กันจองย้อนหลังรอบที่จบไปแล้วจาก session_id เก่าที่ค้างอยู่)
+      // + คอนเสิร์ตต้องแสดงผลอยู่ และถึงเวลาเผยแพร่แล้ว (กันจองข้ามขั้นตอนผ่าน session_id/phone_id ตรงๆ
+      //   โดยไม่ผ่านหน้าเว็บที่ซ่อน/ยังไม่เปิดคอนเสิร์ตนี้ไว้ — เหมือนที่กันไว้แล้วใน /api/concerts/[id])
+      supabaseAdmin
+        .from("concert_sessions")
+        .select("id, start_at, note, concerts ( archived, is_visible, publish_at, title )")
+        .eq("id", session_id)
+        .maybeSingle(),
+      // verify price จาก DB (ไม่เชื่อ client) — ต้อง active เท่านั้นถึงจะจองได้
+      supabaseAdmin
+        .from("phones")
+        .select("model_name, price, deposit")
+        .eq("id", phone_id)
+        .eq("active", true)
+        .maybeSingle(),
+      // ราคาค่าเช่าอาจถูกตั้งแยกเฉพาะรอบนี้ไว้ (เช่น คอนเสิร์ตใหญ่ขึ้นราคา) — ไม่ได้ตั้ง = ใช้ราคาตั้งต้นของรุ่น
+      supabaseAdmin
+        .from("session_phone_inventory")
+        .select("price_override")
+        .eq("session_id", session_id)
+        .eq("phone_id", phone_id)
+        .maybeSingle(),
+      // ต้องเป็นเลนส์ที่ผูกกับมือถือรุ่นนี้จริง (ยิงเฉพาะตอนเลือกเลนส์มาด้วย)
+      lens_id && lens_qty > 0
+        ? supabaseAdmin
+            .from("phone_lenses")
+            .select("lens_id, lenses ( name, price, active )")
+            .eq("phone_id", phone_id)
+            .eq("lens_id", lens_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      // rate limit — นับตาม user_id (ตัวตนจริงจาก LINE login) ไม่ใช่ renter_phone
+      // เพราะ renter_phone เป็นช่องกรอกอิสระ เปลี่ยนเบอร์ไปเรื่อยๆ เพื่อหลบ limit ได้ถ้านับแค่เบอร์
+      supabaseAdmin
+        .from("bookings")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user_id)
+        .eq("status", "pending"),
+    ]);
 
-    if (sessionCheckErr) return NextResponse.json({ error: sessionCheckErr.message }, { status: 500 });
+    if (ackRes.error) return NextResponse.json({ error: ackRes.error.message }, { status: 500 });
+    if (!ackRes.data) {
+      return NextResponse.json({ error: "privacy_notice_not_acknowledged" }, { status: 403 });
+    }
+
+    const sessionCheck = sessionRes.data;
+    if (sessionRes.error) return NextResponse.json({ error: sessionRes.error.message }, { status: 500 });
     if (!sessionCheck) return NextResponse.json({ error: "session not found" }, { status: 404 });
-    const concertRow = sessionCheck.concerts as unknown as { archived: boolean; is_visible: boolean | null; publish_at: string | null } | null;
+    const concertRow = sessionCheck.concerts as unknown as { archived: boolean; is_visible: boolean | null; publish_at: string | null; title: string | null } | null;
     if (concertRow?.archived) return NextResponse.json({ error: "concert archived" }, { status: 400 });
     if (concertRow?.is_visible === false) return NextResponse.json({ error: "concert hidden" }, { status: 400 });
     if (concertRow?.publish_at && new Date(concertRow.publish_at).getTime() > Date.now()) {
@@ -157,42 +190,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "session already passed" }, { status: 400 });
     }
 
-    // 3) verify price + lens จาก DB (ไม่เชื่อ client) — ต้อง active เท่านั้นถึงจะจองได้
-    const { data: phoneRow, error: phoneErr } = await supabaseAdmin
-      .from("phones")
-      .select("model_name, price, deposit")
-      .eq("id", phone_id)
-      .eq("active", true)
-      .maybeSingle();
-
-    if (phoneErr) return NextResponse.json({ error: phoneErr.message }, { status: 500 });
+    const phoneRow = phoneRes.data;
+    if (phoneRes.error) return NextResponse.json({ error: phoneRes.error.message }, { status: 500 });
     if (!phoneRow) return NextResponse.json({ error: "phone not found" }, { status: 404 });
 
-    // ราคาค่าเช่าอาจถูกตั้งแยกเฉพาะรอบนี้ไว้ (เช่น คอนเสิร์ตใหญ่ขึ้นราคา) — ถ้าไม่ได้ตั้งไว้ใช้ราคาตั้งต้นของรุ่น
-    const { data: priceRow, error: priceErr } = await supabaseAdmin
-      .from("session_phone_inventory")
-      .select("price_override")
-      .eq("session_id", session_id)
-      .eq("phone_id", phone_id)
-      .maybeSingle();
+    if (priceRes.error) return NextResponse.json({ error: priceRes.error.message }, { status: 500 });
 
-    if (priceErr) return NextResponse.json({ error: priceErr.message }, { status: 500 });
-
-    const basePrice = Number(priceRow?.price_override ?? phoneRow.price ?? 0);
+    const basePrice = Number(priceRes.data?.price_override ?? phoneRow.price ?? 0);
     const deposit   = Number(phoneRow.deposit ?? 0);
 
     let lensPrice = 0;
     let lensName: string | null = null;
     if (lens_id && lens_qty > 0) {
-      // ต้องเป็นเลนส์ที่ผูกกับมือถือรุ่นนี้จริง
-      const { data: linkRow, error: linkErr } = await supabaseAdmin
-        .from("phone_lenses")
-        .select("lens_id, lenses ( name, price, active )")
-        .eq("phone_id", phone_id)
-        .eq("lens_id", lens_id)
-        .maybeSingle();
-
-      if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 500 });
+      if (lensRes.error) return NextResponse.json({ error: lensRes.error.message }, { status: 500 });
+      const linkRow = lensRes.data;
       const lensInfo = linkRow?.lenses as unknown as { name: string; price: number; active: boolean } | null;
       if (!linkRow || !lensInfo || lensInfo.active === false) {
         return NextResponse.json({ error: "lens not available for this phone" }, { status: 400 });
@@ -205,26 +216,14 @@ export async function POST(req: NextRequest) {
     const expectedAmount = Math.round(basePrice * qty + deposit * qty + lensPrice * lens_qty);
     const verifiedAmount = expectedAmount;
 
-    // ดึงชื่อคอนเสิร์ต + รอบ (สำหรับ sync ไป Google Sheet ให้อ่านง่าย)
-    const { data: sessionRow } = await supabaseAdmin
-      .from("concert_sessions")
-      .select("start_at, note, concerts ( title )")
-      .eq("id", session_id)
-      .maybeSingle();
-    const concertTitle = (sessionRow?.concerts as unknown as { title: string } | null)?.title ?? null;
-    const sessionLabel = sessionRow?.start_at
-      ? `${sessionRow.note ?? "รอบ"} • ${new Date(sessionRow.start_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}`
+    // ชื่อคอนเสิร์ต + รอบ (สำหรับ sync ไป Google Sheet ให้อ่านง่าย) — ได้จาก query เดียวกันข้างบนแล้ว
+    const concertTitle = concertRow?.title ?? null;
+    const sessionLabel = sessionCheck.start_at
+      ? `${sessionCheck.note ?? "รอบ"} • ${new Date(sessionCheck.start_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}`
       : null;
 
-    // 4) rate limit — นับตาม user_id (ตัวตนจริงจาก LINE login) ไม่ใช่ renter_phone
-    //    เพราะ renter_phone เป็นช่องกรอกอิสระ เปลี่ยนเบอร์ไปเรื่อยๆ เพื่อหลบ limit ได้ถ้านับแค่เบอร์
-    const { count: pendingCount, error: pendingErr } = await supabaseAdmin
-      .from("bookings")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user_id)
-      .eq("status", "pending");
-
-    if (pendingErr) return NextResponse.json({ error: pendingErr.message }, { status: 500 });
+    const pendingCount = pendingRes.count;
+    if (pendingRes.error) return NextResponse.json({ error: pendingRes.error.message }, { status: 500 });
 
     if ((pendingCount ?? 0) >= 3) {
       return NextResponse.json(
@@ -321,30 +320,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 7.5) ตรวจสอบสลิปกับ SlipOK อัตโนมัติแบบ best-effort
-    // (ต้อง await เพราะ serverless function อาจถูก freeze ทันทีหลัง response ถ้าไม่รอ)
-    try {
-      await verifySlipForBooking(row.booking_id);
-    } catch (err) {
-      console.error("auto slip verify failed:", err instanceof Error ? err.message : err);
-    }
-
-    // 8) sync ไป Google Sheet แบบ best-effort (ไม่บล็อกการตอบกลับลูกค้า)
-    await syncBookingToSheet({
-      event: "created",
-      booking_id: row.booking_id,
-      ref_number: row.ref_number ?? null,
-      status: "pending",
-      renter_name,
-      renter_phone,
-      concert_title: concertTitle,
-      session_label: sessionLabel,
-      phone_model: phoneRow.model_name ?? null,
-      qty,
-      lens_name: lensName,
-      lens_qty: lens_id && lens_qty > 0 ? lens_qty : 0,
-      total_amount: verifiedAmount,
-      created_at: new Date().toISOString(),
+    // 7.5-8) งาน best-effort ที่ทำ "หลังจองสำเร็จแล้ว" — ตรวจสลิปกับ SlipOK (timeout 15 วิ) และ
+    // sync ไป Google Sheet (timeout 5 วิ) เดิม await ทั้งคู่ก่อนตอบกลับ ทำให้ลูกค้าต้องนั่งรอสูงสุด
+    // ~20 วินาทีทั้งที่การจองเสร็จเรียบร้อยไปแล้ว และผลลัพธ์ของสองงานนี้ไม่ได้ถูกส่งกลับไปให้ลูกค้าเลย
+    //
+    // ย้ายมาใช้ after() ของ Next.js — ตอบกลับลูกค้าทันที แล้วรันสองงานนี้ต่อเบื้องหลัง
+    // (after() ออกแบบมาสำหรับเคสนี้โดยเฉพาะ รับประกันว่างานจะรันจบก่อน serverless function ถูก freeze
+    //  ซึ่งเป็นเหตุผลเดิมที่ต้อง await ไว้) และรันสองงานพร้อมกันด้วย ไม่ต้องรอต่อคิวกันเอง
+    after(async () => {
+      await Promise.all([
+        verifySlipForBooking(row.booking_id).catch((err) => {
+          console.error("auto slip verify failed:", err instanceof Error ? err.message : err);
+        }),
+        syncBookingToSheet({
+          event: "created",
+          booking_id: row.booking_id,
+          ref_number: row.ref_number ?? null,
+          status: "pending",
+          renter_name,
+          renter_phone,
+          concert_title: concertTitle,
+          session_label: sessionLabel,
+          phone_model: phoneRow.model_name ?? null,
+          qty,
+          lens_name: lensName,
+          lens_qty: lens_id && lens_qty > 0 ? lens_qty : 0,
+          total_amount: verifiedAmount,
+          created_at: new Date().toISOString(),
+        }),
+      ]);
     });
 
     return NextResponse.json(

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { verifySlipForBooking } from "@/lib/slipOk";
@@ -180,20 +180,23 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ลบสลิปเก่าทิ้งแบบ best-effort หลังอัปเดตสำเร็จแล้วเท่านั้น (กันไฟล์ orphan สะสม)
-  if (bk.slip_url) {
-    const oldPath = extractSlipPath(bk.slip_url);
-    if (oldPath) {
-      await supabaseAdmin.storage.from("slips").remove([oldPath]).catch(() => {});
-    }
-  }
-
-  // ตรวจสอบสลิปใหม่กับ SlipOK อัตโนมัติแบบ best-effort
-  try {
-    await verifySlipForBooking(bookingId);
-  } catch (err) {
-    console.error("auto slip verify failed:", err instanceof Error ? err.message : err);
-  }
+  // งาน best-effort หลังเปลี่ยนสลิปสำเร็จแล้ว — ลบไฟล์เก่า + ตรวจสลิปใหม่กับ SlipOK (timeout 15 วิ)
+  // ทั้งคู่ไม่มีผลต่อคำตอบที่ส่งกลับให้ลูกค้า จึงย้ายไปรันเบื้องหลังด้วย after() ไม่ให้ลูกค้านั่งรอ
+  after(async () => {
+    await Promise.all([
+      // ลบสลิปเก่าทิ้ง (กันไฟล์ orphan สะสม)
+      (async () => {
+        if (!bk.slip_url) return;
+        const oldPath = extractSlipPath(bk.slip_url);
+        if (oldPath) {
+          await supabaseAdmin.storage.from("slips").remove([oldPath]).catch(() => {});
+        }
+      })(),
+      verifySlipForBooking(bookingId).catch((err) => {
+        console.error("auto slip verify failed:", err instanceof Error ? err.message : err);
+      }),
+    ]);
+  });
 
   return NextResponse.json({ ok: true, slip_url: slipUrl });
 }

@@ -37,7 +37,10 @@ export async function GET(req: NextRequest) {
       ),
       phones:phone_id ( model_name )
     `)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    // ไม่เอา "เครื่องที่ลูกค้ากันไว้แต่ยังไม่ได้โอน/แนบสลิป" มาปนในคิวแอดมิน
+    // (แถวพวกนี้มี pending_expires_at และยังไม่มี slip_url — เป็นแค่การกันของชั่วคราว)
+    .not("slip_url", "is", null);
 
   if (status !== "all") query = query.eq("status", status);
 

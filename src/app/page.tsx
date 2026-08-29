@@ -248,11 +248,10 @@ export default function PhoneRentalHome() {
   // ── เช็คว่าเพิ่มเพื่อน LINE OA แล้วหรือยัง (ต้องเพิ่มก่อนถึงจะรับ push แจ้งเตือนตอนอนุมัติได้) ──
   const [lineFriendStatus, setLineFriendStatus] = useState<"idle" | "checking" | "friend" | "not_friend">("idle");
 
-  // ── จับเวลาทำรายการแยกต่อ step: step 3 ได้ 10 นาที, step 4 ได้อีก 10 นาที (แยกกัน ไม่ต่อเนื่อง) ──
-  // 10 นาทีต่อ step — ตัวจับเวลานี้เป็นแค่ UX ฝั่งเบราว์เซอร์ ไม่ได้กันสต็อกไว้ให้ (สต็อกตัดจริง
-  // ตอนกด "ฉันโอนแล้ว" เท่านั้น) การเพิ่มเวลาจึงไม่บล็อกคนอื่นจอง แต่แลกกับช่วงเสี่ยงที่ยาวขึ้น
-  // ที่ลูกค้าอาจโอนเงินแล้วเจอ "เต็มแล้ว" เพราะคนอื่นตัดหน้าไประหว่างนั้น
-  const STEP_TIME_LIMIT = 10 * 60;
+  // ── จับเวลาทำรายการแยกต่อ step: step 3 ได้ 5 นาที, step 4 ได้อีก 5 นาที (แยกกัน ไม่ต่อเนื่อง) ──
+  // step 4 (โอนเงิน) ช่วงนี้ "กันเครื่องไว้แล้ว" คนอื่นจองรุ่นนี้ไม่ได้ จึงต้องไม่ยาวเกินไป
+  // (ฝั่ง server กันเผื่อไว้ 7 นาที > 5 นาทีที่โชว์ กันหมดอายุพอดีตอนกำลังกดยืนยัน)
+  const STEP_TIME_LIMITS: Record<number, number> = { 3: 5 * 60, 4: 5 * 60 };
   const [timerExpiresAt, setTimerExpiresAt] = useState<number | null>(null);
   const [timerStepKey, setTimerStepKey] = useState<number | null>(null); // step ไหนที่ตัวจับเวลานี้ผูกอยู่
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -461,7 +460,13 @@ export default function PhoneRentalHome() {
     setRefNumber(null);
   };
 
+  // คืนเครื่องที่กันไว้ (ถ้ามี) — ยิงแบบ best-effort ไม่ต้องรอผล เพราะถึงพลาดก็หมดอายุเองอยู่แล้ว
+  const releaseHold = () => {
+    fetch("/api/bookings/reserve", { method: "DELETE", cache: "no-store" }).catch(() => {});
+  };
+
   const goToStep1 = () => {
+    releaseHold();
     setSelectedConcertId(null);
     resetBelowConcert();
     setAgreedTerms(false);
@@ -533,7 +538,7 @@ export default function PhoneRentalHome() {
   useEffect(() => {
     setNowTick(Date.now()); // sync ทุกครั้งที่สลับ step กันเวลาค้างจากรอบก่อน
     if ((step === 3 || step === 4) && timerStepKey !== step) {
-      setTimerExpiresAt(Date.now() + STEP_TIME_LIMIT * 1000);
+      setTimerExpiresAt(Date.now() + (STEP_TIME_LIMITS[step] ?? 5 * 60) * 1000);
       setTimerStepKey(step);
     }
     if (step !== 3 && step !== 4) {
@@ -609,6 +614,8 @@ export default function PhoneRentalHome() {
 
   const handleBack = () => {
     setPageError("");
+    // ถอยออกจากหน้าโอนเงิน = ไม่โอนแล้ว คืนเครื่องที่กันไว้ให้คนอื่นจองต่อได้ทันที
+    if (step === 4) releaseHold();
     setStep((s) => Math.max(1, s - 1));
   };
 
@@ -646,9 +653,49 @@ export default function PhoneRentalHome() {
           }
           throw new Error("ไม่สามารถบันทึกการรับทราบนโยบายความเป็นส่วนตัวได้ กรุณาลองใหม่อีกครั้ง");
         }
+
+        // ✅ กันเครื่องไว้ก่อนพาไปหน้าโอนเงิน — ตัดสต็อกทันทีแบบมีวันหมดอายุ
+        // ถ้าของหมดจะรู้ตรงนี้เลย (ก่อนเห็นเลขบัญชี/ก่อนโอนเงิน) ไม่ใช่ไปรู้ตอนกดยืนยันหลังโอนไปแล้ว
+        const holdRes = await fetch("/api/bookings/reserve", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            session_id: selectedSessionId,
+            phone_id: selectedPhoneId,
+            renter_name: renterName.trim(),
+            renter_phone: renterPhone.trim(),
+            lens_id: selectedLensId,
+            lens_qty: lensQty,
+            qty: phoneQty,
+          }),
+          cache: "no-store",
+        });
+
+        if (!holdRes.ok) {
+          const out = await holdRes.json().catch(() => null);
+          if (await redirectIfBanned(holdRes.status, out)) return;
+          if (holdRes.status === 401) { router.push("/login"); return; }
+
+          if (out?.error === "sold_out") {
+            setPageError("ขออภัย มือถือรุ่นนี้เพิ่งถูกจองหมดพอดี กรุณาเลือกรุ่นอื่นหรือรอบอื่นครับ");
+            setSelectedPhoneId(null);
+            if (selectedSessionId) await loadPhones(selectedSessionId);
+            setStep(2);
+            return;
+          }
+          if (out?.error === "lens_sold_out") {
+            setPageError("ขออภัย เลนส์ที่เลือกเพิ่งถูกจองหมดพอดี กรุณาเลือกใหม่ครับ");
+            setSelectedLensId(null); setLensQty(0);
+            if (selectedSessionId) await loadPhones(selectedSessionId);
+            setStep(2);
+            return;
+          }
+          throw new Error(out?.error || "กันเครื่องไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+        }
+
         setStep(4);
       } catch (e: unknown) {
-        setPageError(e instanceof Error ? e.message : "ไม่สามารถบันทึกการรับทราบนโยบายความเป็นส่วนตัวได้ กรุณาลองใหม่อีกครั้ง");
+        setPageError(e instanceof Error ? e.message : "ไม่สามารถดำเนินการต่อได้ กรุณาลองใหม่อีกครั้ง");
       } finally {
         setAcknowledgingPrivacyNotice(false);
       }

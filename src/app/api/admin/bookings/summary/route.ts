@@ -13,12 +13,17 @@ export async function GET(req: NextRequest) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   const supabase = createClient(url, serviceKey);
 
-  const total = await supabase.from("bookings").select("id", { count: "exact", head: true });
+  // ทุกตัวเลขสรุปต้องไม่นับ "เครื่องที่ลูกค้ากันไว้แต่ยังไม่ได้โอน" (slip_url ว่าง = แค่กันของชั่วคราว)
+  const total = await supabase
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .not("slip_url", "is", null);
 
   const pending = await supabase
     .from("bookings")
     .select("id", { count: "exact", head: true })
-    .eq("status", "pending");
+    .eq("status", "pending")
+    .not("slip_url", "is", null);
 
   const confirmed = await supabase
     .from("bookings")

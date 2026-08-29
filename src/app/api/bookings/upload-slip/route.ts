@@ -258,8 +258,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "cannot_get_public_url" }, { status: 500 });
     }
 
-    // 6) สร้าง booking แบบ atomic → pending (เช็ค stock มือถือ + เลนส์)
-    const rpc = await supabaseAdmin.rpc("create_pending_booking_if_available_v2", {
+    // 6) เปลี่ยน "เครื่องที่กันไว้" ให้เป็นการจองจริงแบบ atomic (เติมสลิป + ล้างวันหมดอายุ)
+    //    ถ้าของที่กันไว้หมดอายุ/ไม่มีแล้ว RPC จะเช็คสต็อกแล้วสร้างใหม่ให้เหมือนเดิม (ถ้าของยังเหลือ)
+    const rpc = await supabaseAdmin.rpc("finalize_booking_with_slip", {
       p_user_id:      user_id,
       p_session_id:   session_id,
       p_phone_id:     phone_id,
@@ -270,7 +271,6 @@ export async function POST(req: NextRequest) {
       p_renter_phone: renter_phone,
       p_total_amount: verifiedAmount,
       p_slip_url:     slip_url,
-      p_ref_number:   null,
       p_deposit_amount: Math.round(deposit * qty),
     });
 

@@ -248,8 +248,11 @@ export default function PhoneRentalHome() {
   // ── เช็คว่าเพิ่มเพื่อน LINE OA แล้วหรือยัง (ต้องเพิ่มก่อนถึงจะรับ push แจ้งเตือนตอนอนุมัติได้) ──
   const [lineFriendStatus, setLineFriendStatus] = useState<"idle" | "checking" | "friend" | "not_friend">("idle");
 
-  // ── จับเวลาทำรายการแยกต่อ step: step 3 ได้ 5 นาที, step 4 ได้อีก 5 นาที (แยกกัน ไม่ต่อเนื่อง) ──
-  const STEP_TIME_LIMIT = 5 * 60; // 5 นาทีต่อ step
+  // ── จับเวลาทำรายการแยกต่อ step: step 3 ได้ 10 นาที, step 4 ได้อีก 10 นาที (แยกกัน ไม่ต่อเนื่อง) ──
+  // 10 นาทีต่อ step — ตัวจับเวลานี้เป็นแค่ UX ฝั่งเบราว์เซอร์ ไม่ได้กันสต็อกไว้ให้ (สต็อกตัดจริง
+  // ตอนกด "ฉันโอนแล้ว" เท่านั้น) การเพิ่มเวลาจึงไม่บล็อกคนอื่นจอง แต่แลกกับช่วงเสี่ยงที่ยาวขึ้น
+  // ที่ลูกค้าอาจโอนเงินแล้วเจอ "เต็มแล้ว" เพราะคนอื่นตัดหน้าไประหว่างนั้น
+  const STEP_TIME_LIMIT = 10 * 60;
   const [timerExpiresAt, setTimerExpiresAt] = useState<number | null>(null);
   const [timerStepKey, setTimerStepKey] = useState<number | null>(null); // step ไหนที่ตัวจับเวลานี้ผูกอยู่
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -465,6 +468,12 @@ export default function PhoneRentalHome() {
     setPrivacyNoticeAcknowledged(false);
     setTimerExpiresAt(null);
     setTimerStepKey(null);
+    // ⚠️ ต้อง reset submitted/submitting ด้วย — ตอนจองสำเร็จ (ไป step 5) เราตั้ง submitted=true ค้างไว้
+    // กันกดยืนยันซ้ำ แต่ไม่เคยเคลียร์คืน พอกลับมาหน้าแรกเพื่อจองรอบใหม่ ปุ่ม "ต่อไป" เลยถูก
+    // isNextDisabled() สั่งปิดตายตลอด (เลือกคอนเสิร์ตได้แต่กดต่อไม่ได้)
+    setSubmitted(false);
+    setSubmitting(false);
+    setPageError("");
     setStep(1);
   };
 
@@ -746,7 +755,15 @@ export default function PhoneRentalHome() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#FFF9F3", fontFamily: uiFont, display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: showBottomNav ? 100 : 0, position: "relative", isolation: "isolate" }}>
-      <style>{`@keyframes crabby-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }`}</style>
+      <style>{`
+        @keyframes crabby-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        @keyframes crabby-spin { to { transform: rotate(360deg); } }
+        @keyframes crabby-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+        @keyframes crabby-bar { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
+        @media (prefers-reduced-motion: reduce) {
+          .crabby-anim { animation: none !important; }
+        }
+      `}</style>
       <AmbientGlow />
       <div style={{ width: "100%" }}>
         <Navbar user={meUser} onSignOut={handleSignOut} onGoHome={goToStep1} />
@@ -1396,14 +1413,37 @@ export default function PhoneRentalHome() {
                 ))}
               </div>
 
-              <label style={{ cursor: "pointer", display: "block" }}>
-                <div style={{ border: `1.5px dashed ${slipPreview ? good : borderStrong}`, borderRadius: 16, padding: 20, textAlign: "center", background: slipPreview ? goodSoft : "#fff", transition: "all .2s" }}>
+              <label style={{ cursor: submitting ? "default" : "pointer", display: "block" }}>
+                <div style={{ position: "relative", border: `1.5px dashed ${slipPreview ? good : borderStrong}`, borderRadius: 16, padding: 20, textAlign: "center", background: slipPreview ? goodSoft : "#fff", transition: "all .2s", overflow: "hidden" }}>
+                  {/* แถบไล่สีวิ่งด้านบนกรอบ บอกว่ากำลังส่งอยู่ */}
+                  {submitting && (
+                    <div aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, overflow: "hidden", background: "rgba(255,255,255,0.5)" }}>
+                      <div
+                        className="crabby-anim"
+                        style={{
+                          width: "25%", height: "100%",
+                          background: `linear-gradient(90deg, ${accent}, ${accent2})`,
+                          animation: "crabby-bar 1.1s ease-in-out infinite",
+                        }}
+                      />
+                    </div>
+                  )}
                   {slipPreview ? (
                     <div>
                       {/* blob: URL ตัวอย่างไฟล์ที่เพิ่งเลือกในเครื่อง — next/image เพิ่ม optimize ให้ไม่ได้ (ไม่มี server ให้ไปดึง) */}
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={slipPreview} alt="slip" style={{ maxHeight: 140, borderRadius: 10, objectFit: "contain", margin: "0 auto", display: "block" }} />
-                      <p style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: good }}>แนบสลิปแล้ว แตะเพื่อเปลี่ยน</p>
+                      <img
+                        src={slipPreview}
+                        alt="slip"
+                        className={submitting ? "crabby-anim" : undefined}
+                        style={{
+                          maxHeight: 140, borderRadius: 10, objectFit: "contain", margin: "0 auto", display: "block",
+                          ...(submitting ? { animation: "crabby-pulse 1.2s ease-in-out infinite" } : null),
+                        }}
+                      />
+                      <p style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: submitting ? accentStrong : good }}>
+                        {submitting ? "กำลังส่งสลิป กรุณารอสักครู่..." : "แนบสลิปแล้ว แตะเพื่อเปลี่ยน"}
+                      </p>
                     </div>
                   ) : (
                     <div>
@@ -1413,7 +1453,8 @@ export default function PhoneRentalHome() {
                     </div>
                   )}
                 </div>
-                <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => {
+                {/* ระหว่างส่งอยู่ ห้ามเปลี่ยนไฟล์ กันสลิปที่ส่งไปกับที่โชว์ไม่ตรงกัน */}
+                <input type="file" accept="image/*" disabled={submitting} style={{ display: "none" }} onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (f) { setSlipFile(f); setSlipPreview(URL.createObjectURL(f)); }
                 }} />
@@ -1554,12 +1595,21 @@ export default function PhoneRentalHome() {
                   ← กลับ
                 </button>
               )}
-              <button onClick={handleNext} disabled={isNextDisabled()} style={{ ...(isNextDisabled() ? doodle.btnGray : step === 4 ? doodle.btnGreen : doodle.btnPrimary), flex: 1, padding: "13px 0", fontSize: 15 }}>
-                {step === 4
-                  ? (submitting ? "กำลังบันทึก..." : "✓ ฉันโอนแล้ว!")
-                  : step === 3 && acknowledgingPrivacyNotice
-                    ? "กำลังบันทึกการรับทราบ..."
-                    : "ต่อไป →"}
+              <button onClick={handleNext} disabled={isNextDisabled()} style={{ ...(isNextDisabled() ? doodle.btnGray : step === 4 ? doodle.btnGreen : doodle.btnPrimary), flex: 1, padding: "13px 0", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                {(step === 4 && submitting) || (step === 3 && acknowledgingPrivacyNotice) ? (
+                  <>
+                    <span
+                      className="crabby-anim"
+                      aria-hidden="true"
+                      style={{
+                        width: 15, height: 15, borderRadius: "50%", flexShrink: 0,
+                        border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "#fff",
+                        animation: "crabby-spin .7s linear infinite",
+                      }}
+                    />
+                    {step === 4 ? "กำลังส่งสลิป..." : "กำลังบันทึกการรับทราบ..."}
+                  </>
+                ) : step === 4 ? "✓ ฉันโอนแล้ว!" : "ต่อไป →"}
               </button>
             </div>
           </div>

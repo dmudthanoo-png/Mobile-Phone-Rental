@@ -49,6 +49,8 @@ type PhoneQuotaInfo = {
   available_to_allocate: number;
   current_quota: number | null;
   already_booked: number;
+  default_price: number;
+  price_override: number | null;
 };
 type LensQuotaInfo = {
   lens_id: string;
@@ -298,6 +300,8 @@ export default function AdminPage() {
   const [quotaSaving, setQuotaSaving] = useState(false);
   const [quotaData, setQuotaData] = useState<PhoneQuotaInfo[]>([]);
   const [quotaInputs, setQuotaInputs] = useState<Record<string, string>>({});
+  // ราคาค่าเช่าเฉพาะรอบ — ว่าง = ใช้ราคาตั้งต้นของรุ่นนั้น
+  const [quotaPriceInputs, setQuotaPriceInputs] = useState<Record<string, string>>({});
   const [quotaLensData, setQuotaLensData] = useState<LensQuotaInfo[]>([]);
   const [quotaLensInputs, setQuotaLensInputs] = useState<Record<string, string>>({});
 
@@ -717,10 +721,14 @@ export default function AdminPage() {
       // ถ้ายังไม่เคยตั้งโควต้ารุ่นนี้มาก่อน ให้ค่าเริ่มต้นเป็น "เหลือให้จัดสรรได้อีกเท่าไหร่" เลย
       // (ปกติรอบเดียวไม่ชนกับใคร ก็จะเท่ากับจำนวนรวมร้านพอดี) แอดมินแค่มาลดตัวเลขเอาถ้าต้องการแบ่งให้รอบอื่น
       const inputs: Record<string, string> = {};
+      const priceInputs: Record<string, string> = {};
       for (const p of list) {
         inputs[p.phone_id] = String(p.current_quota != null ? p.current_quota : p.available_to_allocate);
+        // ตั้งราคาไว้เฉพาะรอบแล้วโชว์ค่านั้น ไม่งั้นปล่อยว่าง (= ใช้ราคาตั้งต้นของรุ่น)
+        priceInputs[p.phone_id] = p.price_override != null ? String(p.price_override) : "";
       }
       setQuotaInputs(inputs);
+      setQuotaPriceInputs(priceInputs);
 
       const lensList: LensQuotaInfo[] = out.lenses ?? [];
       setQuotaLensData(lensList);
@@ -735,7 +743,7 @@ export default function AdminPage() {
   };
 
   const closeQuotaManager = () => {
-    setQuotaSession(null); setQuotaData([]); setQuotaInputs({});
+    setQuotaSession(null); setQuotaData([]); setQuotaInputs({}); setQuotaPriceInputs({});
     setQuotaLensData([]); setQuotaLensInputs({});
   };
 
@@ -743,7 +751,10 @@ export default function AdminPage() {
     if (!quotaSession) return;
     const items = Object.entries(quotaInputs)
       .filter(([, v]) => v.trim() !== "")
-      .map(([phone_id, v]) => ({ phone_id, qty: Number(v) }));
+      .map(([phone_id, v]) => {
+        const rawPrice = (quotaPriceInputs[phone_id] ?? "").trim();
+        return { phone_id, qty: Number(v), price_override: rawPrice === "" ? null : Number(rawPrice) };
+      });
     const lensItems = Object.entries(quotaLensInputs)
       .filter(([, v]) => v.trim() !== "")
       .map(([lens_id, v]) => ({ lens_id, qty: Number(v) }));
@@ -1961,7 +1972,7 @@ export default function AdminPage() {
             {quotaSession && (
               <div onClick={closeQuotaManager} style={{ position:"fixed", inset:0, background:"rgba(51,46,44,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:20 }}>
                 <div onClick={e=>e.stopPropagation()} style={{ ...card, width:"100%", maxWidth:520, padding:20, maxHeight:"85vh", overflowY:"auto" }}>
-                  <div style={{ fontWeight:700, fontSize:16, marginBottom:4 }}>🎯 ตั้งโควต้ามือถือของรอบนี้</div>
+                  <div style={{ fontWeight:700, fontSize:16, marginBottom:4 }}>🎯 ตั้งโควต้า &amp; ราคามือถือของรอบนี้</div>
                   <div style={{ fontSize:12, color:UI.muted, fontWeight:700, marginBottom:14 }}>
                     ⏰ {fmtDT(quotaSession.start_at)}{quotaSession.note?` — ${quotaSession.note}`:""}
                   </div>
@@ -1995,6 +2006,38 @@ export default function AdminPage() {
                                   style={{ ...inputStyle, width:64, textAlign:"center", fontWeight:800, fontSize:16, border:`1.5px solid ${UI.accent2}`, color:UI.accent2 }}
                                 />
                                 <span style={{ fontSize:12, color:UI.muted, fontWeight:700 }}>เครื่อง</span>
+                              </div>
+                            </div>
+
+                            {/* ราคาค่าเช่าเฉพาะรอบนี้ — ว่าง = ใช้ราคาตั้งต้นของรุ่น */}
+                            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:10, paddingBottom:10, borderBottom:`1px dashed ${UI.border}` }}>
+                              <div style={{ minWidth:0 }}>
+                                <div style={{ fontSize:12, fontWeight:700, color:UI.ink }}>💰 ค่าเช่ารอบนี้</div>
+                                <div style={{ fontSize:10.5, fontWeight:600, color:UI.muted, marginTop:1 }}>
+                                  ว่าง = ใช้ราคาตั้งต้น {money(p.default_price)}
+                                </div>
+                              </div>
+                              <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                                <span style={{ fontSize:12, color:UI.muted, fontWeight:700 }}>฿</span>
+                                <input
+                                  value={quotaPriceInputs[p.phone_id] ?? ""}
+                                  onChange={e=>setQuotaPriceInputs(prev=>({ ...prev, [p.phone_id]: e.target.value.replace(/\D/g,"") }))}
+                                  placeholder={String(p.default_price)}
+                                  style={{
+                                    ...inputStyle, width:84, textAlign:"center", fontWeight:800, fontSize:14,
+                                    border:`1.5px solid ${(quotaPriceInputs[p.phone_id] ?? "").trim() !== "" ? UI.accent : UI.border}`,
+                                    color:(quotaPriceInputs[p.phone_id] ?? "").trim() !== "" ? UI.accent : UI.ink,
+                                  }}
+                                />
+                                {(quotaPriceInputs[p.phone_id] ?? "").trim() !== "" && (
+                                  <button
+                                    onClick={()=>setQuotaPriceInputs(prev=>({ ...prev, [p.phone_id]: "" }))}
+                                    title="กลับไปใช้ราคาตั้งต้น"
+                                    style={{ border:"none", background:"transparent", cursor:"pointer", color:UI.muted, fontSize:15, padding:"0 2px", lineHeight:1 }}
+                                  >
+                                    ✕
+                                  </button>
+                                )}
                               </div>
                             </div>
 

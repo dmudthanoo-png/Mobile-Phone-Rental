@@ -168,7 +168,17 @@ export async function POST(req: NextRequest) {
     if (phoneErr) return NextResponse.json({ error: phoneErr.message }, { status: 500 });
     if (!phoneRow) return NextResponse.json({ error: "phone not found" }, { status: 404 });
 
-    const basePrice = Number(phoneRow.price   ?? 0);
+    // ราคาค่าเช่าอาจถูกตั้งแยกเฉพาะรอบนี้ไว้ (เช่น คอนเสิร์ตใหญ่ขึ้นราคา) — ถ้าไม่ได้ตั้งไว้ใช้ราคาตั้งต้นของรุ่น
+    const { data: priceRow, error: priceErr } = await supabaseAdmin
+      .from("session_phone_inventory")
+      .select("price_override")
+      .eq("session_id", session_id)
+      .eq("phone_id", phone_id)
+      .maybeSingle();
+
+    if (priceErr) return NextResponse.json({ error: priceErr.message }, { status: 500 });
+
+    const basePrice = Number(priceRow?.price_override ?? phoneRow.price ?? 0);
     const deposit   = Number(phoneRow.deposit ?? 0);
 
     let lensPrice = 0;

@@ -27,6 +27,8 @@ type PhoneQuotaInfo = {
   available_to_allocate: number;
   current_quota: number | null;
   already_booked: number;
+  default_price: number;
+  price_override: number | null;
 };
 
 type LensQuotaInfo = {
@@ -77,7 +79,7 @@ export async function GET(
 
   const { data: phones, error: phonesErr } = await supabase
     .from("phones")
-    .select("id, model_name, qty")
+    .select("id, model_name, qty, price")
     .eq("active", true)
     .order("model_name", { ascending: true });
 
@@ -112,16 +114,20 @@ export async function GET(
       }
     }
 
-    // โควต้าปัจจุบันของรอบนี้เอง
+    // โควต้า + ราคาเฉพาะรอบ (ถ้าตั้งไว้) ของรอบนี้เอง
     const { data: currentRows, error: currentErr } = await supabase
       .from("session_phone_inventory")
-      .select("phone_id, qty")
+      .select("phone_id, qty, price_override")
       .eq("session_id", sessionId)
       .in("phone_id", phoneIds);
 
     if (currentErr) return NextResponse.json({ error: currentErr.message }, { status: 500 });
     const currentByPhone: Record<string, number> = {};
-    for (const r of currentRows ?? []) currentByPhone[r.phone_id] = Number(r.qty ?? 0);
+    const priceOverrideByPhone: Record<string, number | null> = {};
+    for (const r of currentRows ?? []) {
+      currentByPhone[r.phone_id] = Number(r.qty ?? 0);
+      priceOverrideByPhone[r.phone_id] = r.price_override != null ? Number(r.price_override) : null;
+    }
 
     // ยอดที่ถูกจองไปแล้วจริงของรอบนี้ (กันตั้งโควต้าต่ำกว่ายอดจอง)
     const { data: bookedRows, error: bookedErr } = await supabase
@@ -150,6 +156,8 @@ export async function GET(
         available_to_allocate: Math.max(0, totalQty - allocatedElsewhere),
         current_quota: currentByPhone[p.id] ?? null,
         already_booked: bookedByPhone[p.id] ?? 0,
+        default_price: Number(p.price ?? 0),
+        price_override: priceOverrideByPhone[p.id] ?? null,
       };
     });
   }
@@ -226,13 +234,19 @@ export async function POST(
   if (!sessionId) return NextResponse.json({ error: "missing sessionId" }, { status: 400 });
 
   const body = await req.json().catch(() => null);
-  const items = (body as { items?: { phone_id?: string; qty?: unknown }[] } | null)?.items ?? [];
+  const items = (body as { items?: { phone_id?: string; qty?: unknown; price_override?: unknown }[] } | null)?.items ?? [];
   const lensItems = (body as { lens_items?: { lens_id?: string; qty?: unknown }[] } | null)?.lens_items ?? [];
   if (items.length === 0 && lensItems.length === 0) {
     return NextResponse.json({ error: "items หรือ lens_items ต้องมีอย่างน้อย 1 รายการ" }, { status: 400 });
   }
 
   const supabase = getSupabase();
+
+  // price_override: null/"" = ใช้ราคาตั้งต้นของรุ่น, ตัวเลข = ใช้ราคานั้นเฉพาะรอบนี้
+  const normalizePriceOverride = (raw: unknown): number | null => {
+    if (raw === null || raw === undefined || raw === "") return null;
+    return Number(raw);
+  };
 
   // validate ก่อนส่งเข้า RPC
   for (const item of items) {
@@ -241,6 +255,10 @@ export async function POST(
     if (!phoneId) return NextResponse.json({ error: "each item must have phone_id" }, { status: 400 });
     if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty < 0) {
       return NextResponse.json({ error: `invalid qty for phone_id ${phoneId}` }, { status: 400 });
+    }
+    const price = normalizePriceOverride(item.price_override);
+    if (price !== null && (!Number.isFinite(price) || !Number.isInteger(price) || price < 0)) {
+      return NextResponse.json({ error: `invalid price_override for phone_id ${phoneId}` }, { status: 400 });
     }
   }
   for (const item of lensItems) {
@@ -256,7 +274,11 @@ export async function POST(
   // รายการก่อนหน้าที่สำเร็จไปแล้วค้างอยู่ (ดู scripts/fix_lens_quota_backfill_and_atomic_batch.sql)
   const { error } = await supabase.rpc("set_session_quota_batch", {
     p_session_id: sessionId,
-    p_phone_items: items.map((it) => ({ phone_id: String(it.phone_id ?? "").trim(), qty: Number(it.qty) })),
+    p_phone_items: items.map((it) => ({
+      phone_id: String(it.phone_id ?? "").trim(),
+      qty: Number(it.qty),
+      price_override: normalizePriceOverride(it.price_override),
+    })),
     p_lens_items: lensItems.map((it) => ({ lens_id: String(it.lens_id ?? "").trim(), qty: Number(it.qty) })),
   });
   if (error) {

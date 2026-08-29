@@ -193,16 +193,19 @@ begin
   perform pg_advisory_xact_lock(hashtext(p_user_id::text));
 
   -- ── มีของที่กันไว้อยู่ไหม (ตรงรอบ+รุ่น และยังไม่หมดอายุ) ──
-  select id, ref_number into v_hold_id, v_hold_ref
-  from public.bookings
-  where user_id = p_user_id
-    and session_id = p_session_id
-    and phone_id = p_phone_id
-    and status = 'pending'
-    and slip_url is null
-    and pending_expires_at is not null
-    and pending_expires_at > now()
-  order by pending_expires_at desc
+  -- ⚠️ ต้องใส่ alias (b.) ทุกคอลัมน์ เพราะฟังก์ชันนี้ประกาศ RETURNS TABLE(booking_id, ref_number)
+  -- ชื่อ ref_number จึงชนกันระหว่าง "คอลัมน์ในตาราง" กับ "ตัวแปรผลลัพธ์ของฟังก์ชัน"
+  -- ถ้าไม่ใส่ alias Postgres จะฟ้อง: column reference "ref_number" is ambiguous
+  select b.id, b.ref_number into v_hold_id, v_hold_ref
+  from public.bookings b
+  where b.user_id = p_user_id
+    and b.session_id = p_session_id
+    and b.phone_id = p_phone_id
+    and b.status = 'pending'
+    and b.slip_url is null
+    and b.pending_expires_at is not null
+    and b.pending_expires_at > now()
+  order by b.pending_expires_at desc
   limit 1
   for update;
 

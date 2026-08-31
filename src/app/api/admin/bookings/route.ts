@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
       line_message_status, line_message_error, line_message_attempted_at,
       line_message_sent_at, line_message_attempt_count, line_message_http_status,
       line_message_error_detail, line_message_request_id,
+      delivered_at, returned_at, files_sent_at, fulfillment_note,
       user_id, line_sub,
       concert_sessions:session_id (
         start_at, note,

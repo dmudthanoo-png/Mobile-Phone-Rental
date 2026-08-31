@@ -15,6 +15,11 @@ type Booking = {
   qty?: number;
   add_lens?: boolean;       // ← เพิ่ม
   lens_price?: number;      // ← เพิ่ม
+  // ── ติดตามงานหลังยืนยันการจอง (null = ยังไม่ได้ทำ) ──
+  delivered_at?: string | null;
+  returned_at?: string | null;
+  files_sent_at?: string | null;
+  fulfillment_note?: string | null;
   slip_verified?: boolean | null;
   slip_verify_message?: string | null;
   slip_verify_amount?: number | null;
@@ -209,8 +214,42 @@ const card: React.CSSProperties = {
   boxShadow: UI.shadow, overflow: "hidden",
 };
 
+// จับกลุ่มการกระทำในประวัติแอดมิน → ไอคอน/สี ให้กวาดตาหาได้เร็วขึ้น ไม่ต้องอ่านทีละบรรทัด
+function auditStyleOf(action: string): { icon: string; bg: string; fg: string } {
+  const a = action || "";
+  if (/ยืนยัน|เปิดใช้งาน|อนุมัติ|แสดงผล|restore/i.test(a)) return { icon:"✅", bg:"#E7FBEF", fg:"#0F9D4E" };
+  if (/ปฏิเสธ|ลบ|แบน|ปิดใช้งาน|archive/i.test(a))          return { icon:"🗑", bg:"#FFEEF1", fg:"#C43D5C" };
+  if (/แก้ไข|อัปเดต|เปลี่ยน|ตั้ง/i.test(a))                  return { icon:"✏️", bg:"#FFF6DF", fg:"#8A6D2F" };
+  if (/เพิ่ม|สร้าง/i.test(a))                                return { icon:"➕", bg:"#EDE6FB", fg:"#8354E8" };
+  if (/ส่งมอบ|คืนเครื่อง|ส่งไฟล์|ติดตาม|หมายเหตุ/i.test(a))  return { icon:"📦", bg:"#E6F4FF", fg:"#1B6FB8" };
+  if (/เข้าสู่ระบบ|รหัสผ่าน|2fa|ออกจากระบบ/i.test(a))        return { icon:"🔐", bg:"#F1EEE9", fg:"#6B5F55" };
+  return { icon:"•", bg:"#F5F3F1", fg:UI_MUTED };
+}
+const UI_MUTED = "#8A7F76";
+
+// "วันนี้ / เมื่อวาน / 25 ส.ค. 2569" สำหรับหัวกลุ่มแต่ละวัน
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((startOf(today) - startOf(d)) / 86400000);
+  if (diff === 0) return "วันนี้";
+  if (diff === 1) return "เมื่อวาน";
+  return d.toLocaleDateString("th-TH", { day:"numeric", month:"short", year:"numeric" });
+}
+
+// "5 นาทีที่แล้ว" — บอกความสดของเหตุการณ์ได้เร็วกว่าอ่านเวลาเต็ม
+function timeAgo(iso: string): string {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return "เมื่อสักครู่";
+  if (s < 3600) return `${Math.floor(s/60)} นาทีที่แล้ว`;
+  if (s < 86400) return `${Math.floor(s/3600)} ชม.ที่แล้ว`;
+  return `${Math.floor(s/86400)} วันที่แล้ว`;
+}
+
 const TAB_ITEMS = [
   { key: "bookings" as const, icon: "📋", label: "จัดการการจอง" },
+  { key: "fulfillment" as const, icon: "📦", label: "ติดตามงาน" },
   { key: "users" as const, icon: "👤", label: "ผู้ใช้" },
   { key: "concerts" as const, icon: "🎫", label: "คอนเสิร์ต & รอบ" },
   { key: "phones" as const, icon: "📱", label: "มือถือ & Inventory" },
@@ -260,7 +299,8 @@ export default function AdminPage() {
   const [deletingAdminId, setDeletingAdminId] = useState<string | null>(null);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [auditFilter, setAuditFilter] = useState("");
-  const [tab, setTab] = useState<"bookings"|"users"|"concerts"|"phones"|"lenses"|"reviews"|"announcement"|"admins"|"auditlog">("bookings");
+  const [auditSearch, setAuditSearch] = useState("");
+  const [tab, setTab] = useState<"bookings"|"fulfillment"|"users"|"concerts"|"phones"|"lenses"|"reviews"|"announcement"|"admins"|"auditlog">("bookings");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -276,6 +316,14 @@ export default function AdminPage() {
   const [bStatus, setBStatus] = useState<"pending"|"confirmed"|"rejected"|"all">("pending");
   const [bQ, setBQ] = useState("");
   const [summary, setSummary] = useState<Summary>({ total:0, pending:0, confirmed:0, rejected:0, revenue:0, deposit_received:0 });
+  // ── ติดตามงาน (หลังยืนยันการจอง) ──
+  const [fulfillList, setFulfillList] = useState<Booking[]>([]);
+  const [fulfillLoading, setFulfillLoading] = useState(false);
+  const [fulfillFilter, setFulfillFilter] = useState<"todo"|"out"|"files"|"done"|"all">("todo");
+  const [fulfillSelected, setFulfillSelected] = useState<string[]>([]);
+  const [fulfillNotes, setFulfillNotes] = useState<Record<string,string>>({});
+  const [fulfillBusy, setFulfillBusy] = useState(false);
+
   const [slipModal, setSlipModal] = useState<string|null>(null);
   const [viewingSlipId, setViewingSlipId] = useState<string|null>(null);
   const [lineQuota, setLineQuota] = useState<LineQuota>({ status:"loading", loading:true });
@@ -414,7 +462,7 @@ export default function AdminPage() {
     }
   };
 
-  const loadAll = () => { fetchBookings(); fetchSummary(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchReviews(); fetchUsers(); fetchAnnouncement(); fetchSettings(); fetchLineQuota(); fetchAdmins(); fetchAuditLog(); };
+  const loadAll = () => { fetchBookings(); fetchSummary(); fetchFulfillment(); fetchConcerts(); fetchPhones(); fetchLenses(); fetchReviews(); fetchUsers(); fetchAnnouncement(); fetchSettings(); fetchLineQuota(); fetchAdmins(); fetchAuditLog(); };
 
   // ── bookings ──
   const fetchBookings = async () => {
@@ -426,6 +474,53 @@ export default function AdminPage() {
     const out = await res.json();
     setBookings(out.bookings ?? []);
     setLoading(false);
+  };
+
+  // ── ติดตามงาน: ดึงเฉพาะรายการที่ยืนยันแล้ว ──
+  const fetchFulfillment = async () => {
+    setFulfillLoading(true);
+    try {
+      const res = await fetch("/api/admin/bookings?status=confirmed", { cache:"no-store" });
+      if (!res.ok) return;
+      const out = await res.json();
+      const list: Booking[] = out.bookings ?? [];
+      setFulfillList(list);
+      const notes: Record<string,string> = {};
+      for (const b of list) notes[b.id] = b.fulfillment_note ?? "";
+      setFulfillNotes(notes);
+    } finally {
+      setFulfillLoading(false);
+    }
+  };
+
+  // ติ๊ก/ยกเลิกขั้นตอน — ใช้ได้ทั้งรายการเดียวและหลายรายการพร้อมกัน
+  const setFulfillStep = async (ids: string[], step: "delivered"|"returned"|"files_sent", done: boolean) => {
+    if (ids.length === 0) return;
+    setFulfillBusy(true);
+    try {
+      const res = await fetch("/api/admin/bookings/fulfillment", {
+        method:"POST", headers:{"content-type":"application/json"},
+        body: JSON.stringify({ booking_ids: ids, step, done }), cache:"no-store",
+      });
+      const out = await res.json().catch(()=>null);
+      if (!res.ok) { showMsg(out?.error || "บันทึกไม่สำเร็จ", false); return; }
+      const label = step === "delivered" ? "ส่งมอบเครื่อง" : step === "returned" ? "คืนเครื่อง" : "ส่งไฟล์";
+      showMsg(`${done ? "✅" : "↩️"} ${done ? "ติ๊ก" : "ยกเลิก"}${label}แล้ว ${ids.length > 1 ? `(${out.updated} รายการ)` : ""}`);
+      setFulfillSelected([]);
+      fetchFulfillment();
+    } finally {
+      setFulfillBusy(false);
+    }
+  };
+
+  const saveFulfillNote = async (bookingId: string) => {
+    const res = await fetch("/api/admin/bookings/fulfillment", {
+      method:"POST", headers:{"content-type":"application/json"},
+      body: JSON.stringify({ booking_id: bookingId, note: fulfillNotes[bookingId] ?? "" }), cache:"no-store",
+    });
+    const out = await res.json().catch(()=>null);
+    if (!res.ok) { showMsg(out?.error || "บันทึกหมายเหตุไม่สำเร็จ", false); return; }
+    showMsg("💾 บันทึกหมายเหตุแล้ว");
   };
 
   const fetchSummary = async () => {
@@ -1701,6 +1796,144 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* ═══════════════ TAB: FULFILLMENT (ติดตามงาน) ═══════════════ */}
+        {tab === "fulfillment" && (() => {
+          const stepsDone = (b: Booking) => (b.delivered_at?1:0) + (b.returned_at?1:0) + (b.files_sent_at?1:0);
+          const bucketOf = (b: Booking) =>
+            !b.delivered_at ? "todo" : !b.returned_at ? "out" : !b.files_sent_at ? "files" : "done";
+          const counts = { todo:0, out:0, files:0, done:0, all: fulfillList.length };
+          for (const b of fulfillList) counts[bucketOf(b) as "todo"|"out"|"files"|"done"]++;
+
+          // เรียงตามวันรอบ (ใกล้ที่สุดขึ้นก่อน) เพื่อให้งานของวันนี้อยู่บนสุด
+          const shown = fulfillList
+            .filter(b => fulfillFilter === "all" || bucketOf(b) === fulfillFilter)
+            .sort((a,b) => new Date(a.concert_sessions?.start_at ?? 0).getTime() - new Date(b.concert_sessions?.start_at ?? 0).getTime());
+
+          const FILTERS = [
+            { key:"todo" as const,  label:"🚚 รอส่งมอบ",     n:counts.todo },
+            { key:"out" as const,   label:"📱 อยู่กับลูกค้า", n:counts.out },
+            { key:"files" as const, label:"🖼 รอส่งไฟล์",     n:counts.files },
+            { key:"done" as const,  label:"✅ เสร็จแล้ว",     n:counts.done },
+            { key:"all" as const,   label:"📋 ทั้งหมด",       n:counts.all },
+          ];
+
+          // ปุ่มติ๊กหลายรายการพร้อมกัน — โชว์ขั้นตอนที่ตรงกับแถบที่กำลังดูอยู่
+          const bulkStep = fulfillFilter === "todo" ? "delivered" : fulfillFilter === "out" ? "returned" : fulfillFilter === "files" ? "files_sent" : null;
+          const bulkLabel = bulkStep === "delivered" ? "ส่งมอบเครื่องแล้ว" : bulkStep === "returned" ? "คืนเครื่องแล้ว" : "ส่งไฟล์แล้ว";
+
+          const StepRow = ({ b, step, at, label }: { b: Booking; step:"delivered"|"returned"|"files_sent"; at: string|null|undefined; label:string }) => (
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, padding:"7px 0" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
+                <span style={{ fontSize:15 }}>{at ? "✅" : "⬜"}</span>
+                <span style={{ fontSize:13, fontWeight:700, color: at ? UI.ink : UI.muted }}>{label}</span>
+                {at && <span style={{ fontSize:11, color:UI.muted, fontWeight:600 }}>{fmtDT(at)}</span>}
+              </div>
+              <button
+                onClick={()=>setFulfillStep([b.id], step, !at)}
+                disabled={fulfillBusy}
+                style={{ ...btnStyle(at ? "white" : "dark", fulfillBusy), padding:"6px 12px", fontSize:12, flexShrink:0 }}
+              >
+                {at ? "↩︎ ยกเลิก" : "ทำเสร็จแล้ว"}
+              </button>
+            </div>
+          );
+
+          return (
+            <div>
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:14, alignItems:"center" }}>
+                {FILTERS.map(f => (
+                  <button key={f.key} onClick={()=>{ setFulfillFilter(f.key); setFulfillSelected([]); }}
+                    style={{ ...btnStyle(fulfillFilter===f.key ? "dark":"white"), fontSize:12.5 }}>
+                    {f.label} ({f.n})
+                  </button>
+                ))}
+                <button onClick={fetchFulfillment} style={{ ...btnStyle("white"), fontSize:12.5, marginLeft:"auto" }}>🔄 รีเฟรช</button>
+              </div>
+
+              {/* แถบทำหลายรายการพร้อมกัน */}
+              {bulkStep && shown.length > 0 && (
+                <div style={{ ...card, padding:"10px 14px", marginBottom:12, display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+                  <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12.5, fontWeight:700, cursor:"pointer" }}>
+                    <input type="checkbox" style={{ width:16, height:16 }}
+                      checked={fulfillSelected.length === shown.length && shown.length > 0}
+                      onChange={e => setFulfillSelected(e.target.checked ? shown.map(b=>b.id) : [])} />
+                    เลือกทั้งหมดในหน้านี้
+                  </label>
+                  <span style={{ fontSize:12, color:UI.muted, fontWeight:700 }}>เลือกแล้ว {fulfillSelected.length} รายการ</span>
+                  <button
+                    onClick={()=>setFulfillStep(fulfillSelected, bulkStep, true)}
+                    disabled={fulfillSelected.length===0 || fulfillBusy}
+                    style={{ ...btnStyle("dark", fulfillSelected.length===0||fulfillBusy), fontSize:12.5, marginLeft:"auto" }}>
+                    ✅ ติ๊ก &quot;{bulkLabel}&quot; ให้ที่เลือกไว้
+                  </button>
+                </div>
+              )}
+
+              {fulfillLoading ? (
+                <div style={{ ...card, padding:24, textAlign:"center", color:UI.muted, fontWeight:700 }}>⏳ กำลังโหลด...</div>
+              ) : shown.length === 0 ? (
+                <div style={{ ...card, padding:24, textAlign:"center", color:UI.muted, fontWeight:700 }}>
+                  {fulfillFilter==="todo" ? "🎉 ส่งมอบครบทุกรายการแล้ว" : fulfillFilter==="done" ? "ยังไม่มีรายการที่เสร็จสมบูรณ์" : "ไม่มีรายการในหมวดนี้"}
+                </div>
+              ) : (
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))", gap:12 }}>
+                  {shown.map(b => {
+                    const n = stepsDone(b);
+                    const checked = fulfillSelected.includes(b.id);
+                    return (
+                      <div key={b.id} style={{ ...card, padding:14, borderColor: n===3 ? "#B7EFC5" : UI.border }}>
+                        <div style={{ display:"flex", alignItems:"flex-start", gap:8, marginBottom:8 }}>
+                          {bulkStep && (
+                            <input type="checkbox" checked={checked} style={{ width:16, height:16, marginTop:3, flexShrink:0 }}
+                              onChange={e => setFulfillSelected(p => e.target.checked ? [...p, b.id] : p.filter(x=>x!==b.id))} />
+                          )}
+                          <div style={{ minWidth:0, flex:1 }}>
+                            <div style={{ fontWeight:700, fontSize:13.5, color:UI.ink }}>
+                              {b.concert_sessions?.concerts?.title ?? "-"}
+                            </div>
+                            <div style={{ fontSize:11.5, color:UI.muted, fontWeight:700, marginTop:2 }}>
+                              ⏰ {fmtDT(b.concert_sessions?.start_at)}
+                            </div>
+                          </div>
+                          <span style={{ fontSize:11, fontWeight:800, borderRadius:999, padding:"3px 9px", flexShrink:0,
+                            background: n===3 ? "#E7FBEF" : "#F5F3F1", color: n===3 ? "#0F9D4E" : UI.muted }}>
+                            {n}/3
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize:12.5, fontWeight:700, color:UI.ink }}>👤 {b.renter_name} · {b.renter_phone}</div>
+                        <div style={{ fontSize:12, color:UI.muted, fontWeight:600, marginBottom:8 }}>
+                          📱 {b.phones?.model_name ?? "-"}{b.qty && b.qty>1 ? ` ×${b.qty}` : ""}{b.add_lens ? " · 🔭 มีเลนส์" : ""} · {b.ref_number ?? ""}
+                        </div>
+
+                        <div style={{ borderTop:`1px dashed ${UI.border}`, paddingTop:4 }}>
+                          <StepRow b={b} step="delivered"  at={b.delivered_at}  label="ส่งมอบเครื่อง" />
+                          <StepRow b={b} step="returned"   at={b.returned_at}   label="คืนเครื่อง" />
+                          <StepRow b={b} step="files_sent" at={b.files_sent_at} label="ส่งไฟล์" />
+                        </div>
+
+                        <div style={{ borderTop:`1px dashed ${UI.border}`, paddingTop:8, marginTop:4 }}>
+                          <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:4 }}>📝 หมายเหตุ (เช่น สภาพเครื่องตอนคืน)</div>
+                          <div style={{ display:"flex", gap:6 }}>
+                            <input value={fulfillNotes[b.id] ?? ""} placeholder="ไม่มีหมายเหตุ"
+                              onChange={e=>setFulfillNotes(p=>({ ...p, [b.id]: e.target.value }))}
+                              style={{ ...inputStyle, fontSize:12 }} />
+                            <button onClick={()=>saveFulfillNote(b.id)}
+                              disabled={(fulfillNotes[b.id] ?? "") === (b.fulfillment_note ?? "")}
+                              style={{ ...btnStyle("white", (fulfillNotes[b.id] ?? "") === (b.fulfillment_note ?? "")), padding:"8px 12px", fontSize:12, flexShrink:0 }}>
+                              💾
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* ═══════════════ TAB: USERS ═══════════════ */}
         {tab === "users" && (
           <div>
@@ -2598,11 +2831,17 @@ export default function AdminPage() {
           <div>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, flexWrap:"wrap", gap:10 }}>
               <div style={{ fontWeight:700, fontSize:15 }}>📜 ประวัติการดำเนินการของแอดมิน ({auditLog.length})</div>
-              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+              <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+                <input
+                  value={auditSearch}
+                  onChange={e => setAuditSearch(e.target.value)}
+                  placeholder="🔎 ค้นหาจากสิ่งที่ทำ / รายละเอียด"
+                  style={{ ...inputStyle, maxWidth:230, fontSize:12.5 }}
+                />
                 <select
                   value={auditFilter}
                   onChange={e => { setAuditFilter(e.target.value); fetchAuditLog(e.target.value || undefined); }}
-                  style={{ ...inputStyle, maxWidth:200 }}
+                  style={{ ...inputStyle, maxWidth:170 }}
                 >
                   <option value="">ทุกคน</option>
                   {admins.map(a => <option key={a.id} value={a.username}>{a.username}</option>)}
@@ -2611,27 +2850,81 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {auditLog.length === 0 ? (
-              <div style={{ ...card, padding:24, textAlign:"center", color:UI.muted, fontWeight:700 }}>
-                ยังไม่มีประวัติการดำเนินการ
-              </div>
-            ) : (
-              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                {auditLog.map((l) => (
-                  <div key={l.id} style={{ ...card, padding:"12px 16px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10 }}>
-                    <div>
-                      <div style={{ fontSize:13, fontWeight:700, color:UI.ink }}>
-                        👤 {l.admin_username} <span style={{ color:UI.muted, fontWeight:600 }}>·</span> {l.action}
-                      </div>
-                      {l.detail && (
-                        <div style={{ fontSize:12, color:UI.muted, fontWeight:600, marginTop:2 }}>{l.detail}</div>
-                      )}
-                    </div>
-                    <div style={{ fontSize:11, color:UI.muted, fontWeight:600, whiteSpace:"nowrap" }}>{fmtDT(l.created_at)}</div>
+            {(() => {
+              const q = auditSearch.trim().toLowerCase();
+              const filtered = q
+                ? auditLog.filter(l =>
+                    (l.action||"").toLowerCase().includes(q) ||
+                    (l.detail||"").toLowerCase().includes(q) ||
+                    (l.admin_username||"").toLowerCase().includes(q))
+                : auditLog;
+
+              if (filtered.length === 0) {
+                return (
+                  <div style={{ ...card, padding:24, textAlign:"center", color:UI.muted, fontWeight:700 }}>
+                    {q ? `ไม่พบรายการที่ตรงกับ "${auditSearch}"` : "ยังไม่มีประวัติการดำเนินการ"}
                   </div>
-                ))}
-              </div>
-            )}
+                );
+              }
+
+              // จัดกลุ่มตามวัน — อ่านง่ายกว่ารายการยาวๆ ต่อกันเป็นพืด
+              const groups: { day: string; items: AuditLogEntry[] }[] = [];
+              for (const l of filtered) {
+                const d = dayLabel(l.created_at);
+                if (groups[groups.length-1]?.day !== d) groups.push({ day:d, items:[] });
+                groups[groups.length-1].items.push(l);
+              }
+
+              return (
+                <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+                  {groups.map(g => (
+                    <div key={g.day}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                        <span style={{ fontSize:12, fontWeight:800, color:UI.ink }}>{g.day}</span>
+                        <span style={{ fontSize:11, fontWeight:700, color:UI.muted, background:"#F5F3F1", borderRadius:999, padding:"2px 8px" }}>
+                          {g.items.length} รายการ
+                        </span>
+                        <div style={{ flex:1, height:1, background:UI.border }} />
+                      </div>
+
+                      <div style={{ ...card, padding:0, overflow:"hidden" }}>
+                        {g.items.map((l, i) => {
+                          const s = auditStyleOf(l.action);
+                          return (
+                            <div key={l.id} style={{
+                              display:"flex", alignItems:"flex-start", gap:11, padding:"11px 14px",
+                              borderTop: i === 0 ? "none" : `1px solid ${UI.border}`,
+                            }}>
+                              <span style={{
+                                width:28, height:28, borderRadius:9, background:s.bg, color:s.fg,
+                                display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, flexShrink:0,
+                              }}>{s.icon}</span>
+
+                              <div style={{ minWidth:0, flex:1 }}>
+                                <div style={{ fontSize:13, fontWeight:700, color:UI.ink }}>{l.action}</div>
+                                {l.detail && (
+                                  <div style={{ fontSize:11.5, color:UI.muted, fontWeight:600, marginTop:2, wordBreak:"break-word" }}>{l.detail}</div>
+                                )}
+                                <div style={{ fontSize:11, color:UI.muted, fontWeight:700, marginTop:3 }}>
+                                  👤 {l.admin_username}
+                                </div>
+                              </div>
+
+                              <div style={{ textAlign:"right", flexShrink:0 }}>
+                                <div style={{ fontSize:11.5, fontWeight:700, color:UI.ink, whiteSpace:"nowrap" }}>
+                                  {new Date(l.created_at).toLocaleTimeString("th-TH", { hour:"2-digit", minute:"2-digit" })}
+                                </div>
+                                <div style={{ fontSize:10.5, color:UI.muted, fontWeight:600, whiteSpace:"nowrap" }}>{timeAgo(l.created_at)}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

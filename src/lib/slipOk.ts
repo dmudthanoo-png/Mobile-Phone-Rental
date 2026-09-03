@@ -66,17 +66,21 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
   // 1) ดึงข้อมูล booking + มัดจำต่อเครื่องของรุ่นนั้น (ยอดที่ควรจะโอนมา = มัดจำ x จำนวนเครื่อง)
   const { data: bookingRaw, error: bErr } = await supabase
     .from("bookings")
-    .select("id, slip_url, qty, phones ( deposit )")
+    .select("id, slip_url, qty, deposit_amount, phones ( deposit )")
     .eq("id", bookingId)
     .maybeSingle();
 
   if (bErr) return { ok: false, error: bErr.message };
   if (!bookingRaw) return { ok: false, error: "booking not found" };
 
-  const booking = bookingRaw as unknown as { id: string; slip_url: string | null; qty: number | null; phones: { deposit: number } | null };
+  const booking = bookingRaw as unknown as { id: string; slip_url: string | null; qty: number | null; deposit_amount: number | null; phones: { deposit: number } | null };
   if (!booking.slip_url) return { ok: false, error: "booking has no slip" };
 
-  const expectedAmount = Number(booking.phones?.deposit ?? 0) * Number(booking.qty ?? 1);
+  // ใช้ยอดมัดจำที่บันทึกไว้ตอนจองเป็นหลัก — ถ้าคิดสดจากราคาปัจจุบันจะเพี้ยน 2 กรณี:
+  // (1) แอดมินแก้ราคามัดจำทีหลัง แล้วตรวจสลิปเก่าซ้ำ  (2) กรณีมัดจำถูกจำกัดไม่ให้เกินยอดรวม
+  const expectedAmount = booking.deposit_amount != null
+    ? Number(booking.deposit_amount)
+    : Number(booking.phones?.deposit ?? 0) * Number(booking.qty ?? 1);
 
   // 2) โหลดรูปสลิปจาก Supabase Storage ผ่าน service role โดยตรง
   //    (ใช้ได้ทั้งตอน bucket เป็น public หรือ private — ไม่ต้องพึ่ง URL สาธารณะ)

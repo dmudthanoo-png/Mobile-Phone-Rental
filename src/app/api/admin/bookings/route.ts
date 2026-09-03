@@ -19,7 +19,9 @@ export async function GET(req: NextRequest) {
     | "confirmed"
     | "rejected"
     | "all";
-  const q = (searchParams.get("q") || "").trim();
+  // ตัดอักขระที่เป็นไวยากรณ์ของ PostgREST ออก ( , ( ) . : "  ) ก่อนเอาไปต่อเป็น filter string
+  // ไม่งั้นคำค้นที่มีคอมมาจะแตกออกเป็นเงื่อนไขเพิ่ม ทำให้ผลลัพธ์เพี้ยนหรือ query พัง
+  const q = (searchParams.get("q") || "").trim().replace(/[,()."':\*]/g, "").slice(0, 100);
 
   let query = supabaseAdmin
     .from("bookings")

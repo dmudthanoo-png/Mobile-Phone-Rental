@@ -166,23 +166,10 @@ export async function GET(req: NextRequest) {
     maxAge: 60 * 60 * 24 * 7,
   });
 
-  // ✅ ตั้ง cookie user id มาตรฐานสำหรับผูก bookings.user_id
-  res.cookies.set("app_user_id", userId, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: baseUrl.startsWith("https"),
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30, // 30 วัน
-  });
-
-  // (ถ้าคุณอยากเก็บ line_sub แยกไว้ด้วยก็ได้)
-  res.cookies.set("line_sub", lineSub, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: baseUrl.startsWith("https"),
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
-
+  // cookie app_user_id / line_sub เคยถูกตั้งไว้ แต่ไม่มีโค้ดไหนอ่านใช้เลย และอายุ 30 วัน
+  // (นานกว่า session จริง 7 วัน) = เก็บข้อมูลระบุตัวตนไว้เกินจำเป็น จึงเลิกตั้งแล้ว
+  // และล้างของเดิมที่ยังค้างอยู่ในเบราว์เซอร์ลูกค้าทิ้งด้วย
+  res.cookies.set("app_user_id", "", { path: "/", maxAge: 0 });
+  res.cookies.set("line_sub", "", { path: "/", maxAge: 0 });
   return res;
 }

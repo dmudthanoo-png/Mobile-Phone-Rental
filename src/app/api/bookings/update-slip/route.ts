@@ -142,42 +142,56 @@ export async function POST(req: NextRequest) {
   const { data: pub } = supabaseAdmin.storage.from("slips").getPublicUrl(fileName);
   const slipUrl = pub.publicUrl;
 
-  // ✅ อัปเดต slip_url + reset status → pending ให้ admin รู้ว่ามีสลิปใหม่ พร้อมนับจำนวนครั้ง +
-  // บันทึกเวลาล่าสุด (กันสแปม) — ผูก .eq("slip_update_count", updateCount) ไว้ด้วยเป็น optimistic lock
-  // กัน race condition ถ้ามี request อื่นมาอัปเดตพร้อมกันแล้วนับซ้ำ/ข้าม limit ไปได้
-  // ✅ reset ผลตรวจสลิปเก่าทิ้งด้วยเสมอ (slip_verified/message/amount/ref/verified_at) — ไม่งั้นถ้า
-  // SlipOK ปิดอยู่หรือเรียกไม่สำเร็จตอนตรวจสลิปใหม่ (แค่ log แล้วไปต่อแบบ best-effort ด้านล่าง)
-  // ค่าผลตรวจของสลิป "ใบเก่า" จะค้างแสดงเป็นผลของสลิปใหม่ให้แอดมินเห็นผิดๆ
-  const { error: upRowErr, count: updatedCount } = await supabaseAdmin
-    .from("bookings")
-    .update(
-      {
-        slip_url: slipUrl,
-        status: "pending",
-        slip_update_count: updateCount + 1,
-        last_slip_update_at: new Date().toISOString(),
-        slip_verified: false,
-        slip_verify_message: null,
-        slip_verify_amount: null,
-        slip_verify_ref: null,
-        slip_verified_at: null,
-      },
-      { count: "exact" }
-    )
-    .eq("id", bookingId)
-    .eq("slip_update_count", updateCount);
+  // เขียนผ่าน RPC เพื่อให้ "เช็คสถานะ + เช็คสต็อก + เขียน" อยู่ในทรานแซกชันเดียวกัน
+  // (เดิมเขียนตรงๆ ทำให้ rejected กลับมาเป็น pending ได้โดยไม่ตรวจสต็อก และดึง confirmed
+  //  กลับเป็น pending ได้ถ้าแอดมินกดยืนยันสวนมาพอดี — ดู scripts/add_update_slip_rpc.sql)
+  const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc("update_booking_slip", {
+    p_booking_id: bookingId,
+    p_user_id: user_id,
+    p_slip_url: slipUrl,
+    p_expected_update_count: updateCount,
+  });
 
-  if (upRowErr) {
+  const cleanupUploaded = async () => {
     await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
-    return NextResponse.json({ error: `update failed: ${upRowErr.message}` }, { status: 500 });
+  };
+
+  if (rpcErr) {
+    await cleanupUploaded();
+    return NextResponse.json({ error: `update failed: ${rpcErr.message}` }, { status: 500 });
   }
-  if (!updatedCount) {
-    // มี request อื่นอัปเดตแซงไปแล้วระหว่างที่กำลังอัปโหลดไฟล์นี้อยู่ — ไม่ถือว่าสำเร็จ ลบไฟล์ที่เพิ่งอัปทิ้ง
-    await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
-    return NextResponse.json(
-      { error: "conflict", message: "มีการเปลี่ยนสลิปพร้อมกันจากที่อื่น กรุณาลองใหม่อีกครั้ง" },
-      { status: 409 }
-    );
+
+  const rpcResult = rpcData as { ok?: boolean; error?: string; status?: string } | null;
+  if (rpcResult?.error) {
+    await cleanupUploaded();
+    switch (rpcResult.error) {
+      case "NOT_FOUND":
+        return NextResponse.json({ error: "booking not found" }, { status: 404 });
+      case "FORBIDDEN":
+        return NextResponse.json({ error: "forbidden" }, { status: 403 });
+      case "CANNOT_UPDATE":
+        return NextResponse.json(
+          { error: "cannot_update_slip", message: "รายการนี้เปลี่ยนสลิปไม่ได้แล้ว (แอดมินอาจตรวจสอบเสร็จไปแล้ว)" },
+          { status: 409 }
+        );
+      case "CONFLICT":
+        return NextResponse.json(
+          { error: "conflict", message: "มีการเปลี่ยนสลิปพร้อมกันจากที่อื่น กรุณาลองใหม่อีกครั้ง" },
+          { status: 409 }
+        );
+      case "SOLD_OUT_PHONE":
+        return NextResponse.json(
+          { error: "sold_out", message: "ขออภัย มือถือรุ่นนี้ถูกจองเต็มไปแล้วระหว่างที่รายการนี้ถูกปฏิเสธ กรุณาจองใหม่อีกครั้ง" },
+          { status: 409 }
+        );
+      case "SOLD_OUT_LENS":
+        return NextResponse.json(
+          { error: "lens_sold_out", message: "ขออภัย เลนส์ที่เลือกถูกจองเต็มไปแล้ว กรุณาจองใหม่อีกครั้ง" },
+          { status: 409 }
+        );
+      default:
+        return NextResponse.json({ error: rpcResult.error }, { status: 400 });
+    }
   }
 
   // งาน best-effort หลังเปลี่ยนสลิปสำเร็จแล้ว — ลบไฟล์เก่า + ตรวจสลิปใหม่กับ SlipOK (timeout 15 วิ)

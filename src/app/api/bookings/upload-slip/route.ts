@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
     const phone_id     = String(form.get("phone_id")     ?? "").trim();
     const renter_name  = String(form.get("renter_name")  ?? "").trim();
     const renter_phone = String(form.get("renter_phone") ?? "").trim();
+    const renter_line_name = String(form.get("renter_line_name") ?? "").trim().slice(0, 100);
     const lens_id      = String(form.get("lens_id")      ?? "").trim() || null;
 
     let qty = Number(form.get("qty") ?? 1);
@@ -305,6 +306,11 @@ export async function POST(req: NextRequest) {
     if (!row?.booking_id) {
       await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
       return NextResponse.json({ error: "rpc_no_result" }, { status: 500 });
+    }
+
+    // เก็บชื่อไลน์ลง booking (เผื่อกรณีที่ hold หมดอายุแล้ว RPC สร้างแถวใหม่ ชื่อไลน์จะไม่หาย)
+    if (renter_line_name) {
+      await supabaseAdmin.from("bookings").update({ renter_line_name }).eq("id", row.booking_id);
     }
 
     // 7) บันทึก snapshot ราคาเลนส์ลง booking (สำหรับแสดงผลในหน้าประวัติ)

@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   let query = supabaseAdmin
     .from("bookings")
     .select(`
-      id, created_at, renter_name, renter_phone, total_amount,
+      id, created_at, renter_name, renter_line_name, renter_phone, total_amount,
       slip_url, ref_number, status, qty, add_lens, lens_price,
       slip_verified, slip_verify_message, slip_verify_amount, slip_verify_ref, slip_verified_at,
       line_message_status, line_message_error, line_message_attempted_at,

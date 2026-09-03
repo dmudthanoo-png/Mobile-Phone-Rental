@@ -230,6 +230,9 @@ export default function PhoneRentalHome() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedPhoneId, setSelectedPhoneId] = useState<string | null>(null);
 
+  // ชื่อไลน์ — เติมให้อัตโนมัติจากโปรไฟล์ LINE ใช้จับคู่กับแชทที่ร้านคุยกับลูกค้าอยู่
+  const [renterLineName, setRenterLineName] = useState("");
+  // ชื่อ-นามสกุลจริงตามบัตรประชาชน — ลูกค้าต้องกรอกเอง ใช้ยืนยันตัวตนตอนรับเครื่อง
   const [renterName, setRenterName] = useState("");
   const [renterPhone, setRenterPhone] = useState("");
   const [qrSaved, setQrSaved] = useState(false);
@@ -435,7 +438,8 @@ export default function PhoneRentalHome() {
           return;
         }
         setMeUser(me.user);
-        if (me.user.name) setRenterName(me.user.name);
+        // เติมลงช่อง "ชื่อไลน์" เท่านั้น ส่วนช่องชื่อจริงต้องให้ลูกค้ากรอกเอง
+        if (me.user.name) setRenterLineName(me.user.name);
         await loadConcerts();
       } catch (e: unknown) {
         setPageError(e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ");
@@ -602,7 +606,8 @@ export default function PhoneRentalHome() {
     if (step === 1) return !selectedConcertId;
     if (step === 2) return !selectedSessionId || !selectedPhoneId;
     if (step === 3) {
-      return !renterName.trim()
+      return !renterLineName.trim()
+        || !renterName.trim()
         || !renterPhone.trim()
         || renterPhone.trim().length !== 10
         || !agreedTerms
@@ -632,7 +637,7 @@ export default function PhoneRentalHome() {
         setStep(2);
         return;
       }
-      if (!renterName.trim() || !renterPhone.trim() || renterPhone.trim().length < 9) {
+      if (!renterLineName.trim() || !renterName.trim() || !renterPhone.trim() || renterPhone.trim().length < 9) {
         setPageError("กรุณากรอกข้อมูลผู้เช่าให้ครบ");
         return;
       }
@@ -666,6 +671,7 @@ export default function PhoneRentalHome() {
             session_id: selectedSessionId,
             phone_id: selectedPhoneId,
             renter_name: renterName.trim(),
+            renter_line_name: renterLineName.trim(),
             renter_phone: renterPhone.trim(),
             lens_id: selectedLensId,
             lens_qty: lensQty,
@@ -728,6 +734,7 @@ export default function PhoneRentalHome() {
         form.append("phone_id",     selectedPhoneId);
         form.append("qty",          String(phoneQty));
         form.append("renter_name",  renterName.trim());
+        form.append("renter_line_name", renterLineName.trim());
         form.append("renter_phone", renterPhone.trim());
         form.append("total_amount", String(totalAmount));
         if (selectedLensId && lensQty > 0) {
@@ -1195,8 +1202,14 @@ export default function PhoneRentalHome() {
               </div>
               <div style={{ ...doodle.card, padding: 16, marginBottom: 16 }}>
                 <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: ink }}>ชื่อ-นามสกุล</label>
-                  <input style={{ ...doodle.input, color: ink }} type="text" placeholder="ระบุชื่อตามบัตรประชาชน" value={renterName} onChange={(e) => setRenterName(e.target.value)} />
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: ink }}>ชื่อไลน์</label>
+                  <input style={{ ...doodle.input, color: ink }} type="text" placeholder="ชื่อที่ใช้ใน LINE" value={renterLineName} onChange={(e) => setRenterLineName(e.target.value)} />
+                  <div style={{ fontSize: 11, fontWeight: 500, color: sub, marginTop: 4 }}>ใช้จับคู่กับแชทที่คุยกับร้าน</div>
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: ink }}>ชื่อ-นามสกุล (ตามบัตรประชาชน)</label>
+                  <input style={{ ...doodle.input, color: ink }} type="text" placeholder="เช่น สมชาย ใจดี" value={renterName} onChange={(e) => setRenterName(e.target.value)} />
+                  <div style={{ fontSize: 11, fontWeight: 500, color: sub, marginTop: 4 }}>ต้องเป็นชื่อจริง ใช้ยืนยันตัวตนตอนรับเครื่อง</div>
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: ink }}>เบอร์โทรศัพท์</label>

@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
     const phone_id = String((body as Record<string, unknown>)?.phone_id ?? "").trim();
     const renter_name = String((body as Record<string, unknown>)?.renter_name ?? "").trim();
     const renter_phone = String((body as Record<string, unknown>)?.renter_phone ?? "").trim();
+    const renter_line_name = String((body as Record<string, unknown>)?.renter_line_name ?? "").trim().slice(0, 100);
     const lens_id = String((body as Record<string, unknown>)?.lens_id ?? "").trim() || null;
 
     let qty = Number((body as Record<string, unknown>)?.qty ?? 1);
@@ -188,6 +189,11 @@ export async function POST(req: NextRequest) {
         );
       }
       return NextResponse.json({ error: errCode }, { status: 400 });
+    }
+
+    // เก็บชื่อไลน์ลงแถวที่กันไว้ (แยกเป็น update ต่างหาก จะได้ไม่ต้องแก้ signature ของ RPC ที่ deploy ไปแล้ว)
+    if (result?.booking_id && renter_line_name) {
+      await supabase.from("bookings").update({ renter_line_name }).eq("id", result.booking_id);
     }
 
     return NextResponse.json(

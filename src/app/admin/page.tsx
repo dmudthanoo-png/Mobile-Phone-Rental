@@ -7,6 +7,7 @@ type Booking = {
   id: string;
   created_at: string;
   renter_name: string;
+  renter_line_name?: string | null;
   renter_phone: string;
   total_amount: number;
   slip_url: string | null;
@@ -1687,6 +1688,11 @@ export default function AdminPage() {
                           </div>
                           <div>
                             <div style={{ fontWeight:700, fontSize:15 }}>{b.renter_name}</div>
+                            {b.renter_line_name && (
+                              <div style={{ fontSize:11.5, fontWeight:600, color:UI.muted, marginTop:1 }}>
+                                💬 ไลน์: {b.renter_line_name}
+                              </div>
+                            )}
                             <div style={{ fontSize:11, color:UI.muted, fontWeight:800 }}>REF: {b.ref_number ?? "-"}</div>
                           </div>
                         </div>
@@ -1728,6 +1734,7 @@ export default function AdminPage() {
                         <InfoCell label="สถานที่"         value={venue} />
                         <InfoCell label="รุ่นมือถือ"      value={phoneModel} />
                         <InfoCell label="ยอดชำระ"        value={money(b.total_amount)} />
+                        <InfoCell label="ชื่อไลน์"        value={b.renter_line_name ?? "-"} />
                         <InfoCell label="เบอร์โทร"       value={b.renter_phone ?? "-"} />
                         <InfoCell label="วันที่จอง"      value={fmtDT(b.created_at)} />
                       </div>
@@ -1901,7 +1908,7 @@ export default function AdminPage() {
                           </span>
                         </div>
 
-                        <div style={{ fontSize:12.5, fontWeight:700, color:UI.ink }}>👤 {b.renter_name} · {b.renter_phone}</div>
+                        <div style={{ fontSize:12.5, fontWeight:700, color:UI.ink }}>👤 {b.renter_name}{b.renter_line_name ? " (ไลน์: " + b.renter_line_name + ")" : ""} · {b.renter_phone}</div>
                         <div style={{ fontSize:12, color:UI.muted, fontWeight:600, marginBottom:8 }}>
                           📱 {b.phones?.model_name ?? "-"}{b.qty && b.qty>1 ? ` ×${b.qty}` : ""}{b.add_lens ? " · 🔭 มีเลนส์" : ""} · {b.ref_number ?? ""}
                         </div>

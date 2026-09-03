@@ -1,2 +1,2 @@
-export const PRIVACY_NOTICE_VERSION = "2026-08-25";
-export const PRIVACY_NOTICE_LAST_UPDATED = "25 สิงหาคม 2026";
+export const PRIVACY_NOTICE_VERSION = "2026-09-03";
+export const PRIVACY_NOTICE_LAST_UPDATED = "3 กันยายน 2026";

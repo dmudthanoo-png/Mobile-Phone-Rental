@@ -87,12 +87,10 @@ export async function POST(req: NextRequest) {
     res.cookies.set("app_session", sessionJwt, {
       httpOnly: true, sameSite: "lax", secure: isProd, path: "/", maxAge: 60 * 60 * 24 * 7,
     });
-    res.cookies.set("app_user_id", userId, {
-      httpOnly: true, sameSite: "lax", secure: isProd, path: "/", maxAge: 60 * 60 * 24 * 30,
-    });
-    res.cookies.set("line_sub", lineSub, {
-      httpOnly: true, sameSite: "lax", secure: isProd, path: "/", maxAge: 60 * 60 * 24 * 30,
-    });
+    // cookie app_user_id / line_sub ไม่มีโค้ดไหนอ่านใช้เลย และอายุ 30 วัน (นานกว่า session จริง
+    // 7 วัน) = เก็บข้อมูลระบุตัวตนไว้เกินจำเป็น จึงเลิกตั้ง และล้างของเดิมที่ค้างอยู่ทิ้ง
+    res.cookies.set("app_user_id", "", { path: "/", maxAge: 0 });
+    res.cookies.set("line_sub", "", { path: "/", maxAge: 0 });
 
     return res;
   } catch (err: unknown) {

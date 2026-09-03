@@ -123,13 +123,21 @@ export default function PrivacyPolicyContent() {
 
       <Section number="6" title="คุกกี้ที่จำเป็น">
         <p style={{ margin: 0 }}>
-          เว็บไซต์ใช้เฉพาะคุกกี้ที่จำเป็นต่อการเข้าสู่ระบบและความปลอดภัยของบริการ เช่น{" "}
-          <span style={codeStyle}>app_session</span>,{" "}
-          <span style={codeStyle}>app_user_id</span>,{" "}
-          <span style={codeStyle}>line_sub</span>,{" "}
-          <span style={codeStyle}>line_oauth_state</span> และ{" "}
-          <span style={codeStyle}>line_oauth_nonce</span>
-          {" "}เพื่อรักษาสถานะการใช้งานและป้องกันการโจมตีระหว่างการเข้าสู่ระบบ เว็บไซต์ปัจจุบันไม่มีคุกกี้วิเคราะห์หรือโฆษณา หากมีการเพิ่มในอนาคต เราจะขอความยินยอมก่อนตั้งค่าคุกกี้ดังกล่าว
+          เว็บไซต์ใช้เฉพาะคุกกี้ที่จำเป็นต่อการเข้าสู่ระบบและความปลอดภัยของบริการเท่านั้น ได้แก่
+        </p>
+        <ul style={listStyle}>
+          <li>
+            <span style={codeStyle}>app_session</span> — รักษาสถานะการเข้าสู่ระบบ เก็บไว้ 7 วัน
+          </li>
+          <li>
+            <span style={codeStyle}>line_oauth_state</span> และ{" "}
+            <span style={codeStyle}>line_oauth_nonce</span> — ป้องกันการปลอมแปลงคำขอระหว่างเข้าสู่ระบบด้วย LINE
+            ใช้ชั่วคราวเพียง 10 นาที แล้วลบทิ้งทันทีเมื่อเข้าสู่ระบบเสร็จ
+          </li>
+        </ul>
+        <p style={{ margin: "12px 0 0" }}>
+          คุกกี้ทั้งหมดเป็นแบบ HttpOnly (สคริปต์ในหน้าเว็บอ่านไม่ได้) และส่งผ่านการเชื่อมต่อที่เข้ารหัสเท่านั้น
+          เว็บไซต์ไม่มีคุกกี้วิเคราะห์พฤติกรรมหรือคุกกี้โฆษณา หากมีการเพิ่มในอนาคต เราจะขอความยินยอมก่อนตั้งค่าคุกกี้ดังกล่าว
         </p>
       </Section>
 

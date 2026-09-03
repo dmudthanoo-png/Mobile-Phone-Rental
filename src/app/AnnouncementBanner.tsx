@@ -11,15 +11,9 @@ type Announcement = {
   active: boolean;
 };
 
-export default function AnnouncementBanner({
-  title = "จองด่วน! รอบใหม่เปิดแล้ว",
-  subtitle = "คอนเสิร์ตยอดฮิตมือถือเหลือจำนวนจำกัด รีบจองก่อนเต็ม",
-  emoji = "🔥",
-}: {
-  title?: string;
-  subtitle?: string;
-  emoji?: string;
-}) {
+// ประกาศมาจากฐานข้อมูลอย่างเดียว ไม่รับข้อความสำรองจากภายนอกแล้ว
+// (เดิมมี props ข้อความ default ทำให้แอดมินกดปิดประกาศแล้วแบนเนอร์ยังโผล่อยู่)
+export default function AnnouncementBanner() {
   const [ann, setAnn] = useState<Announcement | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -42,11 +36,13 @@ export default function AnnouncementBanner({
   // ยังโหลดไม่เสร็จ — ไม่ต้องโชว์อะไร กันจอกระพริบ
   if (!loaded) return null;
 
-  // แอดมินปิดประกาศไว้ (ไม่มี record active) — ใช้ default prop เดิมเป็น fallback
-  const useDefault = !ann;
-  const displayTitle    = useDefault ? title    : ann!.title;
-  const displaySubtitle  = useDefault ? subtitle : ann!.subtitle;
-  const displayEmoji    = useDefault ? emoji    : ann!.emoji || "📣";
+  // แอดมินปิดประกาศไว้ (ไม่มี record active) = ตั้งใจไม่ให้โชว์ ต้องไม่แสดงอะไรเลย
+  // เดิมตกไปใช้ข้อความ default ทำให้กดปิดประกาศแล้วแบนเนอร์ยังโผล่อยู่ ปิดไม่ได้จริง
+  if (!ann) return null;
+
+  const displayTitle    = ann.title;
+  const displaySubtitle  = ann.subtitle;
+  const displayEmoji    = ann.emoji || "📣";
   const imageUrl = ann?.image_url || null;
 
   // ── โหมดรูปภาพ: แอดมินอัปโหลด banner รูปมาแทนข้อความ ──

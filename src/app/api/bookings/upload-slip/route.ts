@@ -170,7 +170,10 @@ export async function POST(req: NextRequest) {
         .from("bookings")
         .select("*", { count: "exact", head: true })
         .eq("user_id", user_id)
-        .eq("status", "pending"),
+        .eq("status", "pending")
+        // นับเฉพาะรายการที่ "แนบสลิปแล้ว" ให้ตรงกับกติกาฝั่ง SQL
+        // ถ้านับรวมของที่ลูกค้ากันไว้ด้วย ตัวเขาเองจะโดนบล็อกไม่ให้ยืนยันของตัวเอง
+        .not("slip_url", "is", null),
     ]);
 
     if (ackRes.error) return NextResponse.json({ error: ackRes.error.message }, { status: 500 });
@@ -292,6 +295,13 @@ export async function POST(req: NextRequest) {
       }
       if (msg.includes("LENS_NOT_CONFIGURED_FOR_SESSION")) {
         return NextResponse.json({ error: "lens_sold_out" }, { status: 409 });
+      }
+      if (msg.includes("HOLD_MISMATCH")) {
+        // จำนวน/เลนส์ที่ส่งมาไม่ตรงกับที่กันเครื่องไว้ — ต้องเริ่มขั้นตอนใหม่เพื่อกันของตามจำนวนที่ต้องการ
+        return NextResponse.json(
+          { error: "รายละเอียดการจองไม่ตรงกับที่กันเครื่องไว้ กรุณาเริ่มขั้นตอนการจองใหม่อีกครั้ง" },
+          { status: 409 }
+        );
       }
       if (msg.includes("TOO_MANY_PENDING")) {
         // เผื่อยิง request จองพร้อมกันหลายอันแซงการเช็คด่านแรกไปได้ — RPC เองก็กันซ้ำอีกชั้นด้วย advisory lock

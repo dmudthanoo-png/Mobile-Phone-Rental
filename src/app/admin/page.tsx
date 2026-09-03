@@ -105,6 +105,19 @@ const fmtDT = (iso: string | null | undefined) => {
   } catch { return "-"; }
 };
 
+// แปลงเวลาจากฐานข้อมูล (UTC) → รูปแบบที่ <input type="datetime-local"> ต้องการ ตามเขตเวลาเครื่อง
+// ⚠️ ห้ามใช้ iso.slice(0,16) เด็ดขาด เพราะจะตัดข้อมูลเขตเวลาทิ้ง แล้วช่อง input จะตีความเลข UTC
+// เป็นเวลาท้องถิ่น พอกดบันทึกก็แปลงกลับเป็น UTC อีกรอบ → เวลาเลื่อนถอยหลัง 7 ชั่วโมงทุกครั้งที่แก้
+// ตัวนี้ใช้ getter แบบ local ให้เข้าคู่กับ localToUTC ด้านล่าง เวลาจึงกลับมาเท่าเดิมเป๊ะ
+const utcToLocalInput = (iso: string | null | undefined) => {
+  if (!iso) return "";
+  const normalized = /Z|[+-]d{2}:d{2}$/.test(iso) ? iso : iso + "Z";
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (v: number) => String(v).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
 const localToUTC = (localDT: string) => {
   if (!localDT) return null;
   return new Date(localDT).toISOString();
@@ -2091,7 +2104,7 @@ export default function AdminPage() {
                       </div>
                       <div style={{ display:"flex", gap:8 }}>
                         {!(c.archived ?? false) && <>
-                          <button onClick={()=>{ setEditConcert(c); setEditConcertForm({ title:c.title, venue_name:c.venue_name||"", description:c.description||"", publish_at: c.publish_at?.slice(0,16)||"" }); setEditConcertPoster(null); }} style={btnStyle("white")}>✏️ แก้ไข</button>
+                          <button onClick={()=>{ setEditConcert(c); setEditConcertForm({ title:c.title, venue_name:c.venue_name||"", description:c.description||"", publish_at: utcToLocalInput(c.publish_at) }); setEditConcertPoster(null); }} style={btnStyle("white")}>✏️ แก้ไข</button>
                           <button onClick={()=>{ setExpandedConcert(expandedConcert===c.id?null:c.id); if(expandedConcert!==c.id) fetchSessions(c.id); }} style={btnStyle("white")}>
                             {expandedConcert===c.id?"▲ ซ่อนรอบ":"▼ จัดการรอบ"}
                           </button>
@@ -2114,7 +2127,7 @@ export default function AdminPage() {
                             <span>⏰ {fmtDT(s.start_at)}{s.note?` — ${s.note}`:""}</span>
                             <div style={{ display:"flex", gap:6 }}>
                               <button onClick={()=>openQuotaManager(s)} style={{ ...btnStyle("blue"), padding:"4px 10px", fontSize:12 }}>🎯 โควต้า</button>
-                              <button onClick={()=>{ setEditSession(s); setEditSessionConcertId(c.id); setEditSessionForm({ start_at: s.start_at?.slice(0,16)||"", note: s.note||"" }); }} style={{ ...btnStyle("white"), padding:"4px 10px", fontSize:12 }}>✏️</button>
+                              <button onClick={()=>{ setEditSession(s); setEditSessionConcertId(c.id); setEditSessionForm({ start_at: utcToLocalInput(s.start_at), note: s.note||"" }); }} style={{ ...btnStyle("white"), padding:"4px 10px", fontSize:12 }}>✏️</button>
                               <button onClick={()=>deleteSession(c.id, s.id)} style={{ ...btnStyle("red"), padding:"4px 10px", fontSize:12 }}>🗑</button>
                             </div>
                           </div>

@@ -31,6 +31,10 @@ export async function PATCH(
   const updates: Record<string, unknown> = {};
   if (title?.trim()) updates.title = title.trim();
   if (venueName?.trim()) updates.venue_name = venueName.trim();
+  // หน้าแอดมินส่ง description มาด้วยเสมอ แต่เดิม API ไม่ได้อ่าน ทำให้แก้รายละเอียดแล้วไม่ถูกบันทึก
+  // ส่งค่าว่างมา = ตั้งใจล้างรายละเอียดทิ้ง จึงเก็บเป็น null (ไม่ใช่ข้ามไปเฉยๆ)
+  const description = form.get("description") as string | null;
+  if (description !== null) updates.description = description.trim() || null;
 
   const archivedVal = form.get("archived");
   if (archivedVal !== null) updates.archived = archivedVal === "true";

@@ -829,10 +829,7 @@ export default function PhoneRentalHome() {
 
       <div style={{ width: "100%", maxWidth: 760, flex: 1 }}>
 
-        <AnnouncementBanner
-          title="จองด่วน! รอบใหม่เปิดแล้ว 🎫"
-          subtitle="คอนเสิร์ตยอดฮิตมือถือเหลือจำนวนจำกัด รีบจองก่อนเต็ม"
-        />
+        <AnnouncementBanner />
 
         {/* Header */}
         <div style={{ padding: "28px 32px 16px", background: "transparent" }}>

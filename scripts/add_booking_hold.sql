@@ -179,6 +179,9 @@ as $function$
 declare
   v_hold_id        uuid;
   v_hold_ref       text;
+  v_hold_qty       integer;
+  v_hold_lens_id   uuid;
+  v_hold_lens_qty  integer;
   v_phone_quota    integer;
   v_phone_booked   integer;
   v_lens_quota     integer;
@@ -196,7 +199,8 @@ begin
   -- ⚠️ ต้องใส่ alias (b.) ทุกคอลัมน์ เพราะฟังก์ชันนี้ประกาศ RETURNS TABLE(booking_id, ref_number)
   -- ชื่อ ref_number จึงชนกันระหว่าง "คอลัมน์ในตาราง" กับ "ตัวแปรผลลัพธ์ของฟังก์ชัน"
   -- ถ้าไม่ใส่ alias Postgres จะฟ้อง: column reference "ref_number" is ambiguous
-  select b.id, b.ref_number into v_hold_id, v_hold_ref
+  select b.id, b.ref_number, b.qty, b.lens_id, b.lens_qty
+    into v_hold_id, v_hold_ref, v_hold_qty, v_hold_lens_id, v_hold_lens_qty
   from public.bookings b
   where b.user_id = p_user_id
     and b.session_id = p_session_id
@@ -210,13 +214,20 @@ begin
   for update;
 
   if v_hold_id is not null then
-    -- เติมสลิปลงของที่กันไว้ → กลายเป็นการจองจริง (ไม่ต้องเช็คสต็อกซ้ำ เพราะกันไว้ให้แล้ว)
+    -- ⚠️ ของที่กันไว้ "กันไว้เท่าที่ขอตอนกันเท่านั้น" ห้ามเขียนทับจำนวนด้วยค่าใหม่จากคำขอ
+    -- ไม่งั้นจะกันไว้ 1 เครื่องแล้วยิงยืนยัน 10 เครื่องได้ โดยไม่ผ่านการตรวจสต็อกเลย
+    -- (หน้าเว็บจำกัดตัวเลือกไว้ก็จริง แต่ endpoint นี้ยิงตรงได้ จึงต้องกันที่ชั้นนี้)
+    -- ถ้าจำนวน/เลนส์ที่ส่งมาไม่ตรงกับที่กันไว้ ให้ปฏิเสธไปเลย
+    if p_qty is distinct from v_hold_qty
+       or p_lens_id is distinct from v_hold_lens_id
+       or coalesce(p_lens_qty, 0) is distinct from coalesce(v_hold_lens_qty, 0) then
+      raise exception 'HOLD_MISMATCH';
+    end if;
+
+    -- แก้ได้เฉพาะข้อมูลที่ไม่กระทบสต็อก (สลิป ชื่อ เบอร์ ยอดเงิน)
     update public.bookings
     set slip_url = p_slip_url,
         pending_expires_at = null,
-        qty = p_qty,
-        lens_id = p_lens_id,
-        lens_qty = coalesce(p_lens_qty, 0),
         renter_name = p_renter_name,
         renter_phone = p_renter_phone,
         total_amount = round(p_total_amount)::integer,

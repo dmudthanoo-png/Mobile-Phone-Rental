@@ -285,10 +285,11 @@ export default function PhoneRentalHome() {
 
   const depositFee  = (selectedPhone?.deposit ?? 0) * phoneQty;
   const lensPrice   = selectedLens ? selectedLens.price * lensQty : 0;
-  const totalAmount = (selectedPhone ? Number(selectedPhone.price) * phoneQty : 0) + depositFee + lensPrice;
+  const totalAmount = (selectedPhone ? Number(selectedPhone.price) * phoneQty : 0) + lensPrice;
 
   // ── ลูกค้าโอนแค่ค่ามัดจำตอนจอง ส่วนที่เหลือชำระตอนรับเครื่อง ──
-  const transferAmount = depositFee;
+  // มัดจำต้องไม่เกินยอดรวม (กันกรณีตั้งมัดจำสูงกว่าค่าเช่า แล้วยอดคงเหลือติดลบ)
+  const transferAmount = Math.min(depositFee, totalAmount);
   const balanceDue     = Math.max(0, totalAmount - transferAmount);
 
   const handleSignOut = async () => {
@@ -1135,7 +1136,7 @@ export default function PhoneRentalHome() {
                             <div style={{ flex: 1 }}>
                               <div style={{ fontWeight: 700, fontSize: 14 }}>{p.model_name}</div>
                               <div style={{ fontSize: 12, fontWeight: 700, color: accentStrong }}>ค่าเช่า ฿{p.price}</div>
-                              {p.deposit > 0 && <div style={{ fontSize: 11, fontWeight: 500, color: sub }}>มัดจำ ฿{p.deposit}</div>}
+                              {p.deposit > 0 && <div style={{ fontSize: 11, fontWeight: 500, color: sub }}>โอนมัดจำ ฿{p.deposit} · ที่เหลือจ่ายหน้างาน</div>}
                               {p.lens_options.length > 0 && (
                                 <div style={{ fontSize: 11, fontWeight: 600, color: accent2 }}>
                                   🔭 เลือกเลนส์ได้: {p.lens_options.map((l) => l.name).join(" / ")}

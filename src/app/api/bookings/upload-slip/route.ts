@@ -214,7 +214,10 @@ export async function POST(req: NextRequest) {
     }
 
     // คำนวณ expected amount ฝั่ง server (ตามจำนวนเครื่อง + เลนส์)
-    const expectedAmount = Math.round(basePrice * qty + deposit * qty + lensPrice * lens_qty);
+    // มัดจำรวมอยู่ในค่าเช่าแล้ว ไม่บวกเพิ่มเข้ายอดรวม
+    const expectedAmount = Math.round(basePrice * qty + lensPrice * lens_qty);
+    // ยอดมัดจำที่ลูกค้าโอนจริง ต้องไม่เกินยอดรวม
+    const depositDue = Math.min(Math.round(deposit * qty), expectedAmount);
     const verifiedAmount = expectedAmount;
 
     // ชื่อคอนเสิร์ต + รอบ (สำหรับ sync ไป Google Sheet ให้อ่านง่าย) — ได้จาก query เดียวกันข้างบนแล้ว
@@ -272,7 +275,7 @@ export async function POST(req: NextRequest) {
       p_renter_phone: renter_phone,
       p_total_amount: verifiedAmount,
       p_slip_url:     slip_url,
-      p_deposit_amount: Math.round(deposit * qty),
+      p_deposit_amount: depositDue,
     });
 
     if (rpc.error) {

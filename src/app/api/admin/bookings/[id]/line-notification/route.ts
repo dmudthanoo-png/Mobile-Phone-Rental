@@ -36,7 +36,7 @@ export async function POST(
   const { data: bookingRaw, error } = await supabase
     .from("bookings")
     .select(
-      "status, line_message_status, user_id, line_sub, ref_number, qty, lens_qty, total_amount, " +
+      "status, line_message_status, user_id, line_sub, ref_number, qty, lens_qty, total_amount, deposit_amount, " +
       "line_message_attempt_count, phones ( model_name ), lenses ( name ), " +
       "concert_sessions ( start_at, note, concerts ( title ) )"
     )

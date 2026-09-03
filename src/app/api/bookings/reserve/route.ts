@@ -155,7 +155,10 @@ export async function POST(req: NextRequest) {
       lensPrice = Number(lensInfo.price ?? 0);
     }
 
-    const totalAmount = Math.round(basePrice * qty + deposit * qty + lensPrice * lens_qty);
+    // มัดจำรวมอยู่ในค่าเช่าแล้ว ไม่บวกเพิ่มเข้ายอดรวม
+    const totalAmount = Math.round(basePrice * qty + lensPrice * lens_qty);
+    // ยอดมัดจำที่ต้องโอน ต้องไม่เกินยอดรวม
+    const depositDue = Math.min(Math.round(deposit * qty), totalAmount);
 
     const { data, error } = await supabase.rpc("create_booking_hold", {
       p_user_id: userId,
@@ -167,7 +170,7 @@ export async function POST(req: NextRequest) {
       p_renter_name: renter_name,
       p_renter_phone: renter_phone,
       p_total_amount: totalAmount,
-      p_deposit_amount: Math.round(deposit * qty),
+      p_deposit_amount: depositDue,
       p_hold_seconds: HOLD_SECONDS,
     });
 

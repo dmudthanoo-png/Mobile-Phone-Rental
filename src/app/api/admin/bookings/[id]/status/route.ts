@@ -90,7 +90,7 @@ export async function PATCH(
   const { data: bookingRowRaw, error: bookingRowError } = await supabase
     .from("bookings")
     .select(
-      "user_id, line_sub, ref_number, renter_name, renter_phone, qty, lens_qty, total_amount, created_at, line_message_attempt_count, " +
+      "user_id, line_sub, ref_number, renter_name, renter_phone, qty, lens_qty, total_amount, deposit_amount, created_at, line_message_attempt_count, " +
       "phones ( model_name, deposit ), lenses ( name ), " +
       "concert_sessions ( start_at, note, concerts ( title ) )"
     )

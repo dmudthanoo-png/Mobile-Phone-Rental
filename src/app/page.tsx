@@ -1462,7 +1462,7 @@ export default function PhoneRentalHome() {
 
               <div style={{ ...doodle.card, overflow: "hidden", marginBottom: 16, color: ink }}>
                 {[
-                  { bg: "#003D6B", label: "🏦", num: "014000009934092", name: "รหัสร้านค้า (Merchant ID) · ธาราธร เสมียนรัมย์", key: "pp" },
+                  { bg: "#003D6B", label: "🏦", num: "014000009934092", name: "รหัสร้านค้า (Merchant ID)", key: "pp" },
                 ].map(({ bg, label, num, name, key }, i, arr) => (
                   <div key={key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderBottom: i < arr.length - 1 ? `1px solid ${line}` : "none" }}>
                     <div style={{ width: 42, height: 42, background: bg, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 700, textAlign: "center", lineHeight: 1.2, flexShrink: 0 }}>{label}</div>

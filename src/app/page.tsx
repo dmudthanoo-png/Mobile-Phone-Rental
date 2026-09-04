@@ -246,7 +246,13 @@ export default function PhoneRentalHome() {
 
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [pageError, setPageError] = useState<string>("");
+  // การแจ้งเตือนทั้งหมดของหน้านี้ — แสดงเป็น popup กลางจอ
+  // (เดิมเป็นแถบสีเหลืองบนสุดของเนื้อหา ซึ่งลูกค้ามองไม่เห็นถ้าเลื่อนลงมาแล้ว
+  //  กับ alert() ของเบราว์เซอร์ที่หน้าตาไม่เข้ากับเว็บและบล็อกการทำงาน)
+  const [notice, setNotice] = useState<{ msg: string; kind: "error" | "soldout" | "expired" } | null>(null);
+  // ตัวช่วยให้จุดเรียกใช้เดิมทุกจุดใช้ได้เหมือนเดิม — ส่งค่าว่าง = ปิด popup
+  const setPageError = (msg: string, kind: "error" | "soldout" | "expired" = "error") =>
+    setNotice(msg ? { msg, kind } : null);
 
   // ── เช็คว่าเพิ่มเพื่อน LINE OA แล้วหรือยัง (ต้องเพิ่มก่อนถึงจะรับ push แจ้งเตือนตอนอนุมัติได้) ──
   const [lineFriendStatus, setLineFriendStatus] = useState<"idle" | "checking" | "friend" | "not_friend">("idle");
@@ -557,7 +563,7 @@ export default function PhoneRentalHome() {
   useEffect(() => {
     if (timerExpiresAt === null || timeLeft === null || (step !== 3 && step !== 4)) return;
     if (timeLeft <= 0) {
-      alert("หมดเวลาทำรายการ กรุณาเริ่มทำรายการใหม่อีกครั้งครับ");
+      setPageError("หมดเวลาทำรายการ กรุณาเริ่มทำรายการใหม่อีกครั้งครับ", "expired");
       goToStep1();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -687,14 +693,14 @@ export default function PhoneRentalHome() {
           if (holdRes.status === 401) { router.push("/login"); return; }
 
           if (out?.error === "sold_out") {
-            setPageError("ขออภัย มือถือรุ่นนี้เพิ่งถูกจองหมดพอดี กรุณาเลือกรุ่นอื่นหรือรอบอื่นครับ");
+            setPageError("ขออภัย มือถือรุ่นนี้เพิ่งถูกจองหมดพอดี กรุณาเลือกรุ่นอื่นหรือรอบอื่นครับ", "soldout");
             setSelectedPhoneId(null);
             if (selectedSessionId) await loadPhones(selectedSessionId);
             setStep(2);
             return;
           }
           if (out?.error === "lens_sold_out") {
-            setPageError("ขออภัย เลนส์ที่เลือกเพิ่งถูกจองหมดพอดี กรุณาเลือกใหม่ครับ");
+            setPageError("ขออภัย เลนส์ที่เลือกเพิ่งถูกจองหมดพอดี กรุณาเลือกใหม่ครับ", "soldout");
             setSelectedLensId(null); setLensQty(0);
             if (selectedSessionId) await loadPhones(selectedSessionId);
             setStep(2);
@@ -762,7 +768,7 @@ export default function PhoneRentalHome() {
         if (!upRes.ok) {
           if (await redirectIfBanned(upRes.status, upOut)) return;
           if (upRes.status === 409 && upOut?.error === "sold_out") {
-            alert("ขออภัย รุ่นนี้เต็มแล้ว กรุณาเลือกรุ่น/รอบใหม่");
+            setPageError("ขออภัย รุ่นนี้เต็มแล้ว กรุณาเลือกรุ่น/รอบใหม่", "soldout");
             if (selectedSessionId) await loadPhones(selectedSessionId);
             setSelectedPhoneId(null);
             resetSlip();
@@ -771,7 +777,7 @@ export default function PhoneRentalHome() {
             return;
           }
           if (upRes.status === 409 && upOut?.error === "lens_sold_out") {
-            alert("ขออภัย เลนส์ที่เลือกเหลือไม่พอแล้ว กรุณาเลือกจำนวนใหม่");
+            setPageError("ขออภัย เลนส์ที่เลือกเหลือไม่พอแล้ว กรุณาเลือกจำนวนใหม่", "soldout");
             if (selectedSessionId) await loadPhones(selectedSessionId);
             setSelectedLensId(null);
             setLensQty(0);
@@ -877,11 +883,7 @@ export default function PhoneRentalHome() {
         </div>
 
         <div style={{ padding: "8px 32px" }}>
-          {pageError && (
-            <div style={{ ...doodle.cardYellow, padding: 12, marginBottom: 12, color: ink }}>
-              <b>แจ้งเตือน:</b> {pageError}
-            </div>
-          )}
+          {/* การแจ้งเตือนย้ายไปแสดงเป็น popup กลางจอแล้ว (ดูท้ายไฟล์) */}
 
           {/* STEP 1 */}
           {step === 1 && (
@@ -1682,6 +1684,60 @@ export default function PhoneRentalHome() {
           <Footer />
         </div>
       )}
+
+      {/* ── Popup แจ้งเตือน (error / ของหมด / หมดเวลา) ── */}
+      {notice && (() => {
+        const style =
+          notice.kind === "soldout"
+            ? { emoji: "😢", title: "เต็มแล้ว", ring: "#FFD9E4", bg: "#FFF1F5", accentColor: accentStrong }
+            : notice.kind === "expired"
+              ? { emoji: "⏰", title: "หมดเวลาทำรายการ", ring: "#FFE4C7", bg: "#FFF6EC", accentColor: "#C1440E" }
+              : { emoji: "⚠️", title: "แจ้งเตือน", ring: "#FFE0B8", bg: "#FFF8EE", accentColor: "#B4690E" };
+        return (
+          <div
+            onClick={() => setNotice(null)}
+            role="alertdialog"
+            aria-modal="true"
+            aria-label={style.title}
+            style={{
+              position: "fixed", inset: 0, background: "rgba(36,31,28,0.5)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              zIndex: 100, padding: 20,
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "#fff", borderRadius: 20, border: `1px solid ${line}`,
+                maxWidth: 340, width: "100%", padding: "26px 22px 20px", textAlign: "center",
+                boxShadow: "0 20px 50px -16px rgba(36,31,28,0.35)",
+              }}
+            >
+              <div style={{
+                width: 62, height: 62, borderRadius: "50%", margin: "0 auto 14px",
+                background: style.bg, border: `2px solid ${style.ring}`,
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30,
+              }}>
+                {style.emoji}
+              </div>
+              <div style={{ fontWeight: 800, fontSize: 17, color: ink, marginBottom: 6 }}>{style.title}</div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: sub, lineHeight: 1.6, marginBottom: 20 }}>
+                {notice.msg}
+              </div>
+              <button
+                onClick={() => setNotice(null)}
+                autoFocus
+                style={{
+                  ...doodle.btnPrimary, width: "100%", padding: "13px 0",
+                  fontSize: 15, background: style.accentColor,
+                }}
+              >
+                รับทราบ
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Upcoming Concert Detail Modal */}
       {upcomingDetail && (

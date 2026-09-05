@@ -84,6 +84,18 @@ export async function POST(req: NextRequest) {
     .eq("id", adminId)
     .maybeSingle();
 
+  // ⚠️ ถ้ารหัสผ่านถูกเปลี่ยนหลังจากออก token ชั่วคราวไปแล้ว ต้องถือว่า token นั้นใช้ไม่ได้
+  // ไม่งั้นขั้นตอนล็อกอินที่ค้างรอกรอก 2FA จะยังออก session ใหม่ได้จนครบ 5 นาที
+  // ทั้งที่เจ้าของบัญชีเพิ่งเปลี่ยนรหัสผ่านเพื่อตัดสิทธิ์ไปแล้ว
+  const currentPwdVer = account?.password_changed_at ? new Date(account.password_changed_at).getTime() : null;
+  const tokenPwdVer = pendingPayload.pwd_ver === undefined ? null : pendingPayload.pwd_ver;
+  if (currentPwdVer !== tokenPwdVer) {
+    return NextResponse.json(
+      { error: "รหัสผ่านถูกเปลี่ยนแล้ว กรุณาเข้าสู่ระบบใหม่อีกครั้ง" },
+      { status: 401 }
+    );
+  }
+
   const wasLegacyPlaintext = Boolean(account?.totp_secret && isLegacyPlaintextTotpSecret(account.totp_secret));
   const plainSecret = account?.totp_secret ? safeDecryptTotpSecret(account.totp_secret) : "";
   if (account?.totp_secret && plainSecret === null) {

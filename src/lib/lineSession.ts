@@ -32,6 +32,21 @@ export function signSessionJWT(payload: Record<string, unknown>, secret: string,
  * line_identities, และ upsert profiles — logic เดียวกับ OAuth callback เดิม
  * เพื่อให้ผู้ใช้คนเดียวกันไม่ว่าจะ login ผ่าน OAuth หรือ LIFF ก็ได้ user_id เดิม
  */
+// ถ้าสร้างบัญชี Auth สำเร็จแต่ผูกกับ LINE ไม่สำเร็จ บัญชีนั้นจะค้างอยู่โดยไม่มีใครอ้างถึงได้
+// ครั้งถัดไปที่ผู้ใช้คนเดิมล็อกอิน จะสร้างซ้ำไม่ได้เพราะอีเมลซ้ำ และไม่มีทางกู้การผูก
+// = ล็อกอินไม่ได้ตลอดไปจากความผิดพลาดครั้งเดียว จึงต้องลบบัญชีที่ค้างทิ้งเสมอ
+async function rollbackOrphanUser(
+  supabaseAdmin: SupabaseClient,
+  userId: string | null | undefined
+) {
+  if (!userId) return;
+  const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+  if (error) {
+    // ลบไม่สำเร็จก็ยังต้องรู้ เพราะบัญชีนี้จะกลายเป็นตัวขวางการล็อกอินครั้งถัดไป
+    console.error("rollback orphan auth user failed:", userId, error.message);
+  }
+}
+
 export async function findOrCreateLineUser(
   supabaseAdmin: SupabaseClient,
   lineSub: string,
@@ -87,9 +102,19 @@ export async function findOrCreateLineUser(
             .select("user_id")
             .eq("line_sub", lineSub)
             .maybeSingle();
-          if (raceIdent?.user_id) userId = raceIdent.user_id;
-          else return { error: `line_identity_insert_failed: ${mapErr.message}` };
+          if (raceIdent?.user_id) {
+            // มีคนอื่นผูกไปแล้ว — ใช้ของเขา แล้วลบบัญชีที่เราเพิ่งสร้างเกินมาทิ้ง
+            const orphanId = userId;
+            userId = raceIdent.user_id;
+            if (orphanId && orphanId !== userId) {
+              await supabaseAdmin.auth.admin.deleteUser(orphanId).catch(() => {});
+            }
+          } else {
+            await rollbackOrphanUser(supabaseAdmin, userId);
+            return { error: `line_identity_insert_failed: ${mapErr.message}` };
+          }
         } else {
+          await rollbackOrphanUser(supabaseAdmin, userId);
           return { error: `line_identity_insert_failed: ${mapErr.message}` };
         }
       }

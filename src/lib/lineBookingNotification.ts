@@ -38,7 +38,7 @@ function buildSessionLabel(booking: BookingLineNotificationRow) {
 
   return `${booking.concert_sessions.note ?? "รอบ"} • ${new Date(
     booking.concert_sessions.start_at
-  ).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}`;
+  ).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" })}`;
 }
 
 async function resolveLineUserId(

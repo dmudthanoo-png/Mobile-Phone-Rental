@@ -136,10 +136,13 @@ export async function PATCH(req: NextRequest) {
 
     // ถ้าลดจำนวนเครื่องรวม ต้องไม่ต่ำกว่าโควต้าที่จัดสรรให้รอบต่างๆ ไปแล้วรวมกันในวันใดวันหนึ่ง
     // (กันลด stock รวมแล้วโควต้าเดิมที่ตั้งไว้เกินจำนวนเครื่องจริงแบบไม่รู้ตัว)
+    // นับเฉพาะรอบที่ "ยังมาไม่ถึง" เท่านั้น — รอบที่ผ่านไปแล้วคือประวัติ ไม่ได้ผูกเครื่องไว้จริง
+    // เดิมนับทุกวันรวมอดีตด้วย ทำให้โควต้าเก่าค้างขวางไม่ให้ลดจำนวนเครื่องปัจจุบันได้เลย
     const { data: allocRows, error: allocErr } = await supabase
       .from("session_phone_inventory")
-      .select("qty, concert_sessions ( start_at )")
-      .eq("phone_id", id);
+      .select("qty, concert_sessions!inner ( start_at )")
+      .eq("phone_id", id)
+      .gte("concert_sessions.start_at", new Date().toISOString());
     if (allocErr) return NextResponse.json({ error: allocErr.message }, { status: 500 });
 
     const totalByDay: Record<string, number> = {};

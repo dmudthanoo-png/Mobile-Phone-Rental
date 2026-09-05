@@ -98,10 +98,12 @@ export async function PATCH(req: NextRequest) {
 
     // ถ้าลดจำนวนเลนส์รวม ต้องไม่ต่ำกว่าโควต้าที่จัดสรรให้รอบต่างๆ ไปแล้วรวมกันในวันใดวันหนึ่ง
     // (กันลด stock รวมแล้วโควต้าเดิมที่ตั้งไว้เกินจำนวนเลนส์จริงแบบไม่รู้ตัว — เหมือนที่ทำไว้กับมือถือ)
+    // นับเฉพาะรอบที่ยังมาไม่ถึง เช่นเดียวกับฝั่งมือถือ
     const { data: allocRows, error: allocErr } = await supabase
       .from("session_lens_inventory")
-      .select("qty, concert_sessions ( start_at )")
-      .eq("lens_id", id);
+      .select("qty, concert_sessions!inner ( start_at )")
+      .eq("lens_id", id)
+      .gte("concert_sessions.start_at", new Date().toISOString());
     if (allocErr) return NextResponse.json({ error: allocErr.message }, { status: 500 });
 
     const totalByDay: Record<string, number> = {};

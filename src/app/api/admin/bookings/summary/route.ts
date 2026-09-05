@@ -38,10 +38,24 @@ export async function GET(req: NextRequest) {
   // ✅ revenue รวมเฉพาะ confirmed — เป็นมูลค่าการจองรวม (คาดการณ์) ไม่ใช่เงินที่ได้รับจริงทั้งหมด
   // เพราะ total_amount รวมส่วนที่ลูกค้าจ่ายวันรับเครื่องด้วย ซึ่งไม่เคยผ่านแอปนี้เลย
   // ยอดที่ยืนยันรับจริงผ่านแอป (โอนมัดจำ+ตรวจสลิปแล้ว) คือ deposit_received ต่างหาก
-  const confirmedAmounts = await supabase
-    .from("bookings")
-    .select("total_amount, deposit_amount")
-    .eq("status", "confirmed");
+  // ⚠️ Supabase คืนสูงสุด 1,000 แถวต่อครั้ง ถ้าดึงรวดเดียวแล้วบวกใน JS ยอดจะขาดหายเมื่อ
+  // การจองเกิน 1,000 รายการ (จำนวนรายการถูกเพราะใช้ count แต่ยอดเงินจะน้อยกว่าจริง)
+  // จึงต้องไล่ดึงเป็นหน้าๆ จนครบ
+  const PAGE = 1000;
+  const amountRows: { total_amount: number | string | null; deposit_amount: number | string | null }[] = [];
+  let amountsError: { message: string } | null = null;
+  for (let from = 0; ; from += PAGE) {
+    const page = await supabase
+      .from("bookings")
+      .select("total_amount, deposit_amount")
+      .eq("status", "confirmed")
+      .range(from, from + PAGE - 1);
+    if (page.error) { amountsError = page.error; break; }
+    const rows = page.data ?? [];
+    amountRows.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  const confirmedAmounts = { data: amountRows, error: amountsError };
 
   // ถ้ามี error อันไหน ให้แจ้ง
   const err =

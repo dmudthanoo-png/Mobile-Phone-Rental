@@ -124,6 +124,9 @@ export async function POST(req: NextRequest) {
         role: "admin_2fa_pending",
         admin_id: adminId,
         username,
+        // ผูกเวอร์ชันรหัสผ่านไว้ด้วย เพื่อให้ token ที่ค้างรอกรอก 2FA ถูกเพิกถอน
+        // ทันทีที่มีการเปลี่ยนรหัสผ่าน (เดิมยังใช้ออก session ใหม่ได้จนครบ 5 นาที)
+        pwd_ver: pwdVer,
         exp: Math.floor(Date.now() / 1000) + PENDING_2FA_MINUTES * 60,
       },
       sessionSecret

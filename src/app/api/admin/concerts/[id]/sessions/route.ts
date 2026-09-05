@@ -9,15 +9,6 @@ function getSupabase() {
   return createClient(url, serviceKey);
 }
 
-// หาช่วงเวลา "วันเดียวกัน" ตามเวลาไทย (UTC+7 ไม่มี DST) — เหมือนกับที่ใช้ในหน้าตั้งโควต้ามือถือ
-function getThaiDayRangeUtc(iso: string): { start: string; end: string } {
-  const d = new Date(iso);
-  const thaiDateStr = d.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
-  const dayStart = new Date(`${thaiDateStr}T00:00:00+07:00`);
-  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-  return { start: dayStart.toISOString(), end: dayEnd.toISOString() };
-}
-
 // GET /api/admin/concerts/[id]/sessions
 export async function GET(
   req: NextRequest,
@@ -112,96 +103,49 @@ export async function PATCH(
 
   const supabase = getSupabase();
 
-  // ย้ายวันของรอบนี้แล้ว โควต้ามือถือ/เลนส์ที่ตั้งไว้ของรอบนี้ (ถ้ามี) ต้องไม่รวมกับรอบอื่นที่วันใหม่
-  // นั้นเกินสต็อกจริง (กันย้ายวันแบบไม่รู้ตัวแล้วโควต้าเดิมของรอบนี้ทับซ้อนกับรอบอื่นเกิน stock)
-  const [{ data: existingQuota, error: existingQuotaErr }, { data: existingLensQuota, error: existingLensQuotaErr }] = await Promise.all([
-    supabase.from("session_phone_inventory").select("phone_id, qty").eq("session_id", session_id),
-    supabase.from("session_lens_inventory").select("lens_id, qty").eq("session_id", session_id),
-  ]);
-  if (existingQuotaErr) return NextResponse.json({ error: existingQuotaErr.message }, { status: 500 });
-  if (existingLensQuotaErr) return NextResponse.json({ error: existingLensQuotaErr.message }, { status: 500 });
+  // ย้ายวันผ่าน RPC เพื่อให้ "ตรวจโควต้า + เขียนวันใหม่" อยู่ในทรานแซกชันเดียวกัน
+  // เดิมตรวจแล้วค่อย update เป็นคนละคำสั่ง ทำให้ย้ายสองรอบเข้าวันเดียวกันพร้อมกันแล้วผ่านทั้งคู่
+  // จนวันนั้นจัดสรรเกินสต็อกจริง (ดู scripts/add_move_session_rpc.sql)
+  const { data: moveData, error: moveErr } = await supabase.rpc("move_concert_session", {
+    p_concert_id: concert_id,
+    p_session_id: session_id,
+    p_start_at: start_at,
+    p_note: note ?? null,
+  });
 
-  if ((existingQuota && existingQuota.length > 0) || (existingLensQuota && existingLensQuota.length > 0)) {
-    const { start: newDayStart, end: newDayEnd } = getThaiDayRangeUtc(start_at);
+  if (moveErr) return NextResponse.json({ error: moveErr.message }, { status: 500 });
 
-    const { data: newDaySessions, error: newDaySessionsErr } = await supabase
-      .from("concert_sessions")
-      .select("id")
-      .gte("start_at", newDayStart)
-      .lt("start_at", newDayEnd)
-      .neq("id", session_id);
-    if (newDaySessionsErr) return NextResponse.json({ error: newDaySessionsErr.message }, { status: 500 });
-    const newDaySessionIds = (newDaySessions ?? []).map((s) => s.id);
+  const moveResult = moveData as {
+    ok?: boolean; error?: string;
+    phone_id?: string; lens_id?: string;
+    moving_qty?: number; already_allocated?: number; total_qty?: number;
+  } | null;
 
-    for (const row of existingQuota ?? []) {
-      const { data: phone, error: phoneErr } = await supabase
-        .from("phones")
-        .select("model_name, qty")
-        .eq("id", row.phone_id)
-        .maybeSingle();
-      if (phoneErr) return NextResponse.json({ error: phoneErr.message }, { status: 500 });
-
-      let allocatedElsewhere = 0;
-      if (newDaySessionIds.length > 0) {
-        const { data: elsewhereRows, error: elsewhereErr } = await supabase
-          .from("session_phone_inventory")
-          .select("qty")
-          .in("session_id", newDaySessionIds)
-          .eq("phone_id", row.phone_id);
-        if (elsewhereErr) return NextResponse.json({ error: elsewhereErr.message }, { status: 500 });
-        allocatedElsewhere = (elsewhereRows ?? []).reduce((sum, r) => sum + Number(r.qty ?? 0), 0);
-      }
-
-      const totalQty = Number(phone?.qty ?? 0);
-      if (allocatedElsewhere + Number(row.qty ?? 0) > totalQty) {
-        return NextResponse.json(
-          {
-            error: `ย้ายวันไม่ได้: โควต้า ${phone?.model_name ?? row.phone_id} ของรอบนี้ (${row.qty} เครื่อง) รวมกับรอบอื่นในวันใหม่ (${allocatedElsewhere} เครื่อง) จะเกินสต็อกจริง (${totalQty} เครื่อง) กรุณาปรับโควต้าก่อนย้ายวัน`,
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    for (const row of existingLensQuota ?? []) {
-      const { data: lens, error: lensErr } = await supabase
-        .from("lenses")
-        .select("name, qty")
-        .eq("id", row.lens_id)
-        .maybeSingle();
-      if (lensErr) return NextResponse.json({ error: lensErr.message }, { status: 500 });
-
-      let allocatedElsewhere = 0;
-      if (newDaySessionIds.length > 0) {
-        const { data: elsewhereRows, error: elsewhereErr } = await supabase
-          .from("session_lens_inventory")
-          .select("qty")
-          .in("session_id", newDaySessionIds)
-          .eq("lens_id", row.lens_id);
-        if (elsewhereErr) return NextResponse.json({ error: elsewhereErr.message }, { status: 500 });
-        allocatedElsewhere = (elsewhereRows ?? []).reduce((sum, r) => sum + Number(r.qty ?? 0), 0);
-      }
-
-      const totalQty = Number(lens?.qty ?? 0);
-      if (allocatedElsewhere + Number(row.qty ?? 0) > totalQty) {
-        return NextResponse.json(
-          {
-            error: `ย้ายวันไม่ได้: โควต้าเลนส์ ${lens?.name ?? row.lens_id} ของรอบนี้ (${row.qty} ชิ้น) รวมกับรอบอื่นในวันใหม่ (${allocatedElsewhere} ชิ้น) จะเกินสต็อกจริง (${totalQty} ชิ้น) กรุณาปรับโควต้าก่อนย้ายวัน`,
-          },
-          { status: 400 }
-        );
-      }
-    }
+  if (moveResult?.error === "SESSION_NOT_FOUND") {
+    return NextResponse.json({ error: "ไม่พบรอบการแสดงนี้" }, { status: 404 });
   }
-
-  const { error, count } = await supabase
-    .from("concert_sessions")
-    .update({ start_at, note: note ?? null }, { count: "exact" })
-    .eq("id", session_id)
-    .eq("concert_id", concert_id); // double-check ป้องกัน cross-concert edit
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!count) return NextResponse.json({ error: "ไม่พบรอบการแสดงนี้" }, { status: 404 });
+  if (moveResult?.error === "PHONE_OVER_ALLOCATED" || moveResult?.error === "LENS_OVER_ALLOCATED") {
+    const isLens = moveResult.error === "LENS_OVER_ALLOCATED";
+    const unit = isLens ? "ชิ้น" : "เครื่อง";
+    // ดึงชื่อมาแสดงให้แอดมินอ่านรู้เรื่อง (ถ้าดึงไม่ได้ค่อยใช้ id)
+    let label = isLens ? moveResult.lens_id : moveResult.phone_id;
+    if (isLens && moveResult.lens_id) {
+      const { data } = await supabase.from("lenses").select("name").eq("id", moveResult.lens_id).maybeSingle();
+      label = data?.name ?? label;
+    } else if (moveResult.phone_id) {
+      const { data } = await supabase.from("phones").select("model_name").eq("id", moveResult.phone_id).maybeSingle();
+      label = data?.model_name ?? label;
+    }
+    return NextResponse.json(
+      {
+        error: `ย้ายวันไม่ได้: โควต้า${isLens ? "เลนส์ " : " "}${label} ของรอบนี้ (${moveResult.moving_qty} ${unit}) รวมกับรอบอื่นในวันใหม่ (${moveResult.already_allocated} ${unit}) จะเกินสต็อกจริง (${moveResult.total_qty} ${unit}) กรุณาปรับโควต้าก่อนย้ายวัน`,
+      },
+      { status: 400 }
+    );
+  }
+  if (moveResult?.error) {
+    return NextResponse.json({ error: moveResult.error }, { status: 400 });
+  }
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

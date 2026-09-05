@@ -47,7 +47,7 @@ export async function syncBookingToSheet(payload: SheetBookingPayload) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
-    await fetch(webhookUrl, {
+    const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(sanitizePayload(payload)),
@@ -55,6 +55,15 @@ export async function syncBookingToSheet(payload: SheetBookingPayload) {
     });
 
     clearTimeout(timeout);
+
+    // เดิมไม่ได้ตรวจผลตอบกลับเลย ปลายทางตอบ 5xx ก็เงียบ ข้อมูลใน Sheet ตกหล่นโดยไม่มีใครรู้
+    // ไม่โยน error ออกไป เพราะการจองหลักต้องไม่ล้มเหลวเพราะ Sheet — แต่ต้องมี log ให้ตามได้
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(
+        "sheets sync failed:", res.status, payload.event, payload.booking_id, body.slice(0, 200)
+      );
+    }
   } catch (err) {
     // ไม่ throw — sync พลาดไม่ควรทำให้ booking flow ล้มเหลว
     console.error("syncBookingToSheet failed:", err instanceof Error ? err.message : err);

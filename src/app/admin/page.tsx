@@ -1767,7 +1767,11 @@ export default function AdminPage() {
                           color: b.slip_verified ? "#0F9D4E" : (b.slip_verify_message ?? "").startsWith("⚠️") || (b.slip_verify_message ?? "").startsWith("⏳") ? "#8A6D2F" : "#C43D5C",
                         }}>
                           {b.slip_verified
-                            ? "✅ SlipOK: ตรวจสอบผ่านครบถ้วน (ยอด + บัญชีปลายทาง)"
+                            ? // ผ่านแล้วก็ยังต้องโชว์หมายเหตุถ้ามี (เช่น "สลิปนี้เคยถูกส่งตรวจมาก่อน")
+                              //  ไม่งั้นแอดมินจะไม่รู้เลยว่าสลิปใบนี้เคยถูกส่งมาแล้ว
+                              (b.slip_verify_message ?? "").startsWith("⚠️")
+                                ? `✅ SlipOK: ตรวจสอบผ่าน — ${b.slip_verify_message}`
+                                : "✅ SlipOK: ตรวจสอบผ่านครบถ้วน (ยอด + บัญชีปลายทาง)"
                             : `SlipOK: ${b.slip_verify_message || "❌ ไม่ผ่าน"}`}
                           {b.slip_verify_amount != null && (
                             <span style={{ fontWeight:500, marginLeft:6 }}>(ยอดที่อ่านได้ ฿{b.slip_verify_amount})</span>

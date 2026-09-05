@@ -239,17 +239,18 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
     finalMessage = "⏳ ยังตรวจไม่ได้ตอนนี้ (" + message + ") กรุณากดตรวจสอบสลิปอีกครั้งในภายหลัง";
   } else if (receiverMatches === false) {
     finalMessage =
-      "บัญชีผู้รับเงินในสลิปไม่ตรงกับบัญชีของร้าน กรุณาตรวจสอบด้วยตนเอง" +
+      "❌ บัญชีผู้รับเงินในสลิปไม่ตรงกับบัญชีของร้าน กรุณาตรวจสอบด้วยตนเอง" +
       " [ข้อมูลผู้รับที่อ่านได้: " + receiverHint + "]";
   } else if (amountMatches === false) {
     // ข้อความยอดไม่ตรงถูกตั้งไว้ด้านล่างอยู่แล้ว ไม่ต้องทำอะไรตรงนี้
   } else if (isDuplicateCode) {
-    finalMessage = "สลิปนี้เคยถูกส่งตรวจมาก่อนแล้ว (" + message + ") กรุณาตรวจสอบด้วยตนเอง";
+    // สลิปเคยถูกส่งตรวจมาก่อน ไม่ได้แปลว่าสลิปปลอม — ให้ขึ้นเหลือง (ต้องตรวจเอง) ไม่ใช่แดง
+    finalMessage = "⚠️ สลิปนี้เคยถูกส่งตรวจมาก่อนแล้ว (" + message + ") กรุณาตรวจสอบด้วยตนเอง";
   } else if (!verified && missing.length > 0 && !hardFail) {
     finalMessage = "⚠️ ตรวจสอบอัตโนมัติไม่ครบ ต้องตรวจด้วยตนเอง — " + missing.join(", ");
   }
   if (slipOkOk && slipOkSuccess && amountMatches === false) {
-    finalMessage = `ยอดเงินไม่ตรง: สลิปแจ้ง ฿${readAmount} แต่ควรเป็น ฿${expectedAmount}`;
+    finalMessage = `❌ ยอดเงินไม่ตรง: สลิปแจ้ง ฿${readAmount} แต่ควรเป็น ฿${expectedAmount}`;
   }
 
   // 4.5) กันสลิปใบเดียวกัน (transaction reference เดียวกัน) ถูกใช้ยืนยัน booking อื่นไปแล้ว
@@ -265,7 +266,8 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
 
     if (dup) {
       verified = false;
-      finalMessage = "สลิปนี้เคยถูกใช้ยืนยันการจองรายการอื่นไปแล้ว";
+      // อันนี้คนละเรื่องกับ 1012 — คือเอาสลิปใบเดิมมาใช้กับ "การจองอีกรายการ" ถือว่าผิดชัดเจน
+      finalMessage = "❌ สลิปนี้เคยถูกใช้ยืนยันการจองรายการอื่นไปแล้ว";
     }
   }
 

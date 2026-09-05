@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Noto_Sans_Thai, IBM_Plex_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -40,6 +41,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${notoSansThai.variable} ${plexMono.variable} antialiased`}
       >
         {children}
+        {/* นับจำนวนผู้เข้าชม/หน้าที่เปิด ผ่าน Vercel Analytics
+            เก็บแบบไม่ระบุตัวบุคคล ไม่ใช้คุกกี้ และไม่ผูกกับบัญชีลูกค้า */}
+        <Analytics />
       </body>
     </html>
   );

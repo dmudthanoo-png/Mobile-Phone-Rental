@@ -796,10 +796,17 @@ export default function PhoneRentalHome() {
           return;
         }
 
+        // ⚠️ ถึงตรงนี้ = "บันทึกการจองสำเร็จแล้ว" ห้ามมีอะไรทำให้ย้อนกลับไปหน้าชำระเงินได้อีก
+        // เดิม await loadPhones() ไว้ก่อน setStep(5) ถ้าโหลดสต็อกพลาดจะตกไป catch แล้ว
+        // เปิดปุ่มส่งซ้ำ ทั้งที่จองไปแล้ว → ลูกค้ากดซ้ำได้เป็น 2 รายการ
         setBookingId(upOut?.booking_id ?? null);
         setRefNumber(upOut?.ref_number ?? null);
-        if (selectedSessionId) await loadPhones(selectedSessionId);
         setStep(5);
+
+        // รีเฟรชสต็อกเป็นงานเสริม ล้มเหลวก็ไม่กระทบผลการจอง
+        if (selectedSessionId) {
+          loadPhones(selectedSessionId).catch(() => {});
+        }
       } catch (e: unknown) {
         setPageError(e instanceof Error ? e.message : "upload error");
         setSubmitted(false);

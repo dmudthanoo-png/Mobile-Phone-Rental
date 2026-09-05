@@ -35,6 +35,7 @@ declare
   v_lens_id        uuid;
   v_lens_qty       integer;
   v_update_count   integer;
+  v_expires_at     timestamptz;
   v_phone_quota    integer;
   v_phone_booked   integer;
   v_lens_quota     integer;
@@ -42,8 +43,8 @@ declare
 begin
   -- ล็อกแถวการจองไว้ก่อน กันอ่าน-เขียนสวนกันระหว่างที่แอดมินกำลังยืนยัน
   select b.user_id, b.status, b.session_id, b.phone_id, b.qty, b.lens_id, b.lens_qty,
-         coalesce(b.slip_update_count, 0)
-    into v_owner, v_status, v_session_id, v_phone_id, v_qty, v_lens_id, v_lens_qty, v_update_count
+         coalesce(b.slip_update_count, 0), b.pending_expires_at
+    into v_owner, v_status, v_session_id, v_phone_id, v_qty, v_lens_id, v_lens_qty, v_update_count, v_expires_at
   from public.bookings b
   where b.id = p_booking_id
   for update;
@@ -65,9 +66,14 @@ begin
     return jsonb_build_object('error', 'CONFLICT');
   end if;
 
-  -- (1) เฉพาะกรณี rejected → pending เท่านั้นที่ทำให้ "กลับมากินสต็อก" จึงต้องตรวจว่ายังมีของว่าง
-  --     กรณี pending อยู่แล้ว ไม่ต้องตรวจ เพราะถูกนับเป็นสต็อกอยู่ก่อนแล้ว
-  if v_status = 'rejected' then
+  -- (1) ต้องตรวจสต็อกใหม่ทุกกรณีที่ "ตอนนี้ไม่ได้ถูกนับเป็นสต็อก" แล้วกำลังจะกลับมาถูกนับ ได้แก่
+  --     (ก) rejected → pending
+  --     (ข) pending ที่หมดอายุแล้ว (ของที่กันไว้เกินเวลา) — ยังเป็น pending ก็จริง แต่ทุก query
+  --         นับสต็อกกรอง pending_expires_at ทิ้งไปแล้ว จึงไม่ได้กินสต็อกอยู่ ณ ตอนนี้
+  --     ⚠️ เดิมตรวจแค่ rejected ทำให้เคสนี้หลุด: A กันเครื่องสุดท้ายไว้จนหมดอายุ → B จองไป
+  --        → A แนบสลิปผ่าน update-slip → ข้ามการตรวจ → กลายเป็น 2 รายการแย่งเครื่องเดียว
+  if v_status = 'rejected'
+     or (v_status = 'pending' and v_expires_at is not null and v_expires_at <= now()) then
     select qty into v_phone_quota
     from public.session_phone_inventory
     where session_id = v_session_id and phone_id = v_phone_id

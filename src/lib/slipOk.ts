@@ -9,6 +9,14 @@ function getSupabase() {
 
 // รูปแบบ response ของ SlipOK — อิงตามเอกสารที่ทราบ แต่ field อาจต่างกันเล็กน้อย
 // ตามบัญชี/แพ็กเกจจริง จึงพยายามอ่านแบบยืดหยุ่น (ลองหลายชื่อ field)
+type SlipOkAccount = {
+  name?: { th?: string; en?: string } | string;
+  bank?: { id?: string; name?: string; short?: string };
+  account?: { name?: { th?: string; en?: string }; bank?: { account?: string }; value?: string; type?: string };
+  proxy?: { type?: string; account?: string; value?: string };
+  displayName?: string;
+};
+
 type SlipOkResponse = {
   success?: boolean;
   message?: string;
@@ -19,8 +27,31 @@ type SlipOkResponse = {
     transRef?: string;
     transactionRef?: string;
     date?: string;
+    receiver?: SlipOkAccount;
+    receivingBank?: string;
   };
+  receiver?: SlipOkAccount;
 };
+
+// ดึงข้อความทุกอย่างที่บอก "ผู้รับเงิน" ออกมาเป็นก้อนเดียว เพื่อเอาไปเทียบกับบัญชีร้าน
+// (SlipOK คืนโครงสร้างต่างกันได้ตามธนาคาร/แพ็กเกจ จึงกวาดทุกชั้นแทนการอ่านเฉพาะ field เดียว)
+function collectReceiverText(v: unknown, depth = 0): string {
+  if (v == null || depth > 5) return "";
+  if (typeof v === "string" || typeof v === "number") return " " + String(v);
+  if (Array.isArray(v)) return v.map((x) => collectReceiverText(x, depth + 1)).join("");
+  if (typeof v === "object") {
+    return Object.values(v as Record<string, unknown>)
+      .map((x) => collectReceiverText(x, depth + 1))
+      .join("");
+  }
+  return "";
+}
+
+// เทียบแบบหลวมๆ: ตัดอักขระที่ไม่ใช่ตัวเลข/ตัวอักษรออก แล้วดูว่ามีคำที่ร้านตั้งไว้อยู่ไหม
+function normalizeForMatch(s: string) {
+  // หมายเหตุ: ต้องวางขีดกลางไว้ท้ายสุดของ [] ไม่งั้นจะกลายเป็น "ช่วงอักขระ" แล้วกินตัวอักษรไทยหมด
+  return s.toLowerCase().replace(/[\s.,()฿*x×–—_-]/g, "");
+}
 
 export type SlipVerifyResult = {
   ok: true;
@@ -97,6 +128,8 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
     const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
     form.append("files", new Blob([slipBuffer], { type: contentType }), `slip.${ext}`);
     form.append("amount", String(expectedAmount));
+    // ขอให้ SlipOK บันทึก/ตรวจกับบัญชีที่ผูกไว้กับสาขา และคืนข้อมูลผู้รับเงินกลับมา
+    form.append("log", "true");
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -138,9 +171,42 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
   const transRef = d.transRef || d.transactionRef || null;
 
   const amountMatches = readAmount != null ? Math.abs(readAmount - expectedAmount) < 1 : null;
-  let verified = slipOkOk && slipOkSuccess && (amountMatches === null || amountMatches === true);
+
+  // ── ตรวจว่าเงินเข้าบัญชีของร้านจริง ──
+  // ถ้าไม่ตรวจ สลิปที่โอนเข้าบัญชีคนอื่นแต่ยอดตรงพอดี จะขึ้นว่า "ตรวจสอบผ่าน" ได้
+  // ตั้งชื่อ/เลขบัญชีร้านไว้ใน SLIPOK_RECEIVER_MATCH (คั่นด้วยจุลภาคได้หลายค่า เช่น เลขบัญชี 4 ตัวท้าย + ชื่อบัญชี)
+  // ไม่ได้ตั้งไว้ = ข้ามการตรวจนี้ แต่จะไม่ตีตราว่า "ผ่าน" เต็มปาก และเตือนให้แอดมินดูเอง
+  const receiverExpect = (process.env.SLIPOK_RECEIVER_MATCH ?? "")
+    .split(",").map((x) => normalizeForMatch(x.trim())).filter(Boolean);
+  const receiverText = normalizeForMatch(
+    collectReceiverText(slipOkResult?.data?.receiver ?? slipOkResult?.receiver ?? null) +
+    collectReceiverText(slipOkResult?.data?.receivingBank ?? null)
+  );
+  const receiverConfigured = receiverExpect.length > 0;
+  const receiverKnown = receiverText.length > 0;
+  const receiverMatches = receiverConfigured && receiverKnown
+    ? receiverExpect.some((exp) => receiverText.includes(exp))
+    : null;
+
+  let verified =
+    slipOkOk && slipOkSuccess &&
+    (amountMatches === null || amountMatches === true) &&
+    receiverMatches !== false;
 
   let finalMessage = message;
+  // ตัดข้อมูลผู้รับที่ SlipOK ส่งมาแบบย่อ ไว้ช่วยวินิจฉัยตอนตั้งค่าครั้งแรก
+  // (เป็นข้อมูลบัญชีปลายทาง = ของร้านเอง ไม่ใช่ข้อมูลผู้โอน)
+  const receiverHint = receiverText.slice(0, 90);
+
+  if (slipOkOk && slipOkSuccess && receiverMatches === false) {
+    finalMessage =
+      "บัญชีผู้รับเงินในสลิปไม่ตรงกับบัญชีของร้าน กรุณาตรวจสอบด้วยตนเอง" +
+      " [ข้อมูลผู้รับที่อ่านได้: " + receiverHint + "]";
+  } else if (verified && receiverConfigured && !receiverKnown) {
+    finalMessage = message + " (หมายเหตุ: SlipOK ไม่ได้ส่งข้อมูลบัญชีผู้รับมา จึงยังไม่ได้ตรวจบัญชีปลายทาง)";
+  } else if (verified && !receiverConfigured) {
+    finalMessage = message + " (หมายเหตุ: ยังไม่ได้ตั้งค่าบัญชีร้านสำหรับตรวจปลายทาง)";
+  }
   if (slipOkOk && slipOkSuccess && amountMatches === false) {
     finalMessage = `ยอดเงินไม่ตรง: สลิปแจ้ง ฿${readAmount} แต่ควรเป็น ฿${expectedAmount}`;
   }
@@ -163,7 +229,10 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
   }
 
   // 5) บันทึกผลลง booking
-  const { error: updErr } = await supabase
+  // ⚠️ ต้องผูกกับ "สลิปใบที่ตรวจ" ด้วย ไม่ใช่แค่ booking_id
+  // ระหว่างที่รอ SlipOK ตอบ (นานได้ถึง 15 วิ และรันเบื้องหลัง) ลูกค้าอาจเปลี่ยนสลิปไปแล้ว
+  // ถ้าเขียนด้วย id อย่างเดียว ผล "ผ่าน" ของใบเก่าจะไปติดกับใบใหม่ที่ยังไม่ได้ตรวจ
+  const { error: updErr, count: updatedCount } = await supabase
     .from("bookings")
     .update({
       slip_verified: verified,
@@ -171,8 +240,18 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
       slip_verify_amount: readAmount,
       slip_verify_ref: transRef,
       slip_verified_at: new Date().toISOString(),
-    })
-    .eq("id", bookingId);
+    }, { count: "exact" })
+    .eq("id", bookingId)
+    .eq("slip_url", booking.slip_url);
+
+  if (!updErr && !updatedCount) {
+    // สลิปถูกเปลี่ยนไปแล้วระหว่างรอผล — ทิ้งผลนี้ไป ใบใหม่จะมีการตรวจของตัวเองตามมา
+    return {
+      ok: true, verified: false,
+      message: "สลิปถูกเปลี่ยนระหว่างรอผลตรวจ ระบบจึงไม่นำผลเดิมมาใช้",
+      amount: readAmount, expected_amount: expectedAmount, trans_ref: transRef, raw: slipOkResult,
+    };
+  }
 
   if (updErr) {
     // unique_violation = อีก request หนึ่งเพิ่ง verify สลิปเดียวกันสำเร็จไปพร้อมกันพอดี (race)

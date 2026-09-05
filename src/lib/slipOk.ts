@@ -51,8 +51,9 @@ function collectReceiverText(v: unknown, depth = 0): string {
 
 // เทียบแบบหลวมๆ: ตัดอักขระที่ไม่ใช่ตัวเลข/ตัวอักษรออก แล้วดูว่ามีคำที่ร้านตั้งไว้อยู่ไหม
 function normalizeForMatch(s: string) {
+  // ตัดเฉพาะอักขระคั่น/สัญลักษณ์ ไม่ตัดตัวอักษร (เดิมตัด x ทิ้งด้วย ทำให้คำภาษาอังกฤษเพี้ยน)
   // หมายเหตุ: ต้องวางขีดกลางไว้ท้ายสุดของ [] ไม่งั้นจะกลายเป็น "ช่วงอักขระ" แล้วกินตัวอักษรไทยหมด
-  return s.toLowerCase().replace(/[\s.,()฿*x×–—_-]/g, "");
+  return s.toLowerCase().replace(/[\s.,()฿*–—_-]/g, "");
 }
 
 export type SlipVerifyResult = {

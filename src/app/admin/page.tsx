@@ -1757,14 +1757,18 @@ export default function AdminPage() {
                         <div style={{
                           marginTop:12,
                           borderRadius:12,
-                          border: `1px solid ${b.slip_verified ? "#B7EFC5" : "#F9C7D1"}`,
-                          background: b.slip_verified ? "#F0FFF4" : "#FFF1F2",
+                          // แยก 3 สถานะ: ผ่านจริง / ตรวจไม่ครบต้องดูเอง / ไม่ผ่าน
+                          // เดิมมีแค่ 2 สี ทำให้ "ตรวจไม่ครบ" ถูกเหมารวมเป็นสีแดงเหมือนสลิปปลอม
+                          border: `1px solid ${b.slip_verified ? "#B7EFC5" : (b.slip_verify_message ?? "").startsWith("⚠️") || (b.slip_verify_message ?? "").startsWith("⏳") ? "#F3E3B8" : "#F9C7D1"}`,
+                          background: b.slip_verified ? "#F0FFF4" : (b.slip_verify_message ?? "").startsWith("⚠️") || (b.slip_verify_message ?? "").startsWith("⏳") ? "#FFFBEF" : "#FFF1F2",
                           padding:"8px 12px",
                           fontSize:12,
                           fontWeight:700,
-                          color: b.slip_verified ? "#0F9D4E" : "#C43D5C",
+                          color: b.slip_verified ? "#0F9D4E" : (b.slip_verify_message ?? "").startsWith("⚠️") || (b.slip_verify_message ?? "").startsWith("⏳") ? "#8A6D2F" : "#C43D5C",
                         }}>
-                          {b.slip_verified ? "✅ SlipOK: ตรวจสอบผ่าน" : `⚠️ SlipOK: ${b.slip_verify_message || "ไม่ผ่าน"}`}
+                          {b.slip_verified
+                            ? "✅ SlipOK: ตรวจสอบผ่านครบถ้วน (ยอด + บัญชีปลายทาง)"
+                            : `SlipOK: ${b.slip_verify_message || "❌ ไม่ผ่าน"}`}
                           {b.slip_verify_amount != null && (
                             <span style={{ fontWeight:500, marginLeft:6 }}>(ยอดที่อ่านได้ ฿{b.slip_verify_amount})</span>
                           )}

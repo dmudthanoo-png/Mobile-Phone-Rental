@@ -348,9 +348,15 @@ export async function POST(req: NextRequest) {
     //  ซึ่งเป็นเหตุผลเดิมที่ต้อง await ไว้) และรันสองงานพร้อมกันด้วย ไม่ต้องรอต่อคิวกันเอง
     after(async () => {
       await Promise.all([
-        verifySlipForBooking(row.booking_id).catch((err) => {
-          console.error("auto slip verify failed:", err instanceof Error ? err.message : err);
-        }),
+        // ฟังก์ชันนี้คืน { ok:false, error } ในหลายกรณีโดยไม่โยน exception
+        // ถ้าจับแค่ catch จะเงียบหายไปเลย ต้องอ่านผลลัพธ์มา log ด้วย
+        verifySlipForBooking(row.booking_id)
+          .then((res) => {
+            if (!res.ok) console.error("auto slip verify not ok:", row.booking_id, res.error);
+          })
+          .catch((err) => {
+            console.error("auto slip verify failed:", err instanceof Error ? err.message : err);
+          }),
         syncBookingToSheet({
           event: "created",
           booking_id: row.booking_id,

@@ -206,9 +206,15 @@ export async function POST(req: NextRequest) {
           await supabaseAdmin.storage.from("slips").remove([oldPath]).catch(() => {});
         }
       })(),
-      verifySlipForBooking(bookingId).catch((err) => {
-        console.error("auto slip verify failed:", err instanceof Error ? err.message : err);
-      }),
+      // ฟังก์ชันนี้คืน { ok:false, error } ในหลายกรณีโดยไม่โยน exception
+      // ถ้าจับแค่ catch จะเงียบหายไปเลย ต้องอ่านผลลัพธ์มา log ด้วย
+      verifySlipForBooking(bookingId)
+        .then((res) => {
+          if (!res.ok) console.error("auto slip verify not ok:", bookingId, res.error);
+        })
+        .catch((err) => {
+          console.error("auto slip verify failed:", err instanceof Error ? err.message : err);
+        }),
     ]);
   });
 

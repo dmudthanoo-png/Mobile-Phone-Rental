@@ -92,7 +92,11 @@ type Summary = { total: number; pending: number; confirmed: number; rejected: nu
 type LensOption = {
   lens_id: string; name: string; focal_mm: number | null; price: number;
   active: boolean; quota: number; booked: number;
-  available: number;  // เหลือให้รายการนี้ใส่ได้กี่ชิ้น (ไม่นับตัวเอง)
+  available: number;      // เหลือให้รายการนี้ใส่ได้กี่ชิ้น จากโควต้าของรอบนี้ (ไม่นับตัวเอง)
+  // ── ระดับวัน: เลนส์ชิ้นจริงใช้ร่วมกันทุกรอบ/ทุกคอนเสิร์ตในวันเดียวกัน ──
+  total_stock: number;    // เลนส์จริงที่ร้านมีทั้งหมด
+  day_allocated: number;  // แจกเป็นโควต้าให้ทุกรอบในวันนั้นรวมกันแล้วเท่าไหร่
+  day_free: number;       // ยังเพิ่มโควต้าให้รอบนี้ได้อีกกี่ชิ้นก่อนชนสต็อกจริง
 };
 type LensSaveResult = {
   unchanged?: boolean;
@@ -107,6 +111,9 @@ type LensEditState = {
   lensId: string;   // "" = ไม่มีเลนส์
   qty: number;
   deposit: number | null;   // มัดจำที่โอนมาแล้ว — ใช้คิดยอดจ่ายหน้างานให้ดูก่อนกดบันทึก
+  reason: string | null;    // ถ้าแก้ไม่ได้ ให้บอกเหตุผลที่ API ส่งมา
+  phoneModel: string | null;
+  sessionDay: string | null;
   saving: boolean;
   savedResult: LensSaveResult | null;
 };
@@ -676,7 +683,8 @@ export default function AdminPage() {
   // ใช้ตอนลูกค้าลืมเลือกเลนส์/เลือกผิดรุ่น แล้วแอดมินกดยืนยันไปแล้ว
   // ยอดรวมจะขยับตามค่าเลนส์ แต่มัดจำที่โอนมาแล้วไม่เปลี่ยน → ผลต่างไปโผล่ที่ยอดจ่ายหน้างาน
   const openLensEditor = async (b: Booking) => {
-    setLensEdit({ booking: b, loading: true, options: [], lensId: b.lens_id ?? "", qty: b.lens_qty || 1, deposit: null, saving: false, savedResult: null });
+    setLensEdit({ booking: b, loading: true, options: [], lensId: b.lens_id ?? "", qty: b.lens_qty || 1, deposit: null, reason: null,
+      phoneModel: b.phones?.model_name ?? null, sessionDay: null, saving: false, savedResult: null });
     try {
       const res = await fetch(`/api/admin/bookings/${b.id}/lens`, { cache:"no-store" });
       const out = await res.json().catch(()=>null);
@@ -692,6 +700,9 @@ export default function AdminPage() {
         lensId: out?.booking?.lens_id ?? "",
         qty: Number(out?.booking?.lens_qty ?? 0) || 1,
         deposit: out?.booking?.deposit_amount ?? null,
+        reason: out?.editable === false ? (out?.reason ?? "รายการนี้แก้เลนส์ไม่ได้") : null,
+        phoneModel: out?.booking?.phone_model ?? prev.phoneModel,
+        sessionDay: out?.session_day ?? null,
       } : prev);
     } catch {
       showMsg("โหลดตัวเลือกเลนส์ไม่สำเร็จ", false);
@@ -3095,6 +3106,10 @@ export default function AdminPage() {
 
               {lensEdit.loading ? (
                 <div style={{ padding:"24px 0", textAlign:"center", fontSize:13, color:UI.muted, fontWeight:600 }}>⏳ กำลังโหลดตัวเลือกเลนส์...</div>
+              ) : lensEdit.reason ? (
+                <div style={{ borderRadius:12, border:"1px solid #F9C7D1", background:"#FFF1F2", padding:"12px 14px", fontSize:12.5, fontWeight:600, color:"#C43D5C", lineHeight:1.7 }}>
+                  {lensEdit.reason}
+                </div>
               ) : lensEdit.options.length === 0 ? (
                 <div style={{ borderRadius:12, border:"1px solid #F3E3B8", background:"#FFFBEF", padding:"12px 14px", fontSize:12.5, fontWeight:600, color:"#8A6D2F", lineHeight:1.7 }}>
                   รอบนี้ยังไม่ได้ตั้งโควต้าเลนส์ไว้เลย จึงยังเพิ่มเลนส์ให้ไม่ได้<br/>
@@ -3102,20 +3117,24 @@ export default function AdminPage() {
                 </div>
               ) : (
                 <>
-                  <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:6 }}>เลนส์</div>
+                  <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:6 }}>
+                    เลนส์ที่ใส่กับ {lensEdit.phoneModel ?? "เครื่องนี้"} ได้
+                    {lensEdit.sessionDay ? ` · รอบวันที่ ${lensEdit.sessionDay}` : ""}
+                  </div>
                   <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:14 }}>
                     {/* ตัวเลือก "ไม่มีเลนส์" = ลบเลนส์ออกจากการจอง */}
-                    {[{ lens_id:"", name:"— ไม่มีเลนส์ —", price:0, available:99, active:true } as Partial<LensOption> & { lens_id:string; name:string; price:number; available:number; active:boolean }, ...lensEdit.options].map(o => {
-                      const isSel = lensEdit.lensId === o.lens_id;
-                      const isCurrent = (b.lens_id ?? "") === o.lens_id;
-                      const soldOut = o.lens_id !== "" && o.available <= 0 && !isCurrent;
+                    {[null, ...lensEdit.options].map((o: LensOption | null) => {
+                      const key = o?.lens_id ?? "";
+                      const isSel = lensEdit.lensId === key;
+                      const isCurrent = (b.lens_id ?? "") === key;
+                      const soldOut = o !== null && o.available <= 0 && !isCurrent;
                       return (
                         <button
-                          key={o.lens_id || "none"}
+                          key={key || "none"}
                           disabled={done || soldOut}
-                          onClick={()=>setLensEdit(p => p ? { ...p, lensId:o.lens_id, qty: o.lens_id ? Math.min(p.qty || 1, Math.max(1, o.available)) : 0 } : p)}
+                          onClick={()=>setLensEdit(p => p ? { ...p, lensId:key, qty: o ? Math.min(p.qty || 1, Math.max(1, o.available)) : 0 } : p)}
                           style={{
-                            display:"flex", justifyContent:"space-between", alignItems:"center", gap:10,
+                            display:"flex", flexDirection:"column", gap:3,
                             textAlign:"left", cursor: done || soldOut ? "not-allowed" : "pointer",
                             borderRadius:12, padding:"10px 12px", fontSize:13, fontWeight:700,
                             border:`1.5px solid ${isSel ? UI.accent2 : UI.border}`,
@@ -3124,13 +3143,25 @@ export default function AdminPage() {
                             opacity: done ? 0.6 : 1,
                           }}
                         >
-                          <span>
-                            {isSel ? "◉" : "○"} {o.name}
-                            {isCurrent && <span style={{ fontSize:10.5, fontWeight:800, color:UI.muted, marginLeft:6 }}>(ปัจจุบัน)</span>}
+                          <span style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, width:"100%" }}>
+                            <span>
+                              {isSel ? "◉" : "○"} {o ? o.name : "— ไม่มีเลนส์ —"}
+                              {isCurrent && <span style={{ fontSize:10.5, fontWeight:800, color:UI.muted, marginLeft:6 }}>(ปัจจุบัน)</span>}
+                              {o && !o.active && <span style={{ fontSize:10.5, fontWeight:800, color:"#C43D5C", marginLeft:6 }}>(ปิดใช้งาน)</span>}
+                            </span>
+                            <span style={{ fontSize:11.5, fontWeight:700, color:UI.muted, whiteSpace:"nowrap" }}>
+                              {o ? `${money(o.price)} · เหลือ ${o.available}` : "ลบเลนส์ออก"}
+                            </span>
                           </span>
-                          <span style={{ fontSize:11.5, fontWeight:700, color:UI.muted, whiteSpace:"nowrap" }}>
-                            {o.lens_id ? `${money(o.price)} · เหลือ ${o.available}` : "ลบเลนส์ออก"}
-                          </span>
+                          {/* เลนส์ชิ้นจริงใช้ร่วมกันทุกรอบในวันเดียวกัน — โชว์ให้เห็นว่าเพิ่มโควต้าได้อีกไหม */}
+                          {o && (
+                            <span style={{ fontSize:10.5, fontWeight:600, color:UI.muted, paddingLeft:16 }}>
+                              โควต้ารอบนี้ {o.quota} · จองไปแล้ว {o.booked} · วันนั้นทั้งวันแจกไป {o.day_allocated}/{o.total_stock} ชิ้น
+                              {o.available <= 0 && (o.day_free > 0
+                                ? ` → เพิ่มโควต้ารอบนี้ได้อีก ${o.day_free} ชิ้น`
+                                : " → เลนส์จริงหมดวันนั้นแล้ว")}
+                            </span>
+                          )}
                         </button>
                       );
                     })}

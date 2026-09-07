@@ -16,6 +16,9 @@ type Booking = {
   qty?: number;
   add_lens?: boolean;       // ← เพิ่ม
   lens_price?: number;      // ← เพิ่ม
+  lens_id?: string | null;
+  lens_qty?: number | null;
+  lenses?: { name: string } | null;
   // ── ติดตามงานหลังยืนยันการจอง (null = ยังไม่ได้ทำ) ──
   delivered_at?: string | null;
   returned_at?: string | null;
@@ -85,6 +88,28 @@ type AdminUser = {
   total_spent: number;
 };
 type Summary = { total: number; pending: number; confirmed: number; rejected: number; revenue: number; deposit_received: number };
+// ── แก้ไขเลนส์ของการจองที่ยืนยันแล้ว ──
+type LensOption = {
+  lens_id: string; name: string; focal_mm: number | null; price: number;
+  active: boolean; quota: number; booked: number;
+  available: number;  // เหลือให้รายการนี้ใส่ได้กี่ชิ้น (ไม่นับตัวเอง)
+};
+type LensSaveResult = {
+  unchanged?: boolean;
+  lens_name?: string | null; lens_qty?: number; lens_price?: number;
+  old_total?: number; total_amount?: number;
+  deposit_amount?: number | null; pay_on_pickup?: number;
+};
+type LensEditState = {
+  booking: Booking;
+  loading: boolean;
+  options: LensOption[];
+  lensId: string;   // "" = ไม่มีเลนส์
+  qty: number;
+  deposit: number | null;   // มัดจำที่โอนมาแล้ว — ใช้คิดยอดจ่ายหน้างานให้ดูก่อนกดบันทึก
+  saving: boolean;
+  savedResult: LensSaveResult | null;
+};
 type LineQuota = {
   status: "loading" | "connected" | "not_configured" | "error";
   quotaType?: "limited" | "none";
@@ -339,6 +364,7 @@ export default function AdminPage() {
   const [fulfillBusy, setFulfillBusy] = useState(false);
 
   const [slipModal, setSlipModal] = useState<string|null>(null);
+  const [lensEdit, setLensEdit] = useState<LensEditState|null>(null);
   const [viewingSlipId, setViewingSlipId] = useState<string|null>(null);
   const [lineQuota, setLineQuota] = useState<LineQuota>({ status:"loading", loading:true });
 
@@ -611,11 +637,14 @@ export default function AdminPage() {
   };
 
   const [retryingLineBookingId, setRetryingLineBookingId] = useState<string|null>(null);
-  const retryLineNotification = async (id: string) => {
+  // force = ส่งซ้ำแม้เคยส่งสำเร็จแล้ว (ใช้ตอนแก้เลนส์ทำให้ยอดเปลี่ยน จึงต้องแจ้งยอดใหม่)
+  const retryLineNotification = async (id: string, force = false) => {
     setRetryingLineBookingId(id);
     try {
       const res = await fetch(`/api/admin/bookings/${id}/line-notification`, {
         method:"POST", cache:"no-store",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ force }),
       });
       const out = await res.json().catch(()=>null);
       if (!res.ok) { showMsg(out?.error || "ส่ง LINE ซ้ำไม่สำเร็จ", false); return; }
@@ -625,7 +654,7 @@ export default function AdminPage() {
       if (lineSent) {
         showMsg(
           recorded
-            ? "✅ ส่งข้อความ LINE ซ้ำสำเร็จ"
+            ? force ? "✅ ส่งยอดใหม่ให้ลูกค้าทาง LINE แล้ว" : "✅ ส่งข้อความ LINE ซ้ำสำเร็จ"
             : "✅ LINE รับข้อความแล้ว แต่บันทึกสถานะการส่งไม่สำเร็จ",
           recorded
         );
@@ -640,6 +669,59 @@ export default function AdminPage() {
       showMsg("ส่ง LINE ซ้ำไม่สำเร็จ", false);
     } finally {
       setRetryingLineBookingId(null);
+    }
+  };
+
+  // ══ แก้ไขเลนส์ของการจองที่ยืนยันแล้ว ══
+  // ใช้ตอนลูกค้าลืมเลือกเลนส์/เลือกผิดรุ่น แล้วแอดมินกดยืนยันไปแล้ว
+  // ยอดรวมจะขยับตามค่าเลนส์ แต่มัดจำที่โอนมาแล้วไม่เปลี่ยน → ผลต่างไปโผล่ที่ยอดจ่ายหน้างาน
+  const openLensEditor = async (b: Booking) => {
+    setLensEdit({ booking: b, loading: true, options: [], lensId: b.lens_id ?? "", qty: b.lens_qty || 1, deposit: null, saving: false, savedResult: null });
+    try {
+      const res = await fetch(`/api/admin/bookings/${b.id}/lens`, { cache:"no-store" });
+      const out = await res.json().catch(()=>null);
+      if (!res.ok) {
+        showMsg(out?.error || "โหลดตัวเลือกเลนส์ไม่สำเร็จ", false);
+        setLensEdit(null);
+        return;
+      }
+      setLensEdit(prev => prev && prev.booking.id === b.id ? {
+        ...prev,
+        loading: false,
+        options: (out?.options ?? []) as LensOption[],
+        lensId: out?.booking?.lens_id ?? "",
+        qty: Number(out?.booking?.lens_qty ?? 0) || 1,
+        deposit: out?.booking?.deposit_amount ?? null,
+      } : prev);
+    } catch {
+      showMsg("โหลดตัวเลือกเลนส์ไม่สำเร็จ", false);
+      setLensEdit(null);
+    }
+  };
+
+  const saveLensEdit = async () => {
+    if (!lensEdit) return;
+    const { booking, lensId, qty } = lensEdit;
+    setLensEdit(prev => prev ? { ...prev, saving: true } : prev);
+    try {
+      const res = await fetch(`/api/admin/bookings/${booking.id}/lens`, {
+        method:"PATCH",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ lens_id: lensId || null, lens_qty: lensId ? qty : 0 }),
+      });
+      const out = await res.json().catch(()=>null);
+      if (!res.ok) {
+        showMsg(out?.error || "แก้เลนส์ไม่สำเร็จ", false);
+        setLensEdit(prev => prev ? { ...prev, saving: false } : prev);
+        return;
+      }
+      showMsg(out?.result?.unchanged ? "ℹ️ ไม่มีอะไรเปลี่ยน" : "✅ แก้เลนส์เรียบร้อย");
+      // ค้างหน้าต่างไว้ให้เห็นยอดใหม่ + ปุ่มแจ้งลูกค้าทาง LINE
+      setLensEdit(prev => prev ? { ...prev, saving: false, savedResult: (out?.result ?? null) as LensSaveResult | null } : prev);
+      fetchBookings(); fetchSummary();
+    } catch {
+      showMsg("แก้เลนส์ไม่สำเร็จ", false);
+      setLensEdit(prev => prev ? { ...prev, saving: false } : prev);
     }
   };
 
@@ -1713,7 +1795,8 @@ export default function AdminPage() {
                           {/* ── Lens badge ── */}
                           {b.add_lens && (
                             <div style={{ borderRadius:999, border:"1.5px solid #a78bfa", background:"#f5f3ff", padding:"4px 10px", fontWeight:700, color:"#6d28d9", fontSize:11 }}>
-                              🔭 Lens +{money(b.lens_price)}
+                              🔭 {b.lenses?.name ?? "Lens"}
+                              {b.lens_qty && b.lens_qty > 1 ? ` ×${b.lens_qty}` : ""} +{money(b.lens_price)}
                             </div>
                           )}
                           <div style={{ borderRadius:999, border:`1px solid ${meta.pillBorder}`, background:meta.pillBg, padding:"5px 12px", fontWeight:700, color:meta.text, fontSize:12 }}>
@@ -1796,6 +1879,16 @@ export default function AdminPage() {
                         </button>
                         <button disabled={!pending||loading} onClick={()=>setBookingStatus(b.id,"confirmed")} style={btnStyle("green",!pending||loading)}>✅ ยืนยัน</button>
                         <button disabled={!pending||loading} onClick={()=>setBookingStatus(b.id,"rejected")} style={btnStyle("red",!pending||loading)}>❌ ปฏิเสธ</button>
+                        {/* ยืนยันไปแล้วจะปฏิเสธไม่ได้ (สลิปถูกล็อกกับรายการนี้แล้ว) แต่แก้เลนส์ได้ */}
+                        {b.status === "confirmed" && (
+                          <button
+                            disabled={lensEdit?.booking.id === b.id}
+                            onClick={()=>openLensEditor(b)}
+                            style={btnStyle("white", lensEdit?.booking.id === b.id)}
+                          >
+                            🔭 {b.add_lens ? "แก้เลนส์" : "เพิ่มเลนส์"}
+                          </button>
+                        )}
                         {canRetryLine && (
                           <button
                             disabled={retryingLineBookingId===b.id}
@@ -2972,7 +3065,157 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
+      {/* ═══ Lens Edit Modal — แก้เลนส์ของการจองที่ยืนยันแล้ว ═══ */}
+      {lensEdit && (() => {
+        const b = lensEdit.booking;
+        const selected = lensEdit.options.find(o => o.lens_id === lensEdit.lensId) ?? null;
+        const oldLensPrice = b.lens_price ?? 0;
+        const newLensPrice = selected ? selected.price * Math.max(1, lensEdit.qty) : 0;
+        const oldTotal = b.total_amount ?? 0;
+        const newTotal = oldTotal - oldLensPrice + newLensPrice;
+        // มัดจำที่ลูกค้าโอนมาแล้วไม่เปลี่ยน — ผลต่างไปโผล่ที่ยอดจ่ายหน้างานทั้งหมด
+        const deposit = lensEdit.savedResult?.deposit_amount ?? lensEdit.deposit ?? 0;
+        const maxQty = selected ? Math.max(1, selected.available) : 1;
+        const overQuota = Boolean(selected) && lensEdit.qty > (selected?.available ?? 0);
+        const noChange = (lensEdit.lensId || null) === (b.lens_id ?? null)
+          && (lensEdit.lensId ? lensEdit.qty : 0) === (b.lens_qty ?? 0);
+        const done = lensEdit.savedResult !== null;
+
+        return (
+          <div onClick={()=>setLensEdit(null)} style={{ position:"fixed", inset:0, background:"rgba(51,46,44,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:20 }}>
+            <div onClick={e=>e.stopPropagation()} style={{ ...card, width:"100%", maxWidth:480, padding:20, maxHeight:"85vh", overflowY:"auto" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                <span style={{ fontWeight:700, fontSize:16 }}>🔭 แก้ไขเลนส์</span>
+                <button onClick={()=>setLensEdit(null)} style={{ border:"none", background:"none", fontSize:20, cursor:"pointer" }}>✕</button>
+              </div>
+              <div style={{ fontSize:12, color:UI.muted, fontWeight:600, marginBottom:14 }}>
+                {b.renter_name} · REF {b.ref_number ?? "-"}
+              </div>
+
+              {lensEdit.loading ? (
+                <div style={{ padding:"24px 0", textAlign:"center", fontSize:13, color:UI.muted, fontWeight:600 }}>⏳ กำลังโหลดตัวเลือกเลนส์...</div>
+              ) : lensEdit.options.length === 0 ? (
+                <div style={{ borderRadius:12, border:"1px solid #F3E3B8", background:"#FFFBEF", padding:"12px 14px", fontSize:12.5, fontWeight:600, color:"#8A6D2F", lineHeight:1.7 }}>
+                  รอบนี้ยังไม่ได้ตั้งโควต้าเลนส์ไว้เลย จึงยังเพิ่มเลนส์ให้ไม่ได้<br/>
+                  ไปที่แท็บ 🎤 คอนเสิร์ต → เลือกรอบนี้ → ตั้งโควต้าเลนส์ก่อน แล้วกลับมาแก้อีกครั้ง
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:6 }}>เลนส์</div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:14 }}>
+                    {/* ตัวเลือก "ไม่มีเลนส์" = ลบเลนส์ออกจากการจอง */}
+                    {[{ lens_id:"", name:"— ไม่มีเลนส์ —", price:0, available:99, active:true } as Partial<LensOption> & { lens_id:string; name:string; price:number; available:number; active:boolean }, ...lensEdit.options].map(o => {
+                      const isSel = lensEdit.lensId === o.lens_id;
+                      const isCurrent = (b.lens_id ?? "") === o.lens_id;
+                      const soldOut = o.lens_id !== "" && o.available <= 0 && !isCurrent;
+                      return (
+                        <button
+                          key={o.lens_id || "none"}
+                          disabled={done || soldOut}
+                          onClick={()=>setLensEdit(p => p ? { ...p, lensId:o.lens_id, qty: o.lens_id ? Math.min(p.qty || 1, Math.max(1, o.available)) : 0 } : p)}
+                          style={{
+                            display:"flex", justifyContent:"space-between", alignItems:"center", gap:10,
+                            textAlign:"left", cursor: done || soldOut ? "not-allowed" : "pointer",
+                            borderRadius:12, padding:"10px 12px", fontSize:13, fontWeight:700,
+                            border:`1.5px solid ${isSel ? UI.accent2 : UI.border}`,
+                            background: isSel ? "#F5F3FF" : soldOut ? "#FAFAFA" : "#fff",
+                            color: soldOut ? UI.muted : isSel ? "#6d28d9" : UI.ink,
+                            opacity: done ? 0.6 : 1,
+                          }}
+                        >
+                          <span>
+                            {isSel ? "◉" : "○"} {o.name}
+                            {isCurrent && <span style={{ fontSize:10.5, fontWeight:800, color:UI.muted, marginLeft:6 }}>(ปัจจุบัน)</span>}
+                          </span>
+                          <span style={{ fontSize:11.5, fontWeight:700, color:UI.muted, whiteSpace:"nowrap" }}>
+                            {o.lens_id ? `${money(o.price)} · เหลือ ${o.available}` : "ลบเลนส์ออก"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {lensEdit.lensId && (
+                    <div style={{ marginBottom:14 }}>
+                      <div style={{ fontSize:11, fontWeight:800, color:UI.muted, marginBottom:6 }}>จำนวน (เหลือให้ใส่ได้ {selected?.available ?? 0} ชิ้น)</div>
+                      <input
+                        type="number" min={1} max={maxQty} disabled={done}
+                        value={lensEdit.qty}
+                        onChange={e=>setLensEdit(p => p ? { ...p, qty: Math.max(1, Number(e.target.value) || 1) } : p)}
+                        style={{ ...inputStyle, maxWidth:110, textAlign:"center", fontWeight:800, fontSize:16 }}
+                      />
+                      {overQuota && (
+                        <div style={{ marginTop:6, fontSize:11.5, fontWeight:700, color:"#C43D5C" }}>
+                          ⚠️ เกินโควต้าที่เหลือ ({selected?.available ?? 0} ชิ้น)
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* สรุปผลกระทบต่อยอดเงิน */}
+                  <div style={{ borderRadius:12, border:`1px solid ${UI.border}`, background:UI.bg, padding:"12px 14px", fontSize:12.5, marginBottom:14 }}>
+                    <Row k="ค่าเลนส์" a={money(oldLensPrice)} b={money(newLensPrice)} />
+                    <Row k="ยอดรวม" a={money(oldTotal)} b={money(newTotal)} bold />
+                    <Row k="มัดจำที่โอนแล้ว" a={money(deposit)} b={money(deposit)} />
+                    <Row
+                      k="ลูกค้าจ่ายหน้างาน"
+                      a={money(oldTotal - deposit)}
+                      b={money(done ? (lensEdit.savedResult?.pay_on_pickup ?? 0) : newTotal - deposit)}
+                      bold
+                    />
+                    <div style={{ marginTop:8, paddingTop:8, borderTop:`1px dashed ${UI.border}`, fontSize:11.5, color:UI.muted, fontWeight:600, lineHeight:1.6 }}>
+                      มัดจำที่ลูกค้าโอนมาแล้วไม่เปลี่ยน ผลต่างไปโผล่ที่ยอดจ่ายหน้างาน — ลูกค้าไม่ต้องโอนเพิ่ม
+                    </div>
+                  </div>
+
+                  {!done ? (
+                    <div style={{ display:"flex", gap:8 }}>
+                      <button
+                        disabled={lensEdit.saving || overQuota || noChange}
+                        onClick={saveLensEdit}
+                        style={{ ...btnStyle("dark", lensEdit.saving || overQuota || noChange), flex:1, justifyContent:"center" }}
+                      >
+                        {lensEdit.saving ? "⏳ กำลังบันทึก..." : noChange ? "ไม่มีอะไรเปลี่ยน" : "💾 บันทึก"}
+                      </button>
+                      <button onClick={()=>setLensEdit(null)} style={btnStyle("white")}>ยกเลิก</button>
+                    </div>
+                  ) : (
+                    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                      <div style={{ fontSize:12, fontWeight:700, color:"#0F9D4E" }}>✅ บันทึกแล้ว — ยอดใหม่ยังไม่ได้แจ้งลูกค้า</div>
+                      <div style={{ display:"flex", gap:8 }}>
+                        <button
+                          disabled={retryingLineBookingId === b.id}
+                          onClick={async ()=>{ await retryLineNotification(b.id, true); }}
+                          style={{ ...btnStyle("blue", retryingLineBookingId === b.id), flex:1, justifyContent:"center" }}
+                        >
+                          {retryingLineBookingId === b.id ? "⏳ กำลังส่ง LINE..." : "📲 แจ้งยอดใหม่ทาง LINE"}
+                        </button>
+                        <button onClick={()=>setLensEdit(null)} style={btnStyle("white")}>ปิด</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
       </div>
+    </div>
+  );
+}
+
+// แถวเทียบค่าเดิม → ค่าใหม่ ในสรุปผลกระทบต่อยอดเงินของหน้าต่างแก้เลนส์
+function Row({ k, a, b, bold = false }: { k: string; a: string; b: string; bold?: boolean }) {
+  const changed = a !== b;
+  return (
+    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, padding:"3px 0" }}>
+      <span style={{ color:UI.muted, fontWeight:700 }}>{k}</span>
+      <span style={{ fontWeight: bold ? 800 : 700, fontSize: bold ? 13.5 : 12.5 }}>
+        {changed && <span style={{ color:UI.muted, textDecoration:"line-through", marginRight:6, fontWeight:600 }}>{a}</span>}
+        <span style={{ color: changed ? UI.accent2 : UI.ink }}>{b}</span>
+      </span>
     </div>
   );
 }

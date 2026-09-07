@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     .from("bookings")
     .select(`
       id, created_at, renter_name, renter_line_name, renter_phone, total_amount,
-      slip_url, ref_number, status, qty, add_lens, lens_price,
+      slip_url, ref_number, status, qty, add_lens, lens_price, lens_id, lens_qty,
       slip_verified, slip_verify_message, slip_verify_amount, slip_verify_ref, slip_verified_at,
       line_message_status, line_message_error, line_message_attempted_at,
       line_message_sent_at, line_message_attempt_count, line_message_http_status,
@@ -38,7 +38,8 @@ export async function GET(req: NextRequest) {
         start_at, note,
         concerts:concert_id ( title, venue_name )
       ),
-      phones:phone_id ( model_name )
+      phones:phone_id ( model_name ),
+      lenses:lens_id ( name )
     `)
     .order("created_at", { ascending: false })
     // ไม่เอา "เครื่องที่ลูกค้ากันไว้แต่ยังไม่ได้โอน/แนบสลิป" มาปนในคิวแอดมิน

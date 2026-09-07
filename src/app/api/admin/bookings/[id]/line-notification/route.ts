@@ -11,6 +11,9 @@ const uuidRe =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // POST /api/admin/bookings/[id]/line-notification — ส่งซ้ำเมื่อส่งไม่สำเร็จ/โควต้าหมด หรือยังไม่มีประวัติเดิม
+// body (ไม่บังคับ): { force: true } = ส่งซ้ำได้แม้เคยส่งสำเร็จแล้ว
+//   ใช้ตอนแอดมินแก้เลนส์ของรายการที่ยืนยันไปแล้ว ทำให้ยอดเปลี่ยน จึงต้องแจ้งยอดใหม่ให้ลูกค้า
+//   (ข้อความถูกสร้างใหม่จากข้อมูลล่าสุดทุกครั้ง จึงได้ยอดใหม่เสมอ)
 export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ id?: string }> }
@@ -22,6 +25,9 @@ export async function POST(
   if (!id || id === "undefined" || !uuidRe.test(id)) {
     return NextResponse.json({ error: "invalid booking id" }, { status: 400 });
   }
+
+  const body = (await req.json().catch(() => null)) as { force?: unknown } | null;
+  const force = body?.force === true;
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -57,7 +63,9 @@ export async function POST(
   if (booking.status !== "confirmed") {
     return NextResponse.json({ error: "ส่ง LINE ซ้ำได้หลังจากยืนยันการจองแล้วเท่านั้น" }, { status: 409 });
   }
+  // force = แอดมินตั้งใจส่งยอดใหม่หลังแก้รายการ จึงข้ามการกันส่งซ้ำได้ (มี audit log กำกับไว้)
   if (
+    !force &&
     booking.line_message_status !== null &&
     booking.line_message_status !== "failed" &&
     booking.line_message_status !== "quota_exceeded"
@@ -73,7 +81,7 @@ export async function POST(
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
-    action: "ส่งข้อความ LINE แจ้งเตือนอีกครั้ง",
+    action: force ? "ส่งข้อความ LINE แจ้งยอดใหม่" : "ส่งข้อความ LINE แจ้งเตือนอีกครั้ง",
     detail: `รหัสการจอง ${id}${booking.ref_number ? ` (เลขอ้างอิง ${booking.ref_number})` : ""}`,
   });
 

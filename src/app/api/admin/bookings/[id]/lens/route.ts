@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { syncBookingToSheet } from "@/lib/sheetsSync";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -20,10 +21,26 @@ function money(n: number) {
   return n.toLocaleString("th-TH");
 }
 
+// มัดจำที่ "ถือว่าลูกค้าจ่ายมาแล้ว" — ต้องคิดให้ตรงกับข้อความ LINE เป๊ะๆ
+// src/lib/lineBookingNotification.ts ใช้: deposit_amount != null ? deposit_amount : phones.deposit * qty
+// ถ้าตีความ null ว่าเป็น 0 รายการเก่าจะดูเหมือนไม่เคยจ่ายเงิน แล้วยอด "จ่ายหน้างาน"
+// ที่แอดมินเห็นจะไม่ตรงกับที่ลูกค้าเห็นใน LINE (เช่น แอดมิน 1,200 แต่ LINE 900)
+function effectiveDeposit(
+  depositAmount: number | null,
+  phoneDeposit: number | null,
+  qty: number
+): { value: number; estimated: boolean } {
+  if (depositAmount != null) return { value: Number(depositAmount), estimated: false };
+  return { value: Math.round(Number(phoneDeposit ?? 0) * qty), estimated: true };
+}
+
 type InvRow = {
   lens_id: string;
   qty: number | null;
-  lenses: { name: string; focal_mm: number | null; price: number | null; active: boolean | null; qty: number | null } | null;
+  lenses: {
+    name: string; focal_mm: number | null; price: number | null;
+    active: boolean | null; qty: number | null;
+  } | null;
 };
 
 // GET /api/admin/bookings/[id]/lens
@@ -42,8 +59,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
   const { data: bkRaw, error: bkErr } = await supabase
     .from("bookings")
     .select(
-      "id, session_id, phone_id, status, lens_id, lens_qty, lens_price, total_amount, deposit_amount, " +
-      "phones:phone_id ( model_name ), concert_sessions:session_id ( start_at )"
+      "id, session_id, phone_id, status, qty, lens_id, lens_qty, lens_price, total_amount, deposit_amount, " +
+      "details_changed_at, phones:phone_id ( model_name, deposit ), concert_sessions:session_id ( start_at )"
     )
     .eq("id", id)
     .maybeSingle();
@@ -53,26 +70,33 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
 
   const bk = bkRaw as unknown as {
     id: string; session_id: string | null; phone_id: string | null; status: string | null;
-    lens_id: string | null; lens_qty: number | null; lens_price: number | null;
-    total_amount: number | null; deposit_amount: number | null;
-    phones: { model_name: string } | null;
+    qty: number | null; lens_id: string | null; lens_qty: number | null; lens_price: number | null;
+    total_amount: number | null; deposit_amount: number | null; details_changed_at: string | null;
+    phones: { model_name: string; deposit: number | null } | null;
     concert_sessions: { start_at: string } | null;
   };
+
+  const dep = effectiveDeposit(bk.deposit_amount, bk.phones?.deposit ?? null, Number(bk.qty ?? 1));
 
   const bookingPayload = {
     id: bk.id,
     status: bk.status,
     phone_model: bk.phones?.model_name ?? null,
+    qty: Number(bk.qty ?? 1),
     lens_id: bk.lens_id,
     lens_qty: Number(bk.lens_qty ?? 0),
     lens_price: Number(bk.lens_price ?? 0),
     total_amount: Number(bk.total_amount ?? 0),
     deposit_amount: bk.deposit_amount == null ? null : Number(bk.deposit_amount),
+    // ✅ ยอดที่ควรใช้คำนวณจริง + ธงบอกว่าเป็นค่าประมาณ (รายการเก่าที่ไม่ได้บันทึกมัดจำไว้)
+    deposit_effective: dep.value,
+    deposit_is_estimated: dep.estimated,
+    details_changed_at: bk.details_changed_at,
   };
 
   const notEditable = (reason: string) =>
     NextResponse.json(
-      { booking: bookingPayload, editable: false, reason, options: [] },
+      { booking: bookingPayload, editable: false, remove_only: false, reason, options: [] },
       { headers: { "Cache-Control": "no-store" } }
     );
 
@@ -99,10 +123,28 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
   if (compatErr) return NextResponse.json({ error: compatErr.message }, { status: 500 });
 
   const compatible = new Set((compatRows ?? []).map((r) => r.lens_id));
+  const hasLensNow = Boolean(bk.lens_id) && Number(bk.lens_qty ?? 0) > 0;
+
+  // ไม่มีเลนส์ที่เข้ากันได้เลย — แต่ "ถอดเลนส์เดิมออก" ไม่ต้องมีเลนส์ใหม่ให้เลือก
+  // จึงยังต้องเปิดให้ทำได้ ไม่ใช่ปิดหน้าแก้ทั้งหมด
   if (compatible.size === 0) {
-    return notEditable(
-      `รุ่น ${bk.phones?.model_name ?? "นี้"} ยังไม่ได้ตั้งว่าใช้เลนส์ตัวไหนได้ — ` +
-      "ไปผูกเลนส์เข้ากับรุ่นนี้ในแท็บ 📱 มือถือ ก่อน แล้วกลับมาแก้อีกครั้ง"
+    if (!hasLensNow) {
+      return notEditable(
+        `รุ่น ${bk.phones?.model_name ?? "นี้"} ยังไม่ได้ตั้งว่าใช้เลนส์ตัวไหนได้ — ` +
+        "ไปผูกเลนส์เข้ากับรุ่นนี้ในแท็บ 📱 มือถือ ก่อน แล้วกลับมาแก้อีกครั้ง"
+      );
+    }
+    return NextResponse.json(
+      {
+        booking: bookingPayload,
+        editable: bk.status === "confirmed",
+        remove_only: true,
+        reason:
+          `รุ่น ${bk.phones?.model_name ?? "นี้"} ไม่ได้ผูกกับเลนส์ตัวไหนไว้แล้ว ` +
+          "จึงเลือกเลนส์ใหม่ไม่ได้ — แต่ถอดเลนส์เดิมออกได้",
+        options: [],
+      },
+      { headers: { "Cache-Control": "no-store" } }
     );
   }
 
@@ -192,9 +234,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
         // เหลือเท่าไหร่ถ้าจะย้ายรายการนี้มาใส่เลนส์ตัวนี้ (จากโควต้าของรอบนี้)
         available: Math.max(0, quota - booked),
         // ── ระดับวัน ──
-        total_stock: totalStock,                                          // เลนส์จริงที่ร้านมี
-        day_allocated: dayAllocated,                                      // แจกให้ทุกรอบในวันนั้นรวมกัน
-        day_free: Math.max(0, totalStock - dayAllocated),                 // ยังเพิ่มโควต้าได้อีกกี่ชิ้น
+        total_stock: totalStock,                            // เลนส์จริงที่ร้านมี
+        day_allocated: dayAllocated,                        // แจกให้ทุกรอบในวันนั้นรวมกัน
+        day_free: Math.max(0, totalStock - dayAllocated),   // ยังเพิ่มโควต้าได้อีกกี่ชิ้น
       };
     })
     .sort((a, b) => (a.focal_mm ?? 0) - (b.focal_mm ?? 0));
@@ -204,6 +246,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
       booking: bookingPayload,
       // แก้ได้เฉพาะรายการที่ยืนยันแล้ว (รายการ pending ให้ปฏิเสธแล้วให้ลูกค้าจองใหม่)
       editable: bk.status === "confirmed",
+      remove_only: false,
       session_day: startAt
         ? new Date(startAt).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "medium" })
         : null,
@@ -213,7 +256,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
   );
 }
 
-// PATCH /api/admin/bookings/[id]/lens — body: { lens_id: string|null, lens_qty: number }
+// PATCH /api/admin/bookings/[id]/lens
+// body ต้องระบุ lens_id ชัดเจนเสมอ: { lens_id: "<uuid>", lens_qty: n } หรือ { lens_id: null }
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id?: string }> }) {
   const admin = await requireAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -223,23 +267,48 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id?: stri
     return NextResponse.json({ error: "invalid booking id" }, { status: 400 });
   }
 
-  const body = (await req.json().catch(() => null)) as
-    | { lens_id?: unknown; lens_qty?: unknown }
-    | null;
+  // ── ตรวจรูปแบบคำขอแบบเข้ม ──
+  // เดิม body ที่ผิดรูป ({} / null / JSON เสีย) ถูกแปลงเป็น lens_id=null, lens_qty=0
+  // แล้วกลายเป็น "คำสั่งลบเลนส์" โดยที่ผู้เรียกไม่ได้สั่ง — การลบต้องระบุเจตนาชัดเจน
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "รูปแบบคำขอไม่ถูกต้อง (ต้องเป็น JSON)" }, { status: 400 });
+  }
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "รูปแบบคำขอไม่ถูกต้อง (ต้องเป็น JSON object)" }, { status: 400 });
+  }
 
-  const rawLensId = body?.lens_id;
-  const lensId =
-    rawLensId === null || rawLensId === undefined || rawLensId === "" ? null : String(rawLensId);
+  const payload = body as Record<string, unknown>;
+  if (!("lens_id" in payload)) {
+    return NextResponse.json(
+      { error: "ต้องระบุ lens_id (ใส่ null ถ้าต้องการถอดเลนส์ออก)" },
+      { status: 400 }
+    );
+  }
+
+  const rawLensId = payload.lens_id;
+  if (rawLensId !== null && typeof rawLensId !== "string") {
+    return NextResponse.json({ error: "lens_id ต้องเป็นข้อความ uuid หรือ null" }, { status: 400 });
+  }
+  const lensId = rawLensId === null || rawLensId === "" ? null : rawLensId;
   if (lensId !== null && !uuidRe.test(lensId)) {
     return NextResponse.json({ error: "lens_id ไม่ถูกต้อง" }, { status: 400 });
   }
 
-  const lensQty = Number(body?.lens_qty ?? 0);
-  if (!Number.isFinite(lensQty) || !Number.isInteger(lensQty) || lensQty < 0) {
-    return NextResponse.json({ error: "lens_qty ต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป" }, { status: 400 });
-  }
-  if (lensId !== null && lensQty < 1) {
-    return NextResponse.json({ error: "เลือกเลนส์แล้วต้องระบุจำนวนอย่างน้อย 1 ชิ้น" }, { status: 400 });
+  let lensQty = 0;
+  if (lensId !== null) {
+    if (!("lens_qty" in payload)) {
+      return NextResponse.json({ error: "เลือกเลนส์แล้วต้องระบุ lens_qty" }, { status: 400 });
+    }
+    if (typeof payload.lens_qty !== "number") {
+      return NextResponse.json({ error: "lens_qty ต้องเป็นตัวเลข" }, { status: 400 });
+    }
+    lensQty = payload.lens_qty;
+    if (!Number.isInteger(lensQty) || lensQty < 1) {
+      return NextResponse.json({ error: "lens_qty ต้องเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป" }, { status: 400 });
+    }
   }
 
   const supabase = getSupabase();
@@ -268,7 +337,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id?: stri
     old_total?: number;
     total_amount?: number;
     deposit_amount?: number | null;
+    deposit_effective?: number;
+    deposit_is_estimated?: boolean;
     pay_on_pickup?: number;
+    refund_due?: number;
     quota?: number;
     booked?: number;
     requested?: number;
@@ -278,7 +350,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id?: stri
     day_free?: number;
   } | null;
 
-  if (r?.error) {
+  // RPC ที่คืน null (ไม่ควรเกิด แต่ถ้าเกิดแล้วตอบสำเร็จไป แอดมินจะเชื่อว่าบันทึกแล้วทั้งที่ไม่ได้เขียน)
+  if (!r || typeof r !== "object") {
+    return NextResponse.json(
+      { error: "ฐานข้อมูลไม่ตอบผลลัพธ์ของการแก้ไข — ยังไม่ได้บันทึก กรุณาลองใหม่" },
+      { status: 500 }
+    );
+  }
+
+  if (r.error) {
     switch (r.error) {
       case "NOT_FOUND":
         return NextResponse.json({ error: "ไม่พบรายการจองนี้" }, { status: 404 });
@@ -331,6 +411,21 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id?: stri
       }
       case "LENS_QTY_TOO_LARGE":
         return NextResponse.json({ error: "จำนวนเลนส์สูงสุด 20 ชิ้นต่อรายการ" }, { status: 400 });
+      case "TOTAL_BELOW_DEPOSIT": {
+        const est = r.deposit_is_estimated
+          ? " (มัดจำนี้ประมาณจากค่ามัดจำของรุ่นมือถือ เพราะรายการนี้ไม่ได้บันทึกยอดมัดจำไว้)"
+          : "";
+        return NextResponse.json(
+          {
+            error:
+              `แก้ไม่ได้: ยอดรวมใหม่ ฿${money(r.total_amount ?? 0)} ต่ำกว่ามัดจำที่ลูกค้าจ่ายมาแล้ว ` +
+              `฿${money(r.deposit_effective ?? 0)}${est} — จะต้องคืนเงินลูกค้า ฿${money(r.refund_due ?? 0)} ` +
+              "ซึ่งระบบยังไม่มีขั้นตอนรองรับ กรุณาจัดการคืนเงินกับลูกค้าก่อน แล้วแก้ยอดในฐานข้อมูลโดยตรง",
+            refund_due: r.refund_due ?? 0,
+          },
+          { status: 409 }
+        );
+      }
       case "TOTAL_WOULD_BE_NEGATIVE":
         return NextResponse.json(
           {
@@ -344,11 +439,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id?: stri
     }
   }
 
-  if (!r?.unchanged) {
-    const before = r?.old_lens_name
+  if (r.ok !== true) {
+    return NextResponse.json(
+      { error: "ฐานข้อมูลตอบผลลัพธ์ที่ไม่รู้จัก — ยังไม่แน่ใจว่าบันทึกสำเร็จ กรุณาตรวจรายการอีกครั้ง" },
+      { status: 500 }
+    );
+  }
+
+  if (!r.unchanged) {
+    const before = r.old_lens_name
       ? `${r.old_lens_name} x${r.old_lens_qty ?? 0} (฿${money(r.old_lens_price ?? 0)})`
       : "ไม่มีเลนส์";
-    const after = r?.lens_name
+    const after_ = r.lens_name
       ? `${r.lens_name} x${r.lens_qty ?? 0} (฿${money(r.lens_price ?? 0)})`
       : "ไม่มีเลนส์";
 
@@ -356,11 +458,59 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id?: stri
       username: String(admin.payload.username ?? ""),
       action: "แก้ไขเลนส์ของการจองที่ยืนยันแล้ว",
       detail:
-        `รหัสการจอง ${id} · เลนส์ ${before} → ${after} · ` +
-        `ยอดรวม ฿${money(r?.old_total ?? 0)} → ฿${money(r?.total_amount ?? 0)} · ` +
-        `จ่ายหน้างาน ฿${money(r?.pay_on_pickup ?? 0)}`,
+        `รหัสการจอง ${id} · เลนส์ ${before} → ${after_} · ` +
+        `ยอดรวม ฿${money(r.old_total ?? 0)} → ฿${money(r.total_amount ?? 0)} · ` +
+        `จ่ายหน้างาน ฿${money(r.pay_on_pickup ?? 0)}`,
+    });
+
+    // ── sync ไป Google Sheet ──
+    // ถ้าร้านใช้ชีตจัดของ/ดูยอด แล้วไม่ sync ชีตจะค้างเลนส์และยอดเก่าไว้
+    // เป็น best-effort เหมือนเส้นทางอื่น จึงไม่ให้ค้างคำตอบของแอดมิน
+    after(async () => {
+      const { data: rowRaw, error } = await supabase
+        .from("bookings")
+        .select(
+          "ref_number, status, renter_name, renter_phone, qty, lens_qty, total_amount, created_at, " +
+          "phones:phone_id ( model_name ), lenses:lens_id ( name ), " +
+          "concert_sessions:session_id ( start_at, note, concerts:concert_id ( title ) )"
+        )
+        .eq("id", id)
+        .maybeSingle();
+
+      if (error || !rowRaw) {
+        console.error("lens edit sheet sync skipped:", id, error?.message ?? "booking not found");
+        return;
+      }
+
+      const row = rowRaw as unknown as {
+        ref_number: string | null; status: string; renter_name: string; renter_phone: string;
+        qty: number | null; lens_qty: number | null; total_amount: number | null; created_at: string | null;
+        phones: { model_name: string } | null;
+        lenses: { name: string } | null;
+        concert_sessions: { start_at: string; note: string | null; concerts: { title: string } | null } | null;
+      };
+      const session = row.concert_sessions;
+
+      await syncBookingToSheet({
+        event: "status_changed",
+        booking_id: id,
+        ref_number: row.ref_number,
+        status: row.status,
+        renter_name: row.renter_name,
+        renter_phone: row.renter_phone,
+        concert_title: session?.concerts?.title ?? null,
+        session_label: session?.start_at
+          ? `${session.note ?? "รอบ"} • ${new Date(session.start_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" })}`
+          : null,
+        phone_model: row.phones?.model_name ?? null,
+        qty: row.qty,
+        lens_name: row.lenses?.name ?? null,
+        lens_qty: row.lens_qty,
+        total_amount: row.total_amount,
+        created_at: row.created_at,
+      });
     });
   }
 
-  return NextResponse.json({ ok: true, result: r });
+  return NextResponse.json({ ok: true, booking_id: id, result: r });
 }

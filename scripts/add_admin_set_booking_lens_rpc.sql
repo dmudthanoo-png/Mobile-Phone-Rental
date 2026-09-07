@@ -1,22 +1,21 @@
 -- ให้ผู้ใช้รันเองใน Supabase SQL Editor
--- ⚠️ ถ้าเคยรันไฟล์นี้เวอร์ชันแรกไปแล้ว ให้รันซ้ำ — เวอร์ชันนี้เพิ่มการเช็ค 2 อย่าง
---    (1) เลนส์ต้องใช้กับมือถือที่จองไว้ได้จริง (phone_lenses)
---    (2) เลนส์ที่ปิดใช้งานแล้ว ห้ามเอามาผูกใหม่
+-- ⚠️ ถ้าเคยรันไฟล์นี้ไปแล้ว ให้รันซ้ำ — เวอร์ชันนี้เพิ่ม
+--    (1) คอลัมน์ bookings.details_changed_at  ← มี ALTER TABLE ด้านล่าง
+--    (2) คิดมัดจำแบบเดียวกับข้อความ LINE (ไม่ตีความ null ว่าเป็น 0)
+--    (3) กันยอดรวมใหม่ต่ำกว่ามัดจำที่จ่ายมาแล้ว (จะกลายเป็นต้องคืนเงิน)
 -- ═══════════════════════════════════════════════════════════════
 -- admin_set_booking_lens — ให้แอดมินเพิ่ม/เปลี่ยน/ลบเลนส์ของ "การจองที่ยืนยันแล้ว"
 --
 -- ใช้ตอนลูกค้าลืมเลือกเลนส์ (หรือเลือกผิดรุ่น) แล้วแอดมินกดยืนยันการจองไปแล้ว
 -- เดิมแก้ไม่ได้เลย ทางเดียวคือปฏิเสธให้จองใหม่ ซึ่งพังเพราะ
 -- bookings_slip_verify_ref_unique_when_verified จับเลขอ้างอิงสลิปใบเดิมค้างไว้
--- (การปฏิเสธไม่ล้าง slip_verified) → ลูกค้าอัปสลิปใบเดิมกับรายการใหม่ไม่ได้ ต้องโอนใหม่ทั้งก้อน
 --
 -- ⚠️ จำกัดไว้เฉพาะ status = 'confirmed' โดยเจตนา
---    รายการ pending คือรายการที่ยังรอตรวจสลิป total_amount/deposit_amount ของมัน
---    เป็นยอดที่บอกลูกค้าให้โอน ถ้าแอดมินไปขยับกลางทาง การตรวจสลิปจะเทียบยอดไม่ตรงทันที
---    รายการที่ยังไม่ยืนยัน ให้ปฏิเสธแล้วให้ลูกค้าจองใหม่ตามปกติ (สลิปยังไม่ถูกล็อก)
+--    รายการ pending ยังรอตรวจสลิป ยอดของมันคือยอดที่บอกลูกค้าให้โอน
+--    ถ้าขยับกลางทาง การตรวจสลิปจะเทียบยอดไม่ตรงทันที
 --
--- เรื่องเงิน: ขยับ total_amount ตามค่าเลนส์ แต่ไม่แตะ deposit_amount (โอนมาแล้ว)
---            → ผลต่างไปโผล่ที่ "ยอดจ่ายหน้างาน" ลูกค้าไม่ต้องโอนเพิ่ม/ไม่ต้องคืนเงิน
+-- เรื่องเงิน: ขยับ total_amount ตามค่าเลนส์ แต่ไม่แตะมัดจำ (โอนมาแล้ว)
+--            → ผลต่างไปโผล่ที่ "ยอดจ่ายหน้างาน" ลูกค้าไม่ต้องโอนเพิ่ม
 --
 -- จังหวะล็อก: bookings row → session_lens_inventory
 --   ลำดับเดียวกับ update_booking_slip และ set_session_quota_batch ไม่เคยล็อกแถว bookings
@@ -25,9 +24,19 @@
 -- เรื่องสต็อก: เช็คกับ session_lens_inventory.qty ของรอบนั้นรอบเดียวพอ
 --   เพราะเพดาน "รวมทุกรอบในวันเดียวกันต้องไม่เกิน lenses.qty" ถูกบังคับตอน *ตั้งโควต้า*
 --   ไปแล้วใน set_session_quota_batch (QTY_EXCEEDS_STOCK) และตอนย้ายวันใน move_concert_session
---   ฟังก์ชันนี้ไม่ได้เพิ่มโควต้า แค่ใช้โควต้าที่ตั้งไว้แล้ว จึงไม่ทำให้เพดานรายวันพัง
---   แต่ตอนโควต้าไม่พอ จะคืนตัวเลขระดับวันกลับไปด้วย ให้แอดมินรู้ว่าเพิ่มโควต้าได้อีกไหม
+--   ตอนโควต้าไม่พอ จะคืนตัวเลขระดับวันกลับไปด้วย ให้แอดมินรู้ว่าเพิ่มโควต้าได้อีกไหม
 -- ═══════════════════════════════════════════════════════════════
+
+-- ═══ (0) คอลัมน์ใหม่: "แก้รายละเอียดแล้วแต่ยังไม่ได้แจ้งลูกค้า" ═══
+-- เดิมปุ่มแจ้งยอดใหม่ทาง LINE โผล่แค่ในหน้าต่างหลังกดบันทึก ถ้าแอดมินปิดหน้าต่างไป
+-- ปุ่มจะหายเลย (line_message_status ยังเป็น 'sent' จากข้อความเดิม) และกดบันทึกซ้ำก็ไม่ได้
+-- เพราะ "ไม่มีอะไรเปลี่ยน" → ลูกค้าค้างอยู่กับยอดเก่าถาวร
+-- คอลัมน์นี้เก็บว่า "ยอด/รายละเอียดเปลี่ยนไปแล้วแต่ยังไม่ได้แจ้ง" ให้ปุ่มโผล่ในตารางได้
+alter table public.bookings
+  add column if not exists details_changed_at timestamptz;
+
+comment on column public.bookings.details_changed_at is
+  'เวลาที่แอดมินแก้รายละเอียด (เช่น เลนส์) หลังยืนยันการจองแล้ว — ล้างเป็น null เมื่อแจ้งลูกค้าทาง LINE สำเร็จ';
 
 create or replace function public.admin_set_booking_lens(
   p_booking_id uuid,
@@ -40,12 +49,17 @@ as $function$
 declare
   v_session_id     uuid;
   v_phone_id       uuid;
+  v_qty            integer;
   v_status         text;
   v_old_lens_id    uuid;
   v_old_lens_qty   integer;
   v_old_lens_price integer;
   v_total          integer;
-  v_deposit        integer;
+  v_deposit        integer;   -- ค่าดิบจากตาราง (อาจเป็น null สำหรับรายการเก่า)
+
+  v_phone_deposit  numeric;
+  v_deposit_eff    integer;   -- มัดจำที่ "ถือว่าลูกค้าจ่ายมาแล้ว" คิดแบบเดียวกับข้อความ LINE
+  v_deposit_est    boolean;   -- true = ประมาณจากมัดจำของรุ่นมือถือ ไม่ใช่ค่าที่บันทึกไว้จริง
 
   v_target_lens    uuid;
   v_target_qty     integer;
@@ -77,9 +91,9 @@ begin
   end if;
 
   -- ── (1) ล็อกแถวการจองไว้ก่อน กันแอดมิน 2 คนแก้รายการเดียวกันพร้อมกัน ──
-  select b.session_id, b.phone_id, b.status, b.lens_id, coalesce(b.lens_qty, 0),
+  select b.session_id, b.phone_id, coalesce(b.qty, 1), b.status, b.lens_id, coalesce(b.lens_qty, 0),
          coalesce(b.lens_price, 0), coalesce(b.total_amount, 0), b.deposit_amount
-    into v_session_id, v_phone_id, v_status, v_old_lens_id, v_old_lens_qty,
+    into v_session_id, v_phone_id, v_qty, v_status, v_old_lens_id, v_old_lens_qty,
          v_old_lens_price, v_total, v_deposit
   from public.bookings b
   where b.id = p_booking_id
@@ -94,6 +108,20 @@ begin
     return jsonb_build_object('error', 'NOT_CONFIRMED', 'status', v_status);
   end if;
 
+  -- ── (2) มัดจำที่ถือว่าจ่ายมาแล้ว — ต้องคิดให้ตรงกับข้อความ LINE ──
+  -- src/lib/lineBookingNotification.ts ใช้สูตร:
+  --   deposit_amount != null ? deposit_amount : phones.deposit * qty
+  -- ถ้าฝั่งนี้ตีความ null ว่าเป็น 0 รายการเก่าจะดูเหมือนไม่เคยจ่ายเงิน
+  -- แล้วยอด "จ่ายหน้างาน" ที่แอดมินเห็นจะไม่ตรงกับที่ลูกค้าเห็นใน LINE
+  if v_deposit is null then
+    select p.deposit into v_phone_deposit from public.phones p where p.id = v_phone_id;
+    v_deposit_eff := round(coalesce(v_phone_deposit, 0) * v_qty)::integer;
+    v_deposit_est := true;
+  else
+    v_deposit_eff := v_deposit;
+    v_deposit_est := false;
+  end if;
+
   -- ไม่มีอะไรเปลี่ยน — ตอบสำเร็จไปเลย ไม่ต้องเขียนซ้ำ
   if v_target_lens is not distinct from v_old_lens_id and v_target_qty = v_old_lens_qty then
     return jsonb_build_object(
@@ -101,7 +129,9 @@ begin
       'lens_qty', v_old_lens_qty, 'lens_price', v_old_lens_price,
       'old_total', v_total, 'total_amount', v_total,
       'deposit_amount', v_deposit,
-      'pay_on_pickup', v_total - coalesce(v_deposit, 0)
+      'deposit_effective', v_deposit_eff,
+      'deposit_is_estimated', v_deposit_est,
+      'pay_on_pickup', v_total - v_deposit_eff
     );
   end if;
 
@@ -119,7 +149,7 @@ begin
       return jsonb_build_object('error', 'LENS_NOT_FOUND');
     end if;
 
-    -- ── (2) เลนส์ต้องใช้กับมือถือที่จองไว้ได้จริง ──
+    -- ── (3) เลนส์ต้องใช้กับมือถือที่จองไว้ได้จริง ──
     -- ฝั่งลูกค้า get_session_phones กรอง lens_options ด้วย phone_lenses อยู่แล้ว
     -- ถ้าฝั่งแอดมินไม่กรอง จะผูกเลนส์ที่ใส่กับเครื่องนั้นไม่ได้เข้าไปได้ แล้วไปพังหน้างาน
     if v_phone_id is null then
@@ -130,18 +160,15 @@ begin
     where pl.phone_id = v_phone_id and pl.lens_id = v_target_lens;
 
     if not found then
-      return jsonb_build_object(
-        'error', 'LENS_NOT_COMPATIBLE',
-        'lens_name', v_lens_name
-      );
+      return jsonb_build_object('error', 'LENS_NOT_COMPATIBLE', 'lens_name', v_lens_name);
     end if;
 
-    -- ── (3) เลนส์ที่ปิดใช้งานแล้ว ห้ามผูกใหม่ (แต่ของเดิมที่ผูกไว้แล้ว แก้จำนวน/ถอดออกได้) ──
+    -- ── (4) เลนส์ที่ปิดใช้งานแล้ว ห้ามผูกใหม่ (ของเดิมที่ผูกไว้ แก้จำนวน/ถอดออกได้) ──
     if coalesce(v_lens_active, false) = false and v_target_lens is distinct from v_old_lens_id then
       return jsonb_build_object('error', 'LENS_INACTIVE', 'lens_name', v_lens_name);
     end if;
 
-    -- ── (4) ล็อกแถวโควต้าเลนส์ของรอบนี้ แล้วค่อยนับยอดจอง ──
+    -- ── (5) ล็อกแถวโควต้าเลนส์ของรอบนี้ แล้วค่อยนับยอดจอง ──
     select sli.qty into v_quota
     from public.session_lens_inventory sli
     where sli.session_id = v_session_id and sli.lens_id = v_target_lens
@@ -189,7 +216,6 @@ begin
         'booked', v_booked,
         'requested', v_target_qty,
         'available', greatest(0, v_quota - v_booked),
-        -- ตัวเลขระดับวัน: เพิ่มโควต้ารอบนี้ได้อีกกี่ชิ้นก่อนชนสต็อกจริงของร้าน
         'total_stock', v_total_stock,
         'day_allocated', v_day_allocated,
         'day_free', greatest(0, coalesce(v_total_stock, 0) - v_day_allocated)
@@ -201,7 +227,7 @@ begin
     v_new_lens_price := 0;
   end if;
 
-  -- ── (5) ขยับยอดรวมด้วย "ผลต่างค่าเลนส์" ไม่คำนวณยอดใหม่ทั้งก้อน ──
+  -- ── (6) ขยับยอดรวมด้วย "ผลต่างค่าเลนส์" ไม่คำนวณยอดใหม่ทั้งก้อน ──
   -- ค่ามือถือของรายการนี้อาจมาจาก session_phone_inventory.price_override ที่แอดมิน
   -- ตั้งไว้ตอนนั้น และอาจถูกแก้ไปแล้วหลังจากลูกค้าจอง ถ้าคำนวณใหม่ทั้งก้อนจาก
   -- ราคาปัจจุบัน ยอดของลูกค้าจะเปลี่ยนทั้งที่ไม่ได้ตั้งใจแก้ค่ามือถือ
@@ -211,12 +237,31 @@ begin
     return jsonb_build_object('error', 'TOTAL_WOULD_BE_NEGATIVE', 'total_amount', v_new_total);
   end if;
 
+  -- ── (7) ยอดรวมใหม่ต้องไม่ต่ำกว่ามัดจำที่ลูกค้าจ่ายมาแล้ว ──
+  -- ถ้าต่ำกว่า = ร้านต้องคืนเงินส่วนต่าง ซึ่งระบบยังไม่มีขั้นตอนรองรับเลย
+  -- (ข้อความ LINE จะโชว์ยอดคงเหลือเป็น 0 เฉยๆ ลูกค้าไม่รู้ว่ามีเงินต้องได้คืน)
+  -- จึงบล็อกไว้ก่อน แล้วบอกแอดมินว่าต้องคืนเท่าไหร่ ให้ไปจัดการนอกระบบ
+  if v_new_total < v_deposit_eff then
+    return jsonb_build_object(
+      'error', 'TOTAL_BELOW_DEPOSIT',
+      'old_total', v_total,
+      'total_amount', v_new_total,
+      'deposit_amount', v_deposit,
+      'deposit_effective', v_deposit_eff,
+      'deposit_is_estimated', v_deposit_est,
+      'refund_due', v_deposit_eff - v_new_total
+    );
+  end if;
+
   update public.bookings
   set lens_id      = v_target_lens,
       lens_qty     = v_target_qty,
       add_lens     = (v_target_lens is not null),
       lens_price   = v_new_lens_price,
-      total_amount = v_new_total
+      total_amount = v_new_total,
+      -- ปักธงว่ารายละเอียดเปลี่ยนแล้วแต่ยังไม่ได้แจ้งลูกค้า
+      -- (ล้างเป็น null ตอนส่งข้อความ LINE แจ้งยอดใหม่สำเร็จ)
+      details_changed_at = now()
   where id = p_booking_id;
 
   return jsonb_build_object(
@@ -232,7 +277,9 @@ begin
     'old_total', v_total,
     'total_amount', v_new_total,
     'deposit_amount', v_deposit,
-    'pay_on_pickup', v_new_total - coalesce(v_deposit, 0)
+    'deposit_effective', v_deposit_eff,
+    'deposit_is_estimated', v_deposit_est,
+    'pay_on_pickup', v_new_total - v_deposit_eff
   );
 end;
 $function$;

@@ -79,6 +79,16 @@ export async function POST(
   const delivery = await sendAndRecordBookingApprovalLineMessage(supabase, id, booking);
   const recorded = !delivery.recordError;
 
+  // ส่งสำเร็จแล้วถือว่าลูกค้ารู้ยอดใหม่แล้ว จึงล้างธง "แก้แล้วยังไม่ได้แจ้ง"
+  // (ธงนี้คือสิ่งที่ทำให้ปุ่มแจ้งยอดใหม่โผล่ในตาราง แม้ line_message_status จะเป็น sent อยู่)
+  if (delivery.result.sent) {
+    const { error: clearErr } = await supabase
+      .from("bookings")
+      .update({ details_changed_at: null })
+      .eq("id", id);
+    if (clearErr) console.error("clear details_changed_at failed:", id, clearErr.message);
+  }
+
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
     action: force ? "ส่งข้อความ LINE แจ้งยอดใหม่" : "ส่งข้อความ LINE แจ้งเตือนอีกครั้ง",

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { signJWT, verifyJWT } from "@/lib/adminAuth";
 import { verifyTotpCode, safeDecryptTotpSecret, encryptTotpSecret, isLegacyPlaintextTotpSecret } from "@/lib/totp";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 const MAX_FAILURES = 5;
 const WINDOW_MINUTES = 15;
@@ -22,6 +23,7 @@ export async function POST(req: NextRequest) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!sessionSecret || !supabaseUrl || !serviceKey || !process.env.TOTP_ENCRYPTION_KEY) {
+    logServerError("/api/admin/login/verify-2fa", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
 
@@ -99,6 +101,7 @@ export async function POST(req: NextRequest) {
   const wasLegacyPlaintext = Boolean(account?.totp_secret && isLegacyPlaintextTotpSecret(account.totp_secret));
   const plainSecret = account?.totp_secret ? safeDecryptTotpSecret(account.totp_secret) : "";
   if (account?.totp_secret && plainSecret === null) {
+    logServerError("/api/admin/login/verify-2fa", "อ่านค่า 2FA ไม่ได้ (encryption key อาจไม่ถูกต้องหรือข้อมูลเสียหาย) กรุณาติดต่อผู้ดูแลระบบ");
     return NextResponse.json(
       { error: "อ่านค่า 2FA ไม่ได้ (encryption key อาจไม่ถูกต้องหรือข้อมูลเสียหาย) กรุณาติดต่อผู้ดูแลระบบ" },
       { status: 500 }

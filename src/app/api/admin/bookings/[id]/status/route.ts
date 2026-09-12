@@ -8,6 +8,7 @@ import {
   type BookingLineNotificationRow,
 } from "@/lib/lineBookingNotification";
 import { syncBookingToSheet } from "@/lib/sheetsSync";
+import { logServerError } from "@/lib/apiLog";
 
 const uuidRe =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -42,6 +43,7 @@ export async function PATCH(
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
+    logServerError("/api/admin/bookings/[id]/status", "missing env (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)");
     return NextResponse.json(
       { error: "missing env (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" },
       { status: 500 }
@@ -62,6 +64,7 @@ export async function PATCH(
           { status: 400 }
         );
       }
+      logServerError("/api/admin/bookings/[id]/status", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
   } else {
@@ -77,7 +80,7 @@ export async function PATCH(
       .or(`pending_expires_at.is.null,pending_expires_at.gt.${nowIso}`)
       .select("id")
       .maybeSingle();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) { logServerError("/api/admin/bookings/[id]/status", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
     if (!updatedBooking) {
       return NextResponse.json(
         { error: "booking ไม่ได้อยู่ในสถานะรอตรวจสอบ หรือหมดเวลาการจองไปแล้ว" },

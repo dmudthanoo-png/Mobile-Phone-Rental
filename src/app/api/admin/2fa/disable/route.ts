@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { verifyTotpCode, safeDecryptTotpSecret } from "@/lib/totp";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 // POST /api/admin/2fa/disable — ปิดใช้งาน 2FA (ต้องกรอกรหัสปัจจุบันยืนยันก่อน กัน session หลุดแล้วโดนปิดเฉยๆ)
 // body: { code }
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey || !process.env.TOTP_ENCRYPTION_KEY) {
+    logServerError("/api/admin/2fa/disable", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
   const supabase = createClient(url, serviceKey);
@@ -36,6 +38,7 @@ export async function POST(req: NextRequest) {
 
   const plainSecret = safeDecryptTotpSecret(account.totp_secret);
   if (plainSecret === null) {
+    logServerError("/api/admin/2fa/disable", "อ่านค่า 2FA ไม่ได้ (encryption key อาจไม่ถูกต้องหรือข้อมูลเสียหาย) กรุณาติดต่อผู้ดูแลระบบ");
     return NextResponse.json(
       { error: "อ่านค่า 2FA ไม่ได้ (encryption key อาจไม่ถูกต้องหรือข้อมูลเสียหาย) กรุณาติดต่อผู้ดูแลระบบ" },
       { status: 500 }
@@ -51,7 +54,7 @@ export async function POST(req: NextRequest) {
     .update({ totp_enabled: false, totp_secret: null })
     .eq("id", adminId);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/2fa/disable", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   await logAdminAction({ username, action: "ปิดใช้งาน 2FA", detail: "ปิดใช้งาน Google Authenticator" });
 

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { logServerError } from "@/lib/apiLog";
+import { retryRead } from "@/lib/supabaseRetry";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,6 +17,7 @@ export async function GET(
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!url || !serviceKey) {
+      logServerError("/api/sessions/[id]/phones", "missing env");
       return NextResponse.json({ error: "missing env" }, { status: 500 });
     }
 
@@ -31,7 +34,7 @@ export async function GET(
       .eq("id", sessionId)
       .maybeSingle();
 
-    if (sessionCheckErr) return NextResponse.json({ error: sessionCheckErr.message }, { status: 500 });
+    if (sessionCheckErr) { logServerError("/api/sessions/[id]/phones", sessionCheckErr); return NextResponse.json({ error: sessionCheckErr.message }, { status: 500 }); }
     const concertRow = sessionCheck?.concerts as unknown as { archived: boolean; is_visible: boolean | null; publish_at: string | null } | null;
     if (!sessionCheck || !concertRow || concertRow.archived || concertRow.is_visible === false) {
       return NextResponse.json({ error: "session not found" }, { status: 404 });
@@ -40,9 +43,12 @@ export async function GET(
       return NextResponse.json({ error: "concert not published yet" }, { status: 403 });
     }
 
-    const { data, error } = await supabase.rpc("get_session_phones", { p_session_id: sessionId });
+    // get_session_phones เป็น SELECT ล้วน ไม่เขียนอะไร → ลองใหม่ได้ปลอดภัย
+    const { data, error } = await retryRead("/api/sessions/[id]/phones", () =>
+      supabase.rpc("get_session_phones", { p_session_id: sessionId })
+    );
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) { logServerError("/api/sessions/[id]/phones", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
     return NextResponse.json(
       { phones: data ?? [] },
@@ -51,6 +57,7 @@ export async function GET(
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "server_error";
     console.error("GET /api/sessions/[id]/phones error:", err);
+    logServerError("/api/sessions/[id]/phones", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

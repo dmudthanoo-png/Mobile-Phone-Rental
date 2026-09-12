@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
 import { validateImageUpload, sniffImageMimeType } from "@/lib/imageUpload";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
     .select("id, model_name, image_url, price, deposit, qty, active")
     .order("model_name", { ascending: true });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/phones", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   return NextResponse.json({ phones: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
 }
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
       .from("phones")
       .upload(fileName, buffer, { contentType: sniffedType, upsert: true });
 
-    if (upErr) return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
+    if (upErr) { logServerError("/api/admin/phones", upErr); return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 }); }
 
     const { data: pub } = supabase.storage.from("phones").getPublicUrl(fileName);
     image_url = pub.publicUrl;
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
     .select("id, model_name, image_url, price, deposit, qty, active")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/phones", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
@@ -143,7 +144,7 @@ export async function PATCH(req: NextRequest) {
       .select("qty, concert_sessions!inner ( start_at )")
       .eq("phone_id", id)
       .gte("concert_sessions.start_at", new Date().toISOString());
-    if (allocErr) return NextResponse.json({ error: allocErr.message }, { status: 500 });
+    if (allocErr) { logServerError("/api/admin/phones", allocErr); return NextResponse.json({ error: allocErr.message }, { status: 500 }); }
 
     const totalByDay: Record<string, number> = {};
     for (const row of allocRows ?? []) {
@@ -179,7 +180,7 @@ export async function PATCH(req: NextRequest) {
       .from("phones")
       .upload(fileName, buffer, { contentType: sniffedType, upsert: true });
 
-    if (upErr) return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
+    if (upErr) { logServerError("/api/admin/phones", upErr); return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 }); }
 
     const { data: pub } = supabase.storage.from("phones").getPublicUrl(fileName);
     updates.image_url = pub.publicUrl;
@@ -190,7 +191,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const { error, count } = await supabase.from("phones").update(updates, { count: "exact" }).eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/phones", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   if (!count) return NextResponse.json({ error: "ไม่พบมือถือรุ่นนี้" }, { status: 404 });
 
   await logAdminAction({
@@ -219,7 +220,7 @@ export async function DELETE(req: NextRequest) {
     .select("id", { count: "exact", head: true })
     .eq("phone_id", id);
 
-  if (bookingCountErr) return NextResponse.json({ error: bookingCountErr.message }, { status: 500 });
+  if (bookingCountErr) { logServerError("/api/admin/phones", bookingCountErr); return NextResponse.json({ error: bookingCountErr.message }, { status: 500 }); }
   if ((bookingCount ?? 0) > 0) {
     return NextResponse.json(
       { error: `ลบไม่ได้ เพราะมีประวัติการจองมือถือรุ่นนี้อยู่ ${bookingCount} รายการ ปิดการใช้งาน (active=false) แทนได้` },
@@ -232,10 +233,10 @@ export async function DELETE(req: NextRequest) {
     .delete()
     .eq("phone_id", id);
 
-  if (invErr) return NextResponse.json({ error: invErr.message }, { status: 500 });
+  if (invErr) { logServerError("/api/admin/phones", invErr); return NextResponse.json({ error: invErr.message }, { status: 500 }); }
 
   const { error, count } = await supabase.from("phones").delete({ count: "exact" }).eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/phones", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   if (!count) return NextResponse.json({ error: "ไม่พบมือถือรุ่นนี้" }, { status: 404 });
 
   await logAdminAction({

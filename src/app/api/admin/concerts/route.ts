@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
 import { validateImageUpload, sniffImageMimeType } from "@/lib/imageUpload";
+import { logServerError } from "@/lib/apiLog";
 
 function supabase() {
   return createClient(
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
     .select("id, title, venue_name, description, poster_url, archived, is_visible, publish_at, created_at")
     .order("created_at", { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/concerts", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   return NextResponse.json({ concerts: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
 }
 
@@ -67,12 +68,12 @@ export async function POST(req: NextRequest) {
     const ext = sniffedType === "image/png" ? "png" : sniffedType === "image/webp" ? "webp" : "jpg";
     const fileName = `concerts/${Date.now()}.${ext}`;
     const { error: upErr } = await sb.storage.from("posters").upload(fileName, buf, { contentType: sniffedType, upsert: true });
-    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+    if (upErr) { logServerError("/api/admin/concerts", upErr); return NextResponse.json({ error: upErr.message }, { status: 500 }); }
     poster_url = sb.storage.from("posters").getPublicUrl(fileName).data.publicUrl;
   }
 
   const { data, error } = await sb.from("concerts").insert({ title, venue_name, description, poster_url, publish_at, is_visible }).select().single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/concerts", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

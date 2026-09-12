@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -13,6 +14,7 @@ export async function GET(
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!url || !serviceKey) {
+      logServerError("/api/concerts/[id]", "missing env");
       return NextResponse.json({ error: "missing env" }, { status: 500 });
     }
 
@@ -30,7 +32,7 @@ export async function GET(
       .eq("id", concertId)
       .maybeSingle();
 
-    if (concertErr) return NextResponse.json({ error: concertErr.message }, { status: 500 });
+    if (concertErr) { logServerError("/api/concerts/[id]", concertErr); return NextResponse.json({ error: concertErr.message }, { status: 500 }); }
     if (!concertRow || concertRow.archived || concertRow.is_visible === false) {
       return NextResponse.json({ error: "concert not found" }, { status: 404 });
     }
@@ -53,6 +55,7 @@ export async function GET(
       .order("start_at", { ascending: true });
 
     if (error) {
+      logServerError("/api/concerts/[id]", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
@@ -63,6 +66,7 @@ export async function GET(
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "server_error";
     console.error("GET /api/concerts/[id] error:", err);
+    logServerError("/api/concerts/[id]", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

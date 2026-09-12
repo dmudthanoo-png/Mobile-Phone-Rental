@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminAuth";
 import { verifySlipForBooking } from "@/lib/slipOk";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -24,6 +25,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    logServerError("/api/admin/verify-slip", result.error);
     return NextResponse.json({ error: result.error }, { status: 500 });
   }
 

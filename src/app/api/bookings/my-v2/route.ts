@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
   const sessionSecret = process.env.APP_SESSION_SECRET;
 
   if (!url || !serviceKey || !sessionSecret) {
+    logServerError("/api/bookings/my-v2", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
 
@@ -61,7 +63,7 @@ export async function GET(req: NextRequest) {
       .eq("line_sub", lineSub)
       .maybeSingle();
 
-    if (identErr) return NextResponse.json({ error: identErr.message }, { status: 500 });
+    if (identErr) { logServerError("/api/bookings/my-v2", identErr); return NextResponse.json({ error: identErr.message }, { status: 500 }); }
     userId = ident?.user_id ?? undefined;
   }
 
@@ -84,7 +86,7 @@ export async function GET(req: NextRequest) {
     .in("status", ["pending", "confirmed", "rejected", "waiting_review"])
     .order("created_at", { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/bookings/my-v2", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   return NextResponse.json(
     { bookings: data ?? [] },

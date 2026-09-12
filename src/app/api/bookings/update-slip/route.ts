@@ -5,6 +5,7 @@ import { verifySlipForBooking } from "@/lib/slipOk";
 import { findOrCreateLineUser } from "@/lib/lineSession";
 import { extractSlipPath } from "@/lib/slipStorage";
 import { sniffImageMimeType } from "@/lib/imageUpload";
+import { logServerError } from "@/lib/apiLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
   const sessionSecret = process.env.APP_SESSION_SECRET;
 
   if (!url || !serviceKey || !sessionSecret) {
+    logServerError("/api/bookings/update-slip", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
 
@@ -82,6 +84,7 @@ export async function POST(req: NextRequest) {
     picture
   );
   if ("error" in linkedUser) {
+    logServerError("/api/bookings/update-slip", linkedUser.error);
     return NextResponse.json({ error: linkedUser.error }, { status: 500 });
   }
   const user_id = linkedUser.userId;
@@ -137,7 +140,7 @@ export async function POST(req: NextRequest) {
   const { error: upErr } = await supabaseAdmin.storage
     .from("slips").upload(fileName, buffer, { contentType: sniffedType, upsert: true });
 
-  if (upErr) return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
+  if (upErr) { logServerError("/api/bookings/update-slip", upErr); return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 }); }
 
   const { data: pub } = supabaseAdmin.storage.from("slips").getPublicUrl(fileName);
   const slipUrl = pub.publicUrl;
@@ -158,6 +161,7 @@ export async function POST(req: NextRequest) {
 
   if (rpcErr) {
     await cleanupUploaded();
+    logServerError("/api/bookings/update-slip", `update failed: ${rpcErr.message}`);
     return NextResponse.json({ error: `update failed: ${rpcErr.message}` }, { status: 500 });
   }
 

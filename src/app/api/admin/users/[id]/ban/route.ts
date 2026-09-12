@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 const uuidRe =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -31,6 +32,7 @@ export async function PATCH(
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) {
+    logServerError("/api/admin/users/[id]/ban", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
 
@@ -47,7 +49,7 @@ export async function PATCH(
     )
     .eq("id", id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/users/[id]/ban", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   if (!count) return NextResponse.json({ error: "ไม่พบผู้ใช้นี้" }, { status: 404 });
 
   await logAdminAction({

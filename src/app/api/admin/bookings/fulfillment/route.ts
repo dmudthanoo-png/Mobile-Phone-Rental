@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
       .eq("id", body.booking_id)
       .eq("status", "confirmed");
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) { logServerError("/api/admin/bookings/fulfillment", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
     if (!count) return NextResponse.json({ error: "ไม่พบรายการจองนี้ (หรือยังไม่ได้ยืนยัน)" }, { status: 404 });
 
     await logAdminAction({
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest) {
     .eq("status", "confirmed")
     .select("id");
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/bookings/fulfillment", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   const updated = (data ?? []).length;
   if (updated === 0) {

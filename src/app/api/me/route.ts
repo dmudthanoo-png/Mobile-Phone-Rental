@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { logServerError } from "@/lib/apiLog";
 
 function base64urlToBuffer(b64url: string) {
   const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64url.length + 3) % 4);
@@ -35,6 +36,7 @@ function verifySessionJWT(token: string, secret: string) {
 export async function GET(req: NextRequest) {
   const secret = process.env.APP_SESSION_SECRET;
   if (!secret) {
+    logServerError("/api/me", "missing_app_session_secret");
     return NextResponse.json({ user: null, error: "missing_app_session_secret" }, { status: 500 });
   }
 

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
 import { validateImageUpload, sniffImageMimeType } from "@/lib/imageUpload";
+import { logServerError } from "@/lib/apiLog";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -74,7 +75,7 @@ export async function PATCH(
       .from("posters")
       .upload(fileName, buffer, { contentType: sniffedType, upsert: true });
 
-    if (upErr) return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
+    if (upErr) { logServerError("/api/admin/concerts/[id]", upErr); return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 }); }
 
     const { data: pub } = supabase.storage.from("posters").getPublicUrl(fileName);
     updates.poster_url = pub.publicUrl;
@@ -85,7 +86,7 @@ export async function PATCH(
   }
 
   const { error, count } = await supabase.from("concerts").update(updates, { count: "exact" }).eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/concerts/[id]", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   if (!count) return NextResponse.json({ error: "ไม่พบคอนเสิร์ตนี้" }, { status: 404 });
 
   await logAdminAction({
@@ -115,7 +116,7 @@ export async function DELETE(
     .update({ archived: true }, { count: "exact" })
     .eq("id", id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/concerts/[id]", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   if (!count) return NextResponse.json({ error: "ไม่พบคอนเสิร์ตนี้" }, { status: 404 });
 
   await logAdminAction({

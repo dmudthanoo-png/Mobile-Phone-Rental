@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logServerError } from "@/lib/apiLog";
+import { retryRead } from "@/lib/supabaseRetry";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,26 +16,30 @@ export async function GET(req: NextRequest) {
   const supabase = createClient(url, serviceKey);
 
   // ทุกตัวเลขสรุปต้องไม่นับ "เครื่องที่ลูกค้ากันไว้แต่ยังไม่ได้โอน" (slip_url ว่าง = แค่กันของชั่วคราว)
-  const total = await supabase
-    .from("bookings")
-    .select("id", { count: "exact", head: true })
-    .not("slip_url", "is", null);
+  // ทุกอันเป็นการนับอย่างเดียว → ลองใหม่ได้ถ้าเน็ต/เกตเวย์สะดุดชั่วคราว
+  // (endpoint นี้คือตัวที่ 500 จริงตอน 20:06 วันที่ 12 ก.ย. 2569 เพราะไม่เคยมี retry)
+  const total = await retryRead("/api/admin/bookings/summary (total)", () =>
+    supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .not("slip_url", "is", null)
+  );
 
-  const pending = await supabase
-    .from("bookings")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "pending")
-    .not("slip_url", "is", null);
+  const pending = await retryRead("/api/admin/bookings/summary (pending)", () =>
+    supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending")
+      .not("slip_url", "is", null)
+  );
 
-  const confirmed = await supabase
-    .from("bookings")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "confirmed");
+  const confirmed = await retryRead("/api/admin/bookings/summary (confirmed)", () =>
+    supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", "confirmed")
+  );
 
-  const rejected = await supabase
-    .from("bookings")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "rejected");
+  const rejected = await retryRead("/api/admin/bookings/summary (rejected)", () =>
+    supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", "rejected")
+  );
 
   // ✅ revenue รวมเฉพาะ confirmed — เป็นมูลค่าการจองรวม (คาดการณ์) ไม่ใช่เงินที่ได้รับจริงทั้งหมด
   // เพราะ total_amount รวมส่วนที่ลูกค้าจ่ายวันรับเครื่องด้วย ซึ่งไม่เคยผ่านแอปนี้เลย
@@ -45,11 +51,14 @@ export async function GET(req: NextRequest) {
   const amountRows: { total_amount: number | string | null; deposit_amount: number | string | null }[] = [];
   let amountsError: { message: string } | null = null;
   for (let from = 0; ; from += PAGE) {
-    const page = await supabase
-      .from("bookings")
-      .select("total_amount, deposit_amount")
-      .eq("status", "confirmed")
-      .range(from, from + PAGE - 1);
+    const pageFrom = from;
+    const page = await retryRead(`/api/admin/bookings/summary (amounts ${pageFrom})`, () =>
+      supabase
+        .from("bookings")
+        .select("total_amount, deposit_amount")
+        .eq("status", "confirmed")
+        .range(pageFrom, pageFrom + PAGE - 1)
+    );
     if (page.error) { amountsError = page.error; break; }
     const rows = page.data ?? [];
     amountRows.push(...rows);
@@ -66,6 +75,7 @@ export async function GET(req: NextRequest) {
     confirmedAmounts.error;
 
   if (err) {
+    logServerError("/api/admin/bookings/summary", err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 

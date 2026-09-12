@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
 import { validateImageUpload, sniffImageMimeType } from "@/lib/imageUpload";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
     .limit(1)
     .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/announcement", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   return NextResponse.json({ announcement: data ?? null }, { headers: { "Cache-Control": "no-store" } });
 }
@@ -78,7 +79,7 @@ export async function POST(req: NextRequest) {
       .from("announcements")
       .upload(fileName, buffer, { contentType: sniffedType, upsert: true });
 
-    if (upErr) return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
+    if (upErr) { logServerError("/api/admin/announcement", upErr); return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 }); }
 
     const { data: pub } = supabase.storage.from("announcements").getPublicUrl(fileName);
     updates.image_url = pub.publicUrl;
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
       .select("id, title, subtitle, emoji, image_url, active")
       .single();
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) { logServerError("/api/admin/announcement", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
     await logAdminAction({
       username: String(admin.payload.username ?? ""),
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest) {
     .select("id, title, subtitle, emoji, image_url, active")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/announcement", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

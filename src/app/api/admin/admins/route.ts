@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { hashPassword } from "@/lib/adminPassword";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 // เทียบ bootstrap secret แบบ constant-time กัน timing attack
 function safeCompare(a: string, b: string): boolean {
@@ -27,7 +28,7 @@ function getSupabase() {
 // (หน้า login ฝั่ง client ใช้เช็คว่าควรโชว์ฟอร์ม "ตั้งค่าบัญชีแรก" หรือฟอร์ม login ปกติ)
 export async function GET(req: NextRequest) {
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "missing env" }, { status: 500 });
+  if (!supabase) { logServerError("/api/admin/admins", "missing env"); return NextResponse.json({ error: "missing env" }, { status: 500 }); }
 
   const { count } = await supabase
     .from("admin_users")
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
     .select("id, username, created_at")
     .order("username", { ascending: true });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/admins", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   return NextResponse.json(
     { admins: data ?? [], needsBootstrap: false },
     { headers: { "Cache-Control": "no-store" } }
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
 // โดยไม่ต้องล็อกอินก่อน (bootstrap) เพราะยังไม่มีใครให้ล็อกอินอยู่แล้ว
 export async function POST(req: NextRequest) {
   const supabase = getSupabase();
-  if (!supabase) return NextResponse.json({ error: "missing env" }, { status: 500 });
+  if (!supabase) { logServerError("/api/admin/admins", "missing env"); return NextResponse.json({ error: "missing env" }, { status: 500 }); }
 
   const { count } = await supabase
     .from("admin_users")
@@ -75,6 +76,7 @@ export async function POST(req: NextRequest) {
     // ต้องตั้ง ADMIN_BOOTSTRAP_SECRET ไว้ก่อน แล้วส่งมาคู่กับ username/password ตอนตั้งค่าครั้งแรก
     const bootstrapSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
     if (!bootstrapSecret) {
+      logServerError("/api/admin/admins", "ยังไม่ได้ตั้งค่า ADMIN_BOOTSTRAP_SECRET กรุณาตั้งค่าใน environment variables ก่อน");
       return NextResponse.json(
         { error: "ยังไม่ได้ตั้งค่า ADMIN_BOOTSTRAP_SECRET กรุณาตั้งค่าใน environment variables ก่อน" },
         { status: 500 }
@@ -111,6 +113,7 @@ export async function POST(req: NextRequest) {
     if (error.code === "23505") {
       return NextResponse.json({ error: "username นี้มีคนใช้แล้ว" }, { status: 409 });
     }
+    logServerError("/api/admin/admins", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

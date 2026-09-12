@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 const uuidRe =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -22,6 +23,7 @@ export async function DELETE(
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) {
+    logServerError("/api/admin/admins/[id]", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
   const supabase = createClient(url, serviceKey);
@@ -43,7 +45,7 @@ export async function DELETE(
   if (!target) return NextResponse.json({ error: "ไม่พบบัญชีนี้" }, { status: 404 });
 
   const { error } = await supabase.from("admin_users").delete().eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/admins/[id]", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

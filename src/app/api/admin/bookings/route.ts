@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logServerError } from "@/lib/apiLog";
+import { retryRead } from "@/lib/supabaseRetry";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -23,7 +25,10 @@ export async function GET(req: NextRequest) {
   // ไม่งั้นคำค้นที่มีคอมมาจะแตกออกเป็นเงื่อนไขเพิ่ม ทำให้ผลลัพธ์เพี้ยนหรือ query พัง
   const q = (searchParams.get("q") || "").trim().replace(/[,()."':\*]/g, "").slice(0, 100);
 
-  let query = supabaseAdmin
+  // สร้าง query ใหม่ทุกครั้งที่เรียก — query builder ของ supabase-js ออกแบบมาให้ await ครั้งเดียว
+  // ถ้าเอาตัวเดิมไป await ซ้ำตอน retry จะพึ่งพาพฤติกรรมภายในที่ไม่ได้รับประกัน
+  const buildQuery = () => {
+    let query = supabaseAdmin
     .from("bookings")
     .select(`
       id, created_at, renter_name, renter_line_name, renter_phone, total_amount,
@@ -46,17 +51,21 @@ export async function GET(req: NextRequest) {
     // (แถวพวกนี้มี pending_expires_at และยังไม่มี slip_url — เป็นแค่การกันของชั่วคราว)
     .not("slip_url", "is", null);
 
-  if (status !== "all") query = query.eq("status", status);
+    if (status !== "all") query = query.eq("status", status);
 
-  if (q) {
-    query = query.or(
-      `ref_number.ilike.%${q}%,renter_name.ilike.%${q}%,renter_phone.ilike.%${q}%`
-    );
-  }
+    if (q) {
+      query = query.or(
+        `ref_number.ilike.%${q}%,renter_name.ilike.%${q}%,renter_phone.ilike.%${q}%`
+      );
+    }
+    return query;
+  };
 
-  const { data, error } = await query;
+  // ตารางการจองคือหน้าหลักที่แอดมินเปิดค้างไว้ (refresh ทุก 20 วิ) → ลองใหม่ก่อนขึ้น error
+  const { data, error } = await retryRead("/api/admin/bookings", buildQuery);
 
   if (error) {
+    logServerError("/api/admin/bookings", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

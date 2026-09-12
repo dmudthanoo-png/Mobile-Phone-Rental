@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -21,6 +22,7 @@ export async function GET(req: NextRequest) {
     .order("name", { ascending: true });
 
   if (error) {
+    logServerError("/api/admin/users", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

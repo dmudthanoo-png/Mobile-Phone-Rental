@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { signSessionJWT, findOrCreateLineUser } from "@/lib/lineSession";
+import { logServerError } from "@/lib/apiLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,6 +60,7 @@ export async function POST(req: NextRequest) {
     // 2) หา/สร้าง user เดียวกับ flow OAuth (ใช้ user_id เดิมถ้าเคย login ผ่าน OAuth มาก่อน)
     const result = await findOrCreateLineUser(supabaseAdmin, lineSub, displayName, picture);
     if ("error" in result) {
+      logServerError("/api/auth/liff/verify", result.error);
       return NextResponse.json({ error: result.error }, { status: 500 });
     }
     const userId = result.userId;
@@ -95,6 +97,7 @@ export async function POST(req: NextRequest) {
     return res;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "server_error";
+    logServerError("/api/auth/liff/verify", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

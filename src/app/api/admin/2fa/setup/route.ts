@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import QRCode from "qrcode";
 import { requireAdmin } from "@/lib/adminAuth";
 import { generateTotpSecret, generateTotpUri, encryptTotpSecret } from "@/lib/totp";
+import { logServerError } from "@/lib/apiLog";
 
 // POST /api/admin/2fa/setup — เริ่มเปิดใช้งาน 2FA ให้บัญชีตัวเอง
 // สร้าง secret ใหม่ (ยังไม่ enable จนกว่าจะ /confirm ด้วยรหัสที่ถูกต้อง)
@@ -17,6 +18,7 @@ export async function POST(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey || !process.env.TOTP_ENCRYPTION_KEY) {
+    logServerError("/api/admin/2fa/setup", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
   const supabase = createClient(url, serviceKey);
@@ -39,7 +41,7 @@ export async function POST(req: NextRequest) {
     .update({ totp_secret: encryptTotpSecret(secret), totp_enabled: false })
     .eq("id", adminId);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/2fa/setup", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   const otpauthUri = generateTotpUri(secret, username);
   const qrDataUrl = await QRCode.toDataURL(otpauthUri);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) {
+    logServerError("/api/admin/reviews", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
 
@@ -22,7 +24,7 @@ export async function GET(req: NextRequest) {
     .select("id, booking_id, concert_title, display_name, rating, comment, is_published, created_at")
     .order("created_at", { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/reviews", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   return NextResponse.json(
     { reviews: data ?? [] },

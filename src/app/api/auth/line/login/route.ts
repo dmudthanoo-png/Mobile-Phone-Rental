@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
+import { logServerError } from "@/lib/apiLog";
 
 function base64url(buf: Buffer) {
   return buf
@@ -19,6 +20,7 @@ export async function GET() {
   const baseUrl = process.env.APP_BASE_URL || "http://localhost:3000";
 
   if (!clientId || !redirectUri) {
+    logServerError("/api/auth/line/login", "Missing LINE_CHANNEL_ID or LINE_REDIRECT_URI");
     return NextResponse.json(
       { error: "Missing LINE_CHANNEL_ID or LINE_REDIRECT_URI" },
       { status: 500 }

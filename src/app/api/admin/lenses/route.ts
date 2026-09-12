@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
     .select("id, name, focal_mm, price, qty, active")
     .order("focal_mm", { ascending: true });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/lenses", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   return NextResponse.json({ lenses: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
 }
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
     .select("id, name, focal_mm, price, qty, active")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/lenses", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
@@ -104,7 +105,7 @@ export async function PATCH(req: NextRequest) {
       .select("qty, concert_sessions!inner ( start_at )")
       .eq("lens_id", id)
       .gte("concert_sessions.start_at", new Date().toISOString());
-    if (allocErr) return NextResponse.json({ error: allocErr.message }, { status: 500 });
+    if (allocErr) { logServerError("/api/admin/lenses", allocErr); return NextResponse.json({ error: allocErr.message }, { status: 500 }); }
 
     const totalByDay: Record<string, number> = {};
     for (const row of allocRows ?? []) {
@@ -129,7 +130,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const { error, count } = await supabase.from("lenses").update(updates, { count: "exact" }).eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/lenses", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   if (!count) return NextResponse.json({ error: "ไม่พบเลนส์นี้" }, { status: 404 });
 
   await logAdminAction({
@@ -152,7 +153,7 @@ export async function DELETE(req: NextRequest) {
   const supabase = getSupabase();
 
   const { error, count } = await supabase.from("lenses").delete({ count: "exact" }).eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/lenses", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   if (!count) return NextResponse.json({ error: "ไม่พบเลนส์นี้" }, { status: 404 });
 
   await logAdminAction({

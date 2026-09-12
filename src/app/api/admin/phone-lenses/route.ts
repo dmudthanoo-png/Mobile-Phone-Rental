@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
     .select("lens_id, lenses ( id, name, focal_mm, price, qty, active )")
     .eq("phone_id", phone_id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/phone-lenses", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   return NextResponse.json(
     { lenses: (data ?? []).map((r) => r.lenses).filter(Boolean) },
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
 
   const supabase = getSupabase();
   const { error } = await supabase.from("phone_lenses").upsert({ phone_id, lens_id });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/phone-lenses", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
@@ -81,7 +82,7 @@ export async function DELETE(req: NextRequest) {
     .eq("phone_id", phone_id)
     .eq("lens_id", lens_id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/phone-lenses", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   if (!count) return NextResponse.json({ error: "ไม่พบการผูกเลนส์กับมือถือนี้" }, { status: 404 });
 
   await logAdminAction({

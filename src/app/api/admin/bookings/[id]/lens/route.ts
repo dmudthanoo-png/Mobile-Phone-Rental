@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
 import { syncBookingToSheet } from "@/lib/sheetsSync";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
     .eq("id", id)
     .maybeSingle();
 
-  if (bkErr) return NextResponse.json({ error: bkErr.message }, { status: 500 });
+  if (bkErr) { logServerError("/api/admin/bookings/[id]/lens", bkErr); return NextResponse.json({ error: bkErr.message }, { status: 500 }); }
   if (!bkRaw) return NextResponse.json({ error: "ไม่พบรายการจองนี้" }, { status: 404 });
 
   const bk = bkRaw as unknown as {
@@ -120,7 +121,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
     .select("lens_id")
     .eq("phone_id", bk.phone_id);
 
-  if (compatErr) return NextResponse.json({ error: compatErr.message }, { status: 500 });
+  if (compatErr) { logServerError("/api/admin/bookings/[id]/lens", compatErr); return NextResponse.json({ error: compatErr.message }, { status: 500 }); }
 
   const compatible = new Set((compatRows ?? []).map((r) => r.lens_id));
   const hasLensNow = Boolean(bk.lens_id) && Number(bk.lens_qty ?? 0) > 0;
@@ -155,7 +156,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
     .eq("session_id", bk.session_id)
     .in("lens_id", Array.from(compatible));
 
-  if (invErr) return NextResponse.json({ error: invErr.message }, { status: 500 });
+  if (invErr) { logServerError("/api/admin/bookings/[id]/lens", invErr); return NextResponse.json({ error: invErr.message }, { status: 500 }); }
 
   // ยอดที่ถูกจองไปแล้วในรอบนี้ — เงื่อนไขเดียวกับใน RPC (confirmed + pending ที่ยังไม่หมดเวลา)
   const nowIso = new Date().toISOString();
@@ -167,7 +168,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
     .neq("id", id)
     .in("status", ["confirmed", "pending"]);
 
-  if (bookedErr) return NextResponse.json({ error: bookedErr.message }, { status: 500 });
+  if (bookedErr) { logServerError("/api/admin/bookings/[id]/lens", bookedErr); return NextResponse.json({ error: bookedErr.message }, { status: 500 }); }
 
   const bookedByLens = new Map<string, number>();
   for (const row of bookedRows ?? []) {
@@ -198,7 +199,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
       .gte("start_at", dayStart.toISOString())
       .lt("start_at", dayEnd.toISOString());
 
-    if (dsErr) return NextResponse.json({ error: dsErr.message }, { status: 500 });
+    if (dsErr) { logServerError("/api/admin/bookings/[id]/lens", dsErr); return NextResponse.json({ error: dsErr.message }, { status: 500 }); }
 
     const dayIds = (daySessions ?? []).map((s) => s.id);
     if (dayIds.length > 0) {
@@ -208,7 +209,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id?: string
         .in("session_id", dayIds)
         .in("lens_id", Array.from(compatible));
 
-      if (diErr) return NextResponse.json({ error: diErr.message }, { status: 500 });
+      if (diErr) { logServerError("/api/admin/bookings/[id]/lens", diErr); return NextResponse.json({ error: diErr.message }, { status: 500 }); }
 
       for (const row of dayInv ?? []) {
         dayAllocByLens.set(row.lens_id, (dayAllocByLens.get(row.lens_id) ?? 0) + Number(row.qty ?? 0));
@@ -321,7 +322,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id?: stri
     p_lens_qty: lensQty,
   });
 
-  if (rpcErr) return NextResponse.json({ error: rpcErr.message }, { status: 500 });
+  if (rpcErr) { logServerError("/api/admin/bookings/[id]/lens", rpcErr); return NextResponse.json({ error: rpcErr.message }, { status: 500 }); }
 
   const r = rpcData as {
     ok?: boolean;
@@ -352,6 +353,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id?: stri
 
   // RPC ที่คืน null (ไม่ควรเกิด แต่ถ้าเกิดแล้วตอบสำเร็จไป แอดมินจะเชื่อว่าบันทึกแล้วทั้งที่ไม่ได้เขียน)
   if (!r || typeof r !== "object") {
+    logServerError("/api/admin/bookings/[id]/lens", "ฐานข้อมูลไม่ตอบผลลัพธ์ของการแก้ไข — ยังไม่ได้บันทึก กรุณาลองใหม่");
     return NextResponse.json(
       { error: "ฐานข้อมูลไม่ตอบผลลัพธ์ของการแก้ไข — ยังไม่ได้บันทึก กรุณาลองใหม่" },
       { status: 500 }
@@ -440,6 +442,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id?: stri
   }
 
   if (r.ok !== true) {
+    logServerError("/api/admin/bookings/[id]/lens", "ฐานข้อมูลตอบผลลัพธ์ที่ไม่รู้จัก — ยังไม่แน่ใจว่าบันทึกสำเร็จ กรุณาตรวจรายการอีกครั้ง");
     return NextResponse.json(
       { error: "ฐานข้อมูลตอบผลลัพธ์ที่ไม่รู้จัก — ยังไม่แน่ใจว่าบันทึกสำเร็จ กรุณาตรวจรายการอีกครั้ง" },
       { status: 500 }

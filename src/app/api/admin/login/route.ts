@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { verifyPassword } from "@/lib/adminPassword";
 import { logAdminAction } from "@/lib/adminAudit";
 import { signJWT } from "@/lib/adminAuth";
+import { logServerError } from "@/lib/apiLog";
 
 const MAX_FAILURES = 5;        // จำนวนครั้งที่ผิดได้ก่อนโดนล็อก
 const WINDOW_MINUTES = 15;     // นับความผิดย้อนหลังกี่นาที
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!sessionSecret || !supabaseUrl || !serviceKey) {
+    logServerError("/api/admin/login", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
 

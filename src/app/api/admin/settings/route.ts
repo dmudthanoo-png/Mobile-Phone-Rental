@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
     .eq("id", true)
     .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/settings", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   // ถ้ายังไม่มีแถวเลย (ยังไม่ได้รัน migration ครบ) ให้ default เป็นเปิด
   return NextResponse.json({
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabase();
   const { error } = await supabase.from("app_settings").upsert(updates);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/settings", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),

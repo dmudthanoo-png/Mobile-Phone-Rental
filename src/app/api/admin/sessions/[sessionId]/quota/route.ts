@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -61,7 +62,7 @@ export async function GET(
     .eq("id", sessionId)
     .maybeSingle();
 
-  if (sessionErr) return NextResponse.json({ error: sessionErr.message }, { status: 500 });
+  if (sessionErr) { logServerError("/api/admin/sessions/[sessionId]/quota", sessionErr); return NextResponse.json({ error: sessionErr.message }, { status: 500 }); }
   if (!session?.start_at) return NextResponse.json({ error: "ไม่พบรอบนี้ หรือยังไม่ได้ตั้งวันเวลา" }, { status: 404 });
 
   const { start, end } = getThaiDayRangeUtc(session.start_at);
@@ -74,7 +75,7 @@ export async function GET(
     .lt("start_at", end)
     .neq("id", sessionId);
 
-  if (sameDayErr) return NextResponse.json({ error: sameDayErr.message }, { status: 500 });
+  if (sameDayErr) { logServerError("/api/admin/sessions/[sessionId]/quota", sameDayErr); return NextResponse.json({ error: sameDayErr.message }, { status: 500 }); }
   const sameDaySessionIds = (sameDaySessions ?? []).map((s) => s.id);
 
   const { data: phones, error: phonesErr } = await supabase
@@ -83,7 +84,7 @@ export async function GET(
     .eq("active", true)
     .order("model_name", { ascending: true });
 
-  if (phonesErr) return NextResponse.json({ error: phonesErr.message }, { status: 500 });
+  if (phonesErr) { logServerError("/api/admin/sessions/[sessionId]/quota", phonesErr); return NextResponse.json({ error: phonesErr.message }, { status: 500 }); }
 
   const { data: lenses, error: lensesErr } = await supabase
     .from("lenses")
@@ -91,7 +92,7 @@ export async function GET(
     .eq("active", true)
     .order("name", { ascending: true });
 
-  if (lensesErr) return NextResponse.json({ error: lensesErr.message }, { status: 500 });
+  if (lensesErr) { logServerError("/api/admin/sessions/[sessionId]/quota", lensesErr); return NextResponse.json({ error: lensesErr.message }, { status: 500 }); }
 
   const phoneIds = (phones ?? []).map((p) => p.id);
   const lensIds = (lenses ?? []).map((l) => l.id);
@@ -108,7 +109,7 @@ export async function GET(
         .in("session_id", sameDaySessionIds)
         .in("phone_id", phoneIds);
 
-      if (elsewhereErr) return NextResponse.json({ error: elsewhereErr.message }, { status: 500 });
+      if (elsewhereErr) { logServerError("/api/admin/sessions/[sessionId]/quota", elsewhereErr); return NextResponse.json({ error: elsewhereErr.message }, { status: 500 }); }
       for (const r of elsewhereRows ?? []) {
         elsewhereByPhone[r.phone_id] = (elsewhereByPhone[r.phone_id] ?? 0) + Number(r.qty ?? 0);
       }
@@ -121,7 +122,7 @@ export async function GET(
       .eq("session_id", sessionId)
       .in("phone_id", phoneIds);
 
-    if (currentErr) return NextResponse.json({ error: currentErr.message }, { status: 500 });
+    if (currentErr) { logServerError("/api/admin/sessions/[sessionId]/quota", currentErr); return NextResponse.json({ error: currentErr.message }, { status: 500 }); }
     const currentByPhone: Record<string, number> = {};
     const priceOverrideByPhone: Record<string, number | null> = {};
     for (const r of currentRows ?? []) {
@@ -139,7 +140,7 @@ export async function GET(
         `status.eq.confirmed,and(status.eq.pending,pending_expires_at.is.null),and(status.eq.pending,pending_expires_at.gt.${nowIso})`
       );
 
-    if (bookedErr) return NextResponse.json({ error: bookedErr.message }, { status: 500 });
+    if (bookedErr) { logServerError("/api/admin/sessions/[sessionId]/quota", bookedErr); return NextResponse.json({ error: bookedErr.message }, { status: 500 }); }
     const bookedByPhone: Record<string, number> = {};
     for (const r of bookedRows ?? []) {
       if (r.phone_id) bookedByPhone[r.phone_id] = (bookedByPhone[r.phone_id] ?? 0) + Number(r.qty ?? 1);
@@ -172,7 +173,7 @@ export async function GET(
         .in("session_id", sameDaySessionIds)
         .in("lens_id", lensIds);
 
-      if (elsewhereErr) return NextResponse.json({ error: elsewhereErr.message }, { status: 500 });
+      if (elsewhereErr) { logServerError("/api/admin/sessions/[sessionId]/quota", elsewhereErr); return NextResponse.json({ error: elsewhereErr.message }, { status: 500 }); }
       for (const r of elsewhereRows ?? []) {
         elsewhereByLens[r.lens_id] = (elsewhereByLens[r.lens_id] ?? 0) + Number(r.qty ?? 0);
       }
@@ -184,7 +185,7 @@ export async function GET(
       .eq("session_id", sessionId)
       .in("lens_id", lensIds);
 
-    if (currentErr) return NextResponse.json({ error: currentErr.message }, { status: 500 });
+    if (currentErr) { logServerError("/api/admin/sessions/[sessionId]/quota", currentErr); return NextResponse.json({ error: currentErr.message }, { status: 500 }); }
     const currentByLens: Record<string, number> = {};
     for (const r of currentRows ?? []) currentByLens[r.lens_id] = Number(r.qty ?? 0);
 
@@ -197,7 +198,7 @@ export async function GET(
         `status.eq.confirmed,and(status.eq.pending,pending_expires_at.is.null),and(status.eq.pending,pending_expires_at.gt.${nowIso})`
       );
 
-    if (bookedErr) return NextResponse.json({ error: bookedErr.message }, { status: 500 });
+    if (bookedErr) { logServerError("/api/admin/sessions/[sessionId]/quota", bookedErr); return NextResponse.json({ error: bookedErr.message }, { status: 500 }); }
     const bookedByLens: Record<string, number> = {};
     for (const r of bookedRows ?? []) {
       if (r.lens_id) bookedByLens[r.lens_id] = (bookedByLens[r.lens_id] ?? 0) + Number(r.lens_qty ?? 0);

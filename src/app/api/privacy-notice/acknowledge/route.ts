@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { findOrCreateLineUser } from "@/lib/lineSession";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacyNotice";
+import { logServerError } from "@/lib/apiLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const sessionSecret = process.env.APP_SESSION_SECRET;
     if (!url || !serviceKey || !sessionSecret) {
+      logServerError("/api/privacy-notice/acknowledge", "missing env");
       return NextResponse.json({ error: "missing env" }, { status: 500 });
     }
 
@@ -60,6 +62,7 @@ export async function POST(req: NextRequest) {
     const picture = typeof payload?.picture === "string" ? payload.picture : null;
     const linkedUser = await findOrCreateLineUser(supabaseAdmin, lineSub, displayName, picture);
     if ("error" in linkedUser) {
+      logServerError("/api/privacy-notice/acknowledge", linkedUser.error);
       return NextResponse.json({ error: linkedUser.error }, { status: 500 });
     }
 
@@ -76,6 +79,7 @@ export async function POST(req: NextRequest) {
       );
 
     if (error) {
+      logServerError("/api/privacy-notice/acknowledge", "privacy_notice_acknowledgement_failed");
       return NextResponse.json(
         { error: "privacy_notice_acknowledgement_failed" },
         { status: 500 }
@@ -88,6 +92,7 @@ export async function POST(req: NextRequest) {
     );
   } catch (err: unknown) {
     console.error("privacy notice acknowledgement failed:", err);
+    logServerError("/api/privacy-notice/acknowledge", "privacy_notice_acknowledgement_failed");
     return NextResponse.json({ error: "privacy_notice_acknowledgement_failed" }, { status: 500 });
   }
 }

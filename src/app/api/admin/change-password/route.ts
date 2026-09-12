@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdmin, signJWT } from "@/lib/adminAuth";
 import { hashPassword, verifyPassword } from "@/lib/adminPassword";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -22,6 +23,7 @@ export async function POST(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!sessionSecret || !url || !serviceKey) {
+    logServerError("/api/admin/change-password", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
 
@@ -57,7 +59,7 @@ export async function POST(req: NextRequest) {
     .update({ password_hash: hashPassword(newPassword), password_changed_at: now.toISOString() })
     .eq("id", adminId);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/change-password", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   await logAdminAction({ username, action: "เปลี่ยนรหัสผ่าน", detail: "เปลี่ยนรหัสผ่านบัญชีตัวเอง" });
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { logServerError } from "@/lib/apiLog";
 
 function base64urlToBuffer(b64url: string) {
   const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64url.length + 3) % 4);
@@ -41,6 +42,7 @@ export async function POST(req: NextRequest) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const sessionSecret = process.env.APP_SESSION_SECRET;
   if (!url || !serviceKey || !sessionSecret) {
+    logServerError("/api/reviews/submit", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
 
@@ -71,7 +73,7 @@ export async function POST(req: NextRequest) {
     .select("user_id")
     .eq("line_sub", lineSub)
     .maybeSingle();
-  if (identErr) return NextResponse.json({ error: identErr.message }, { status: 500 });
+  if (identErr) { logServerError("/api/reviews/submit", identErr); return NextResponse.json({ error: identErr.message }, { status: 500 }); }
 
   const userId = ident?.user_id as string | undefined;
   if (!userId) return NextResponse.json({ error: "user not linked. please login again." }, { status: 401 });
@@ -82,7 +84,7 @@ export async function POST(req: NextRequest) {
     .select("id, user_id, status, concert_sessions:session_id ( concerts:concert_id ( title ) )")
     .eq("id", bookingId)
     .maybeSingle();
-  if (bookingErr) return NextResponse.json({ error: bookingErr.message }, { status: 500 });
+  if (bookingErr) { logServerError("/api/reviews/submit", bookingErr); return NextResponse.json({ error: bookingErr.message }, { status: 500 }); }
 
   const booking = bookingRaw as unknown as BookingForReview | null;
   if (!booking || booking.user_id !== userId) {
@@ -107,6 +109,7 @@ export async function POST(req: NextRequest) {
     if (insertErr.code === "23505") {
       return NextResponse.json({ error: "already_reviewed" }, { status: 409 });
     }
+    logServerError("/api/reviews/submit", insertErr.message);
     return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }
 

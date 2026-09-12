@@ -6,6 +6,7 @@ import { verifySlipForBooking } from "@/lib/slipOk";
 import { findOrCreateLineUser } from "@/lib/lineSession";
 import { sniffImageMimeType } from "@/lib/imageUpload";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacyNotice";
+import { logServerError } from "@/lib/apiLog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
     const sessionSecret = process.env.APP_SESSION_SECRET;
 
     if (!url || !serviceKey || !sessionSecret) {
+      logServerError("/api/bookings/upload-slip", "missing env");
       return NextResponse.json({ error: "missing env" }, { status: 500 });
     }
 
@@ -78,6 +80,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     if ("error" in linkedUser) {
+      logServerError("/api/bookings/upload-slip", linkedUser.error);
       return NextResponse.json({ error: linkedUser.error }, { status: 500 });
     }
 
@@ -176,13 +179,13 @@ export async function POST(req: NextRequest) {
         .not("slip_url", "is", null),
     ]);
 
-    if (ackRes.error) return NextResponse.json({ error: ackRes.error.message }, { status: 500 });
+    if (ackRes.error) { logServerError("/api/bookings/upload-slip", ackRes.error.message); return NextResponse.json({ error: ackRes.error.message }, { status: 500 }); }
     if (!ackRes.data) {
       return NextResponse.json({ error: "privacy_notice_not_acknowledged" }, { status: 403 });
     }
 
     const sessionCheck = sessionRes.data;
-    if (sessionRes.error) return NextResponse.json({ error: sessionRes.error.message }, { status: 500 });
+    if (sessionRes.error) { logServerError("/api/bookings/upload-slip", sessionRes.error.message); return NextResponse.json({ error: sessionRes.error.message }, { status: 500 }); }
     if (!sessionCheck) return NextResponse.json({ error: "session not found" }, { status: 404 });
     const concertRow = sessionCheck.concerts as unknown as { archived: boolean; is_visible: boolean | null; publish_at: string | null; title: string | null } | null;
     if (concertRow?.archived) return NextResponse.json({ error: "concert archived" }, { status: 400 });
@@ -195,10 +198,10 @@ export async function POST(req: NextRequest) {
     }
 
     const phoneRow = phoneRes.data;
-    if (phoneRes.error) return NextResponse.json({ error: phoneRes.error.message }, { status: 500 });
+    if (phoneRes.error) { logServerError("/api/bookings/upload-slip", phoneRes.error.message); return NextResponse.json({ error: phoneRes.error.message }, { status: 500 }); }
     if (!phoneRow) return NextResponse.json({ error: "phone not found" }, { status: 404 });
 
-    if (priceRes.error) return NextResponse.json({ error: priceRes.error.message }, { status: 500 });
+    if (priceRes.error) { logServerError("/api/bookings/upload-slip", priceRes.error.message); return NextResponse.json({ error: priceRes.error.message }, { status: 500 }); }
 
     const basePrice = Number(priceRes.data?.price_override ?? phoneRow.price ?? 0);
     const deposit   = Number(phoneRow.deposit ?? 0);
@@ -206,7 +209,7 @@ export async function POST(req: NextRequest) {
     let lensPrice = 0;
     let lensName: string | null = null;
     if (lens_id && lens_qty > 0) {
-      if (lensRes.error) return NextResponse.json({ error: lensRes.error.message }, { status: 500 });
+      if (lensRes.error) { logServerError("/api/bookings/upload-slip", lensRes.error.message); return NextResponse.json({ error: lensRes.error.message }, { status: 500 }); }
       const linkRow = lensRes.data;
       const lensInfo = linkRow?.lenses as unknown as { name: string; price: number; active: boolean } | null;
       if (!linkRow || !lensInfo || lensInfo.active === false) {
@@ -230,7 +233,7 @@ export async function POST(req: NextRequest) {
       : null;
 
     const pendingCount = pendingRes.count;
-    if (pendingRes.error) return NextResponse.json({ error: pendingRes.error.message }, { status: 500 });
+    if (pendingRes.error) { logServerError("/api/bookings/upload-slip", pendingRes.error.message); return NextResponse.json({ error: pendingRes.error.message }, { status: 500 }); }
 
     if ((pendingCount ?? 0) >= 3) {
       return NextResponse.json(
@@ -254,6 +257,7 @@ export async function POST(req: NextRequest) {
       .upload(fileName, buffer, { contentType: sniffedType, upsert: true });
 
     if (upErr) {
+      logServerError("/api/bookings/upload-slip", `upload failed: ${upErr.message}`);
       return NextResponse.json({ error: `upload failed: ${upErr.message}` }, { status: 500 });
     }
 
@@ -262,6 +266,7 @@ export async function POST(req: NextRequest) {
 
     if (!slip_url) {
       await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
+      logServerError("/api/bookings/upload-slip", "cannot_get_public_url");
       return NextResponse.json({ error: "cannot_get_public_url" }, { status: 500 });
     }
 
@@ -310,6 +315,7 @@ export async function POST(req: NextRequest) {
           { status: 429 }
         );
       }
+      logServerError("/api/bookings/upload-slip", msg);
       return NextResponse.json({ error: msg }, { status: 500 });
     }
 
@@ -318,6 +324,7 @@ export async function POST(req: NextRequest) {
 
     if (!row?.booking_id) {
       await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
+      logServerError("/api/bookings/upload-slip", "rpc_no_result");
       return NextResponse.json({ error: "rpc_no_result" }, { status: 500 });
     }
 
@@ -392,6 +399,7 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "server_error";
     console.error("upload-slip fatal error:", err);
+    logServerError("/api/bookings/upload-slip", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

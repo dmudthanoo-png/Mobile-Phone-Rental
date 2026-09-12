@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -28,7 +29,7 @@ export async function GET(
     .eq("concert_id", id)
     .order("start_at", { ascending: true });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/concerts/[id]/sessions", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   return NextResponse.json({ sessions: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
 }
@@ -59,7 +60,7 @@ export async function POST(
     .eq("id", concert_id)
     .maybeSingle();
 
-  if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
+  if (cErr) { logServerError("/api/admin/concerts/[id]/sessions", cErr); return NextResponse.json({ error: cErr.message }, { status: 500 }); }
   if (!concert) return NextResponse.json({ error: "concert not found" }, { status: 404 });
 
   const { data, error } = await supabase
@@ -68,7 +69,7 @@ export async function POST(
     .select("id, start_at, end_at, note")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/concerts/[id]/sessions", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
   await logAdminAction({
     username: String(admin.payload.username ?? ""),
@@ -113,7 +114,7 @@ export async function PATCH(
     p_note: note ?? null,
   });
 
-  if (moveErr) return NextResponse.json({ error: moveErr.message }, { status: 500 });
+  if (moveErr) { logServerError("/api/admin/concerts/[id]/sessions", moveErr); return NextResponse.json({ error: moveErr.message }, { status: 500 }); }
 
   const moveResult = moveData as {
     ok?: boolean; error?: string;
@@ -178,7 +179,7 @@ export async function DELETE(
     .eq("id", session_id)
     .eq("concert_id", concert_id); // double-check ป้องกัน cross-concert delete
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/concerts/[id]/sessions", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   if (!count) return NextResponse.json({ error: "ไม่พบรอบการแสดงนี้" }, { status: 404 });
 
   await logAdminAction({

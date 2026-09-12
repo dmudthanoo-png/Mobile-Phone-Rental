@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { logServerError } from "@/lib/apiLog";
+import { retryRead } from "@/lib/supabaseRetry";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -10,6 +12,7 @@ export async function GET(_req: NextRequest) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!url || !serviceKey) {
+      logServerError("/api/concerts", "missing env");
       return NextResponse.json(
         {
           error: "missing env",
@@ -24,14 +27,17 @@ export async function GET(_req: NextRequest) {
 
     const supabaseAdmin = createClient(url, serviceKey);
 
-    const { data, error } = await supabaseAdmin
-      .from("concerts")
-      .select("id, title, poster_url, venue_name, description, publish_at, created_at")
-      .eq("archived", false)
-      .eq("is_visible", true)
-      .order("created_at", { ascending: false });
+    // รายการคอนเสิร์ตคือหัวใจของหน้าแรก ถ้าพลาดหน้าเว็บว่างทันที → ลองใหม่ก่อน
+    const { data, error } = await retryRead("/api/concerts", () =>
+      supabaseAdmin
+        .from("concerts")
+        .select("id, title, poster_url, venue_name, description, publish_at, created_at")
+        .eq("archived", false)
+        .eq("is_visible", true)
+        .order("created_at", { ascending: false })
+    );
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) { logServerError("/api/concerts", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
     // publish_at ในอนาคต = ยังไม่เปิดให้จอง แยกไปอยู่ใน category "เร็วๆ นี้" ต่างหาก
     // (null หรือถึงเวลาแล้ว = เผยแพร่ตามปกติ เหมือนพฤติกรรมเดิมก่อนมีฟีเจอร์นี้)
@@ -123,6 +129,7 @@ export async function GET(_req: NextRequest) {
   } catch (err: unknown) {
     console.error("GET /api/concerts error:", err);
     const message = err instanceof Error ? err.message : "server_error";
+    logServerError("/api/concerts", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { createSignedSlipUrl } from "@/lib/slipStorage";
+import { logServerError } from "@/lib/apiLog";
 
 const uuidRe =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,6 +42,7 @@ export async function GET(
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const sessionSecret = process.env.APP_SESSION_SECRET;
   if (!url || !serviceKey || !sessionSecret) {
+    logServerError("/api/bookings/[id]/slip-url", "missing env");
     return NextResponse.json({ error: "missing env" }, { status: 500 });
   }
 
@@ -75,14 +77,14 @@ export async function GET(
     .eq("id", id)
     .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/bookings/[id]/slip-url", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   if (!booking || booking.user_id !== userId) {
     return NextResponse.json({ error: "ไม่พบการจองนี้" }, { status: 404 });
   }
   if (!booking.slip_url) return NextResponse.json({ error: "ไม่มีสลิป" }, { status: 404 });
 
   const signedUrl = await createSignedSlipUrl(booking.slip_url);
-  if (!signedUrl) return NextResponse.json({ error: "สร้างลิงก์ดูสลิปไม่สำเร็จ" }, { status: 500 });
+  if (!signedUrl) { logServerError("/api/bookings/[id]/slip-url", "สร้างลิงก์ดูสลิปไม่สำเร็จ"); return NextResponse.json({ error: "สร้างลิงก์ดูสลิปไม่สำเร็จ" }, { status: 500 }); }
 
   return NextResponse.json({ url: signedUrl });
 }

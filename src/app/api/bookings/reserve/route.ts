@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { findOrCreateLineUser } from "@/lib/lineSession";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacyNotice";
+import { logServerError } from "@/lib/apiLog";
 
 export const runtime = "nodejs"; // ✅ สำคัญ: crypto ใช้บน node runtime
 export const dynamic = "force-dynamic";
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
       .eq("user_id", userId)
       .eq("policy_version", PRIVACY_NOTICE_VERSION)
       .maybeSingle();
-    if (ackErr) return NextResponse.json({ error: ackErr.message }, { status: 500 });
+    if (ackErr) { logServerError("/api/bookings/reserve", ackErr); return NextResponse.json({ error: ackErr.message }, { status: 500 }); }
     if (!ack) return NextResponse.json({ error: "privacy_notice_not_acknowledged" }, { status: 403 });
 
     // เช็ครอบ/คอนเสิร์ตว่ายังจองได้จริง (ด่านเดียวกับ upload-slip กันจองข้ามขั้นตอน)
@@ -115,7 +116,7 @@ export async function POST(req: NextRequest) {
       .select("id, start_at, concerts ( archived, is_visible, publish_at )")
       .eq("id", session_id)
       .maybeSingle();
-    if (sessionErr) return NextResponse.json({ error: sessionErr.message }, { status: 500 });
+    if (sessionErr) { logServerError("/api/bookings/reserve", sessionErr); return NextResponse.json({ error: sessionErr.message }, { status: 500 }); }
     if (!sessionCheck) return NextResponse.json({ error: "session not found" }, { status: 404 });
     const concertRow = sessionCheck.concerts as unknown as { archived: boolean; is_visible: boolean | null; publish_at: string | null } | null;
     if (concertRow?.archived) return NextResponse.json({ error: "concert archived" }, { status: 400 });
@@ -132,8 +133,8 @@ export async function POST(req: NextRequest) {
       supabase.from("phones").select("price, deposit").eq("id", phone_id).eq("active", true).maybeSingle(),
       supabase.from("session_phone_inventory").select("price_override").eq("session_id", session_id).eq("phone_id", phone_id).maybeSingle(),
     ]);
-    if (phoneErr) return NextResponse.json({ error: phoneErr.message }, { status: 500 });
-    if (priceErr) return NextResponse.json({ error: priceErr.message }, { status: 500 });
+    if (phoneErr) { logServerError("/api/bookings/reserve", phoneErr); return NextResponse.json({ error: phoneErr.message }, { status: 500 }); }
+    if (priceErr) { logServerError("/api/bookings/reserve", priceErr); return NextResponse.json({ error: priceErr.message }, { status: 500 }); }
     if (!phoneRow) return NextResponse.json({ error: "phone not found" }, { status: 404 });
 
     const basePrice = Number(priceRow?.price_override ?? phoneRow.price ?? 0);
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest) {
         .eq("phone_id", phone_id)
         .eq("lens_id", lens_id)
         .maybeSingle();
-      if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 500 });
+      if (linkErr) { logServerError("/api/bookings/reserve", linkErr); return NextResponse.json({ error: linkErr.message }, { status: 500 }); }
       const lensInfo = linkRow?.lenses as unknown as { price: number; active: boolean } | null;
       if (!linkRow || !lensInfo || lensInfo.active === false) {
         return NextResponse.json({ error: "lens not available for this phone" }, { status: 400 });
@@ -174,7 +175,7 @@ export async function POST(req: NextRequest) {
       p_hold_seconds: HOLD_SECONDS,
     });
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) { logServerError("/api/bookings/reserve", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
     const result = data as { ok?: boolean; error?: string; booking_id?: string; expires_at?: string } | null;
     const errCode = result?.error;
@@ -205,6 +206,7 @@ export async function POST(req: NextRequest) {
     );
   } catch (err: unknown) {
     console.error("reserve (hold) fatal error:", err);
+    logServerError("/api/bookings/reserve", err instanceof Error ? err.message : "server_error");
     return NextResponse.json({ error: err instanceof Error ? err.message : "server_error" }, { status: 500 });
   }
 }
@@ -217,11 +219,12 @@ export async function DELETE(req: NextRequest) {
     const { supabase, userId } = auth;
 
     const { error } = await supabase.rpc("release_booking_hold", { p_user_id: userId });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) { logServerError("/api/bookings/reserve", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (err: unknown) {
     console.error("release hold fatal error:", err);
+    logServerError("/api/bookings/reserve", err instanceof Error ? err.message : "server_error");
     return NextResponse.json({ error: err instanceof Error ? err.message : "server_error" }, { status: 500 });
   }
 }

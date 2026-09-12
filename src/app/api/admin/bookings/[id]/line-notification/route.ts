@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logAdminAction } from "@/lib/adminAudit";
+import { logServerError } from "@/lib/apiLog";
 import {
   sendAndRecordBookingApprovalLineMessage,
   type BookingLineNotificationRow,
@@ -32,6 +33,7 @@ export async function POST(
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) {
+    logServerError("/api/admin/bookings/[id]/line-notification", "missing env (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)");
     return NextResponse.json(
       { error: "missing env (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)" },
       { status: 500 }
@@ -51,7 +53,7 @@ export async function POST(
     .eq("id", id)
     .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) { logServerError("/api/admin/bookings/[id]/line-notification", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
   if (!bookingRaw) return NextResponse.json({ error: "ไม่พบรายการจอง" }, { status: 404 });
 
   type RetryBookingRow = BookingLineNotificationRow & {

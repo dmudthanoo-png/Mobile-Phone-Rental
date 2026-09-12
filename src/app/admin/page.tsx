@@ -1390,9 +1390,11 @@ export default function AdminPage() {
   useEffect(() => { if (isAuthed) { fetchBookings(); fetchSummary(); } }, [bStatus]);
 
   // ── auto-refresh: ดึงรายการจอง + ตัวเลขสรุปใหม่เป็นระยะ กันหน้าค้างตอนมีลูกค้าจองเข้ามาใหม่ ──
+  // 60 วินาที (เดิม 20) — แอดมินมักเปิดหน้านี้ค้างไว้ทั้งวัน ของเดิมยิง 2 request ทุก 20 วิ
+  // = 6 request/นาที ตลอดเวลาที่เปิดไว้ ทั้งที่การจองใหม่ไม่ได้เข้ามาถี่ขนาดนั้น
   useEffect(() => {
     if (!isAuthed) return;
-    const id = setInterval(() => { fetchBookings(); fetchSummary(); }, 20000);
+    const id = setInterval(() => { fetchBookings(); fetchSummary(); }, 60000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthed, bStatus, bQ]);

@@ -31,6 +31,18 @@ function isTransient(err: unknown): boolean {
   return TRANSIENT.test(msg);
 }
 
+// เช็คจาก HTTP status ของผลลัพธ์ด้วย ไม่ใช่แค่ข้อความ error
+//
+// ⚠️ สำคัญ: เหตุจริงวันที่ 12 ก.ย. 2569 Supabase ตอบ 504 Gateway Timeout 13 ครั้ง
+// (ขณะที่ฐานข้อมูลว่างสนิท CPU 0.8%) — body ของ 504 ที่ gateway ส่งมาไม่ใช่ JSON
+// ของ PostgREST ข้อความที่ supabase-js แปลงออกมาจึงอาจไม่มีคำว่า "Gateway Timeout"
+// ให้ regex จับได้เลย ถ้าดูแต่ข้อความ retry จะไม่ทำงานในเคสที่ต้องทำงานที่สุด
+function isTransientStatus(status: unknown): boolean {
+  if (typeof status !== "number") return false;
+  // 5xx = ฝั่งเซิร์ฟเวอร์/เกตเวย์ · 408 = request timeout · 429 = ถูกจำกัดอัตรา
+  return status >= 500 || status === 408 || status === 429;
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -48,7 +60,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  *     supabase.from("app_settings").select("terms_conditions").eq("id", true).maybeSingle()
  *   );
  */
-export async function retryRead<R extends { error: unknown }>(
+export async function retryRead<R extends { error: unknown; status?: unknown }>(
   scope: string,
   run: () => PromiseLike<R>,
   attempts = 3
@@ -59,10 +71,15 @@ export async function retryRead<R extends { error: unknown }>(
   for (let i = 0; i < attempts; i++) {
     try {
       const res = await run();
-      // สำเร็จ หรือพังแบบที่ยิงซ้ำก็ไม่หาย → คืนเลย
-      if (!res.error || !isTransient(res.error)) return res;
+      if (!res.error) return res; // สำเร็จ
+      // ลองใหม่เมื่อ "ข้อความบ่งบอกว่าชั่วคราว" หรือ "HTTP status เป็นฝั่งเซิร์ฟเวอร์"
+      // อย่างใดอย่างหนึ่งก็พอ — 504 บางแบบมีแต่ status ไม่มีข้อความที่จับได้
+      if (!isTransient(res.error) && !isTransientStatus(res.status)) return res;
       last = res;
-      logBackgroundError(`${scope} (ลองใหม่ ${i + 1}/${attempts})`, res.error);
+      logBackgroundError(
+        `${scope} (ลองใหม่ ${i + 1}/${attempts}${typeof res.status === "number" ? ` · HTTP ${res.status}` : ""})`,
+        res.error
+      );
     } catch (thrown) {
       // network error ระดับ fetch จะ throw ไม่ได้คืนมาใน error
       // ถ้าไม่ใช่อาการชั่วคราว หรือหมดโควต้าลองแล้ว ให้โยนต่อ ไม่กลืนไว้เงียบๆ

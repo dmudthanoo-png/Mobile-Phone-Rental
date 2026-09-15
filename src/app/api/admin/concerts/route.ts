@@ -18,9 +18,12 @@ export async function GET(req: NextRequest) {
   const admin = await requireAdmin(req);
   if (!admin.ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
+  // ลำดับเดียวกับที่ลูกค้าเห็น (sort_order ก่อน แล้วค่อย created_at desc)
+  // ถ้าสองฝั่งเรียงไม่เหมือนกัน แอดมินกดเลื่อนแล้วผลที่เห็นจะไม่ตรงกับหน้าเว็บจริง
   const { data, error } = await supabase()
     .from("concerts")
-    .select("id, title, venue_name, description, poster_url, archived, is_visible, publish_at, created_at")
+    .select("id, title, venue_name, description, poster_url, archived, is_visible, publish_at, created_at, sort_order")
+    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false });
 
   if (error) { logServerError("/api/admin/concerts", error); return NextResponse.json({ error: error.message }, { status: 500 }); }

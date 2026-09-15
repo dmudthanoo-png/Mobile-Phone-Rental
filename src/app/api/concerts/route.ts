@@ -28,12 +28,15 @@ export async function GET(_req: NextRequest) {
     const supabaseAdmin = createClient(url, serviceKey);
 
     // รายการคอนเสิร์ตคือหัวใจของหน้าแรก ถ้าพลาดหน้าเว็บว่างทันที → ลองใหม่ก่อน
+    // เรียงตามลำดับที่แอดมินจัดเองก่อน แล้วค่อยตกไปใช้ created_at desc
+    // (sort_order = 0 คือยังไม่เคยจัด → คอนเสิร์ตใหม่ขึ้นบนสุดเหมือนพฤติกรรมเดิม)
     const { data, error } = await retryRead("/api/concerts", () =>
       supabaseAdmin
         .from("concerts")
-        .select("id, title, poster_url, venue_name, description, publish_at, created_at")
+        .select("id, title, poster_url, venue_name, description, publish_at, created_at, sort_order")
         .eq("archived", false)
         .eq("is_visible", true)
+        .order("sort_order", { ascending: true })
         .order("created_at", { ascending: false })
     );
 

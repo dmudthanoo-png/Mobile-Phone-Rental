@@ -50,7 +50,7 @@ type Booking = {
   phones?: { model_name: string } | null;
 };
 
-type Concert = { id: string; title: string; venue_name: string | null; poster_url: string | null; description: string | null; archived: boolean | null; is_visible: boolean | null; publish_at: string | null };
+type Concert = { id: string; title: string; venue_name: string | null; poster_url: string | null; description: string | null; archived: boolean | null; is_visible: boolean | null; publish_at: string | null; sort_order?: number | null };
 type Session = { id: string; start_at: string | null; end_at: string | null; note: string | null };
 type PhoneQuotaInfo = {
   phone_id: string;
@@ -256,6 +256,13 @@ const btnStyle = (variant: "white"|"dark"|"green"|"red"|"blue" = "white", disabl
     fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6,
     fontFamily: UI.font, transition: "transform .12s ease, box-shadow .12s ease",
   };
+};
+
+// ปุ่มเลื่อนลำดับคอนเสิร์ต — เล็ก กดง่ายบนมือถือ
+const miniOrderBtn: React.CSSProperties = {
+  width: 26, height: 22, padding: 0, lineHeight: "20px", textAlign: "center",
+  borderRadius: 7, border: "1px solid #D8D5CE", background: "#fff",
+  fontSize: 12, fontWeight: 800, cursor: "pointer", color: "#5F5E5A",
 };
 
 const inputStyle: React.CSSProperties = {
@@ -848,6 +855,48 @@ export default function AdminPage() {
     if (res.ok) {
       const data = await res.json();
       setSessions(prev => ({ ...prev, [concertId]: data.sessions ?? [] }));
+    }
+  };
+
+  // ── จัดลำดับคอนเสิร์ตว่าอันไหนขึ้นก่อนบนหน้าลูกค้า ──
+  // ทำงานบน "รายการที่มองเห็นอยู่" (กรองตามแท็บปัจจุบัน/archive) แต่บันทึกลำดับของทั้งชุด
+  // เพราะ sort_order เป็นเลขเดียวทั้งตาราง ถ้าส่งไปแค่บางส่วนลำดับที่เหลือจะเพี้ยน
+  const [reordering, setReordering] = useState(false);
+  const moveConcert = async (id: string, dir: "up" | "down" | "top") => {
+    const visible = concerts.filter(c => (c.archived ?? false) === showArchived);
+    const vi = visible.findIndex(c => c.id === id);
+    if (vi < 0) return;
+    if ((dir === "up" || dir === "top") && vi === 0) return;
+    if (dir === "down" && vi === visible.length - 1) return;
+
+    const next = [...concerts];
+    const from = next.findIndex(c => c.id === id);
+    // ตำแหน่งปลายทางคำนวณ "ก่อน" ตัดตัวเองออก — พอ splice ออกแล้ว index ที่อยู่หลังจะเลื่อนมา 1
+    // ซึ่งทำให้การแทรกกลับได้ตำแหน่งถูกต้องพอดีทั้งขึ้นและลง
+    const anchor = dir === "top" ? visible[0] : visible[dir === "up" ? vi - 1 : vi + 1];
+    const to = next.findIndex(c => c.id === anchor.id);
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+
+    const prev = concerts;
+    setConcerts(next);           // อัปเดตจอทันที ไม่ต้องรอเซิร์ฟเวอร์
+    setReordering(true);
+    try {
+      const res = await fetch("/api/admin/concerts/reorder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: next.map(c => c.id) }),
+      });
+      const out = await res.json().catch(() => null);
+      if (!res.ok) {
+        setConcerts(prev);       // บันทึกไม่ผ่าน → คืนลำดับเดิม ไม่ให้จอโกหก
+        showMsg(out?.error || "บันทึกลำดับไม่สำเร็จ", false);
+      }
+    } catch {
+      setConcerts(prev);
+      showMsg("บันทึกลำดับไม่สำเร็จ", false);
+    } finally {
+      setReordering(false);
     }
   };
 
@@ -2237,11 +2286,43 @@ export default function AdminPage() {
               <button onClick={()=>setShowArchived(true)}  style={{ ...btnStyle("white"), background: showArchived?UI.accent:"#fff", fontSize:12 }}>📦 ที่ archive แล้ว</button>
             </div>
 
+            {!showArchived && concerts.filter(c => !(c.archived ?? false)).length > 1 && (
+              <div style={{ fontSize:12, color:UI.muted, fontWeight:600, marginBottom:10, lineHeight:1.6 }}>
+                ↕️ ลำดับนี้คือลำดับที่ลูกค้าเห็นบนหน้าแรกจริง — ใช้ปุ่ม ▲ ▼ เลื่อน หรือ ⤒ ดันขึ้นบนสุด
+              </div>
+            )}
+
             <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-              {concerts.filter(c => (c.archived ?? false) === showArchived).map(c => (
+              {(() => {
+                const visible = concerts.filter(c => (c.archived ?? false) === showArchived);
+                return visible.map((c, ci) => (
                 <div key={c.id} style={card}>
                   <div style={{ padding:14 }}>
                     <div style={{ display:"flex", gap:12, alignItems:"flex-start", flexWrap:"wrap" }}>
+                      {/* ปุ่มจัดลำดับ — ซ่อนในแท็บ archive เพราะลูกค้าไม่เห็นอยู่แล้ว */}
+                      {!showArchived && visible.length > 1 && (
+                        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, flexShrink:0 }}>
+                          <button
+                            disabled={reordering || ci === 0}
+                            onClick={()=>moveConcert(c.id, "top")}
+                            title="ขึ้นบนสุด"
+                            style={{ ...miniOrderBtn, opacity: reordering || ci === 0 ? 0.3 : 1 }}
+                          >⤒</button>
+                          <button
+                            disabled={reordering || ci === 0}
+                            onClick={()=>moveConcert(c.id, "up")}
+                            title="เลื่อนขึ้น"
+                            style={{ ...miniOrderBtn, opacity: reordering || ci === 0 ? 0.3 : 1 }}
+                          >▲</button>
+                          <span style={{ fontSize:11, fontWeight:800, color:UI.muted, minWidth:18, textAlign:"center" }}>{ci + 1}</span>
+                          <button
+                            disabled={reordering || ci === visible.length - 1}
+                            onClick={()=>moveConcert(c.id, "down")}
+                            title="เลื่อนลง"
+                            style={{ ...miniOrderBtn, opacity: reordering || ci === visible.length - 1 ? 0.3 : 1 }}
+                          >▼</button>
+                        </div>
+                      )}
                       {c.poster_url && <img src={c.poster_url} alt="" style={{ width:60, height:60, objectFit:"cover", borderRadius:10, border:`1px solid ${UI.border}`, flexShrink:0 }} />}
                       <div style={{ flex:1 }}>
                         <div style={{ fontWeight:700, fontSize:15 }}>{c.title}</div>
@@ -2304,7 +2385,8 @@ export default function AdminPage() {
                     )}
                   </div>
                 </div>
-              ))}
+              ));
+              })()}
               {concerts.filter(c => (c.archived ?? false) === showArchived).length === 0 && (
                 <div style={{ ...card, padding:20, fontWeight:800, color:UI.muted }}>
                   {showArchived ? "ไม่มีคอนเสิร์ตที่ archive" : "ยังไม่มีคอนเสิร์ต"}

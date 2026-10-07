@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import BookingCancellationDialog from "./BookingCancellationDialog";
+import { cancellationLabel, type CancellationSummary } from "@/lib/bookingCancellation";
 
 // ─────────────────────────────── types ───────────────────────────────
 type Booking = {
@@ -12,7 +14,8 @@ type Booking = {
   total_amount: number;
   slip_url: string | null;
   ref_number: string | null;
-  status: "pending" | "confirmed" | "rejected";
+  status: "pending" | "confirmed" | "rejected" | "cancelled";
+  cancellation?: CancellationSummary | null;
   qty?: number;
   add_lens?: boolean;       // ← เพิ่ม
   lens_price?: number;      // ← เพิ่ม
@@ -89,7 +92,7 @@ type AdminUser = {
   booking_count: number;
   total_spent: number;
 };
-type Summary = { total: number; pending: number; confirmed: number; rejected: number; revenue: number; deposit_received: number };
+type Summary = { total: number; pending: number; confirmed: number; rejected: number; revenue: number; deposit_received: number; cancelled?: number; refund_pending?: number; refunded_amount?: number };
 // ── แก้ไขเลนส์ของการจองที่ยืนยันแล้ว ──
 type LensOption = {
   lens_id: string; name: string; focal_mm: number | null; price: number;
@@ -168,6 +171,7 @@ const STATUS_META = {
   pending:   { label: "⏳ รอยืนยัน",  pillBg: "#FFFBEF", pillBorder: "#F3E3B8", text: "#8A6D2F" },
   confirmed: { label: "✅ ยืนยันแล้ว", pillBg: "#F0FFF4", pillBorder: "#B7EFC5", text: "#0F9D4E" },
   rejected:  { label: "❌ ปฏิเสธ",     pillBg: "#FFF1F2", pillBorder: "#F9C7D1", text: "#C43D5C" },
+  cancelled: { label: "ยกเลิกแล้ว", pillBg: "#F3F4F6", pillBorder: "#D1D5DB", text: "#4B5563" },
 };
 
 const LINE_MESSAGE_META = {
@@ -375,7 +379,8 @@ export default function AdminPage() {
 
   // bookings
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [bStatus, setBStatus] = useState<"pending"|"confirmed"|"rejected"|"all">("pending");
+  const [bStatus, setBStatus] = useState<"pending"|"confirmed"|"rejected"|"cancelled"|"all">("pending");
+  const [cancellationBookingId, setCancellationBookingId] = useState<string | null>(null);
   const [bQ, setBQ] = useState("");
   const [summary, setSummary] = useState<Summary>({ total:0, pending:0, confirmed:0, rejected:0, revenue:0, deposit_received:0 });
   // ── ติดตามงาน (หลังยืนยันการจอง) ──
@@ -1747,8 +1752,10 @@ export default function AdminPage() {
             { icon:"⏳", val:summary.pending,   label:"รอยืนยัน",    accentSoft:"#FFF6DF" },
             { icon:"✅", val:summary.confirmed,  label:"ยืนยันแล้ว",  accentSoft:"#E7FBEF" },
             { icon:"❌", val:summary.rejected,   label:"ปฏิเสธแล้ว", accentSoft:"#FFEEF1" },
-            { icon:"💵", val:money(summary.deposit_received), label:"มัดจำที่รับจริงแล้ว", accentSoft:"#E7FBEF" },
+            { icon:"💵", val:money(summary.deposit_received), label:"มัดจำรับสะสม (ก่อนหักคืน)", accentSoft:"#E7FBEF" },
             { icon:"💰", val:money(summary.revenue), label:"มูลค่าจองรวม (คาดการณ์)", accentSoft:UI.accentSoft },
+            { icon:"↩️", val:money(summary.refund_pending), label:"มัดจำรอคืน", accentSoft:"#FFF6DF" },
+            { icon:"🧾", val:money(summary.refunded_amount), label:"มัดจำคืนแล้ว", accentSoft:"#E7FBEF" },
           ].map(s => (
             <div key={s.label} style={{ flex:"1 1 170px", ...card, padding:16, display:"flex", flexDirection:"column", gap:10 }}>
               <div style={{ width:38, height:38, borderRadius:12, background:s.accentSoft, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>
@@ -1830,11 +1837,11 @@ export default function AdminPage() {
         {tab === "bookings" && (
           <div>
             <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12, alignItems:"center" }}>
-              {(["pending","all","confirmed","rejected"] as const).map(s => (
+              {(["pending","all","confirmed","rejected","cancelled"] as const).map(s => (
                 <button key={s} onClick={()=>setBStatus(s)} style={{
                   ...btnStyle("white"), background: bStatus===s ? UI.accent : "#fff", fontSize:12,
                 }}>
-                  {s==="pending"?`⏳ รอยืนยัน (${summary.pending})`:s==="all"?`📋 ทั้งหมด (${summary.total})`:s==="confirmed"?`✅ ยืนยัน (${summary.confirmed})`:`❌ ปฏิเสธ (${summary.rejected})`}
+                  {s==="pending"?`⏳ รอยืนยัน (${summary.pending})`:s==="all"?`📋 ทั้งหมด (${summary.total})`:s==="confirmed"?`✅ ยืนยัน (${summary.confirmed})`:s==="cancelled"?`↩️ ยกเลิก (${summary.cancelled ?? 0})`:`❌ ปฏิเสธ (${summary.rejected})`}
                 </button>
               ))}
               <div style={{ flex:1 }} />
@@ -1895,7 +1902,7 @@ export default function AdminPage() {
                             </div>
                           )}
                           <div style={{ borderRadius:999, border:`1px solid ${meta.pillBorder}`, background:meta.pillBg, padding:"5px 12px", fontWeight:700, color:meta.text, fontSize:12 }}>
-                            {meta.label}
+                            {b.status === "cancelled" ? cancellationLabel(b.cancellation) : meta.label}
                           </div>
                           {b.is_banned && (
                             <div style={{ borderRadius:999, border:"1px solid #C43D5C", background:"#FFF1F2", padding:"5px 12px", fontWeight:700, color:"#C43D5C", fontSize:12 }}>
@@ -1929,7 +1936,7 @@ export default function AdminPage() {
                         <InfoCell label="เวลาคอนเสิร์ต"  value={sessionTime} />
                         <InfoCell label="สถานที่"         value={venue} />
                         <InfoCell label="รุ่นมือถือ"      value={phoneModel} />
-                        <InfoCell label="ยอดชำระ"        value={money(b.total_amount)} />
+                        <InfoCell label={b.status === "cancelled" ? "มูลค่าเดิม (ไม่นับยอดจองรวม)" : "ยอดชำระ"} value={money(b.total_amount)} />
                         <InfoCell label="ชื่อไลน์"        value={b.renter_line_name ?? "-"} />
                         <InfoCell label="เบอร์โทร"       value={b.renter_phone ?? "-"} />
                         <InfoCell label="วันที่จอง"      value={fmtDT(b.created_at)} />
@@ -1971,14 +1978,19 @@ export default function AdminPage() {
                           {viewingSlipId===b.id ? "⏳ กำลังโหลด..." : "🧾 ดูสลิป"}
                         </button>
                         <button
-                          disabled={!b.slip_url || verifyingId===b.id}
+                          disabled={!b.slip_url || verifyingId===b.id || b.status === "cancelled"}
                           onClick={()=>verifySlip(b.id)}
-                          style={btnStyle("blue", !b.slip_url || verifyingId===b.id)}
+                          style={btnStyle("blue", !b.slip_url || verifyingId===b.id || b.status === "cancelled")}
                         >
                           {verifyingId===b.id ? "⏳ กำลังตรวจสอบ..." : b.slip_verified != null ? "🔄 ตรวจสอบสลิปอีกครั้ง" : "🔍 ตรวจสอบสลิปด้วย SlipOK"}
                         </button>
                         <button disabled={!pending||loading} onClick={()=>setBookingStatus(b.id,"confirmed")} style={btnStyle("green",!pending||loading)}>✅ ยืนยัน</button>
                         <button disabled={!pending||loading} onClick={()=>setBookingStatus(b.id,"rejected")} style={btnStyle("red",!pending||loading)}>❌ ปฏิเสธ</button>
+                        {(b.status === "cancelled" || (b.status === "confirmed" && !b.delivered_at && !b.returned_at && !b.files_sent_at)) && (
+                          <button onClick={() => setCancellationBookingId(b.id)} style={btnStyle("white")}>
+                            {b.status === "cancelled" ? "ดูสถานะ / จัดการคืนมัดจำ" : "ยกเลิก — คืนมัดจำ 100 บาท"}
+                          </button>
+                        )}
                         {/* ยืนยันไปแล้วจะปฏิเสธไม่ได้ (สลิปถูกล็อกกับรายการนี้แล้ว) แต่แก้เลนส์ได้ */}
                         {b.status === "confirmed" && (
                           <button
@@ -3203,6 +3215,12 @@ export default function AdminPage() {
       )}
 
       {/* ═══ Lens Edit Modal — แก้เลนส์ของการจองที่ยืนยันแล้ว ═══ */}
+      {cancellationBookingId && <BookingCancellationDialog
+        key={cancellationBookingId}
+        bookingId={cancellationBookingId}
+        onClose={() => setCancellationBookingId(null)}
+        onSaved={() => { void fetchBookings(); void fetchSummary(); void fetchFulfillment(); }}
+      />}
       {lensEdit && (() => {
         const b = lensEdit.booking;
         const saved = lensEdit.savedResult;

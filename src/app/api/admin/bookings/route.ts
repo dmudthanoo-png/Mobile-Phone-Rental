@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/adminAuth";
 import { logServerError } from "@/lib/apiLog";
 import { retryRead } from "@/lib/supabaseRetry";
+import { readCancellationSummaries } from "@/lib/bookingCancellationServer";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -20,6 +21,7 @@ export async function GET(req: NextRequest) {
     | "pending"
     | "confirmed"
     | "rejected"
+    | "cancelled"
     | "all";
   // ตัดอักขระที่เป็นไวยากรณ์ของ PostgREST ออก ( , ( ) . : "  ) ก่อนเอาไปต่อเป็น filter string
   // ไม่งั้นคำค้นที่มีคอมมาจะแตกออกเป็นเงื่อนไขเพิ่ม ทำให้ผลลัพธ์เพี้ยนหรือ query พัง
@@ -83,8 +85,10 @@ export async function GET(req: NextRequest) {
     bannedMap = Object.fromEntries((profiles ?? []).map((p) => [p.id, Boolean(p.is_banned)]));
   }
 
+  const cancellations = await readCancellationSummaries(supabaseAdmin, bookings.filter(b => b.status === "cancelled").map(b => b.id));
   const bookingsWithBanStatus = bookings.map((b) => ({
     ...b,
+    cancellation: cancellations.get(b.id) ?? null,
     is_banned: b.user_id ? bannedMap[b.user_id] ?? false : false,
   }));
 

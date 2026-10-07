@@ -18,6 +18,8 @@ export type SheetBookingPayload = {
   lens_qty?: number | null;
   total_amount?: number | null;
   created_at?: string | null;
+  refund_amount?: number | null;
+  refund_status?: string | null;
 };
 
 // กัน Spreadsheet Formula Injection — ถ้า Apps Script ปลายทางเขียนค่าลง cell ตรงๆ

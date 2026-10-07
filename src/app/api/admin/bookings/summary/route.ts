@@ -41,6 +41,27 @@ export async function GET(req: NextRequest) {
     supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", "rejected")
   );
 
+  const cancelled = await retryRead("/api/admin/bookings/summary (cancelled)", () =>
+    supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", "cancelled")
+  );
+  // Read all money in one database snapshot when cancellation is in use, avoiding
+  // double-counting during refunds. Old installations with no cancellations still
+  // use the existing query below, without requiring the new RPC before migration.
+  type MoneySummary = { revenue: number; deposit_received: number; refund_pending: number; refunded_amount: number };
+  let moneySummary: MoneySummary | null = null;
+  let refundError: { message: string } | null = null;
+  if ((cancelled.count ?? 0) > 0) {
+    const result = await retryRead("/api/admin/bookings/summary (money snapshot)", () =>
+      supabase.rpc("admin_cancellation_money_summary"));
+    refundError = result.error;
+    if (!refundError) {
+      const fields = ["revenue", "deposit_received", "refund_pending", "refunded_amount"];
+      if (!result.data || !fields.every(key => typeof result.data[key] === "number" && Number.isFinite(result.data[key]))) {
+        refundError = { message: "อ่านยอดคืนมัดจำไม่สำเร็จ กรุณาลองใหม่" };
+      } else moneySummary = result.data as MoneySummary;
+    }
+  }
+
   // ✅ revenue รวมเฉพาะ confirmed — เป็นมูลค่าการจองรวม (คาดการณ์) ไม่ใช่เงินที่ได้รับจริงทั้งหมด
   // เพราะ total_amount รวมส่วนที่ลูกค้าจ่ายวันรับเครื่องด้วย ซึ่งไม่เคยผ่านแอปนี้เลย
   // ยอดที่ยืนยันรับจริงผ่านแอป (โอนมัดจำ+ตรวจสลิปแล้ว) คือ deposit_received ต่างหาก
@@ -50,7 +71,7 @@ export async function GET(req: NextRequest) {
   const PAGE = 1000;
   const amountRows: { total_amount: number | string | null; deposit_amount: number | string | null }[] = [];
   let amountsError: { message: string } | null = null;
-  for (let from = 0; ; from += PAGE) {
+  for (let from = 0; !moneySummary && !refundError; from += PAGE) {
     const pageFrom = from;
     const page = await retryRead(`/api/admin/bookings/summary (amounts ${pageFrom})`, () =>
       supabase
@@ -72,6 +93,8 @@ export async function GET(req: NextRequest) {
     pending.error ||
     confirmed.error ||
     rejected.error ||
+    cancelled.error ||
+    refundError ||
     confirmedAmounts.error;
 
   if (err) {
@@ -100,8 +123,12 @@ export async function GET(req: NextRequest) {
       pending: pending.count ?? 0,
       confirmed: confirmed.count ?? 0,
       rejected: rejected.count ?? 0,
-      revenue, // ✅ มูลค่าการจองรวม (คาดการณ์) — รวมส่วนที่จ่ายวันรับเครื่องด้วย
-      deposit_received: depositReceived, // ✅ ยอดมัดจำที่ยืนยันรับจริงผ่านแอป
+      cancelled: cancelled.count ?? 0,
+      revenue: moneySummary?.revenue ?? revenue, // รวมเฉพาะรายการ confirmed
+      // Preserve gross deposit history; refund_pending is part of it, not extra revenue.
+      deposit_received: moneySummary?.deposit_received ?? depositReceived,
+      refund_pending: moneySummary?.refund_pending ?? 0,
+      refunded_amount: moneySummary?.refunded_amount ?? 0,
     },
     { headers: { "Cache-Control": "no-store" } }
   );

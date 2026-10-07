@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Navbar from "../Navbar";
 import Footer from "../Footer";
+import { cancellationLabel, type CancellationSummary } from "@/lib/bookingCancellation";
 
 type MeUser = {
   line_sub: string;
@@ -23,6 +24,7 @@ type Booking = {
   status: "confirmed" | "rejected" | "pending" | "waiting_review" | string;
   add_lens?: boolean;
   lens_price?: number;
+  cancellation?: CancellationSummary | null;
   concert_sessions?: {
     id: string;
     start_at: string;
@@ -74,6 +76,7 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string; 
   rejected:       { label: "❌ ไม่อนุมัติ",  bg: criticalSoft, color: critical, border: criticalBorder },
   pending:        { label: "⏳ รอตรวจสอบ",   bg: warningSoft, color: warningText, border: warningBorder },
   waiting_review: { label: "🔍 รอแอดมิน",   bg: violetSoft, color: accent2, border: violetBorder },
+  cancelled:      { label: "ยกเลิกแล้ว", bg: "#F3F4F6", color: "#4B5563", border: "#D1D5DB" },
 };
 const DEFAULT_STATUS = { label: "❓ ไม่ทราบสถานะ", bg: "#F5F5F5", color: sub, border: line };
 
@@ -342,7 +345,7 @@ export default function BookingsPage() {
                     {[
                       ["🗓️", "วันเวลาคอนเสิร์ต", sessionLabel],
                       ["📍", "สถานที่",            venueName],
-                      ["💰", "ยอดชำระ",            `฿${b.total_amount.toLocaleString()}`],
+                      ["💰", b.status === "cancelled" ? "มูลค่าการจองเดิม (ยกเลิกแล้ว)" : "ยอดชำระ", `฿${b.total_amount.toLocaleString()}`],
                       ["🕐", "วันที่จอง",          new Date(b.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })],
                     ].map(([icon, label, val]) => (
                       <div key={`${b.id}-${label}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -352,6 +355,13 @@ export default function BookingsPage() {
                     ))}
                   </div>
 
+                  {b.status === "cancelled" && (
+                    <div role="status" style={{ background: warningSoft, border: `1px solid ${warningBorder}`, borderRadius: 12, padding: "10px 12px", fontSize: 13, color: ink }}>
+                      <strong>{cancellationLabel(b.cancellation)}</strong>
+                      {b.cancellation?.refunded_at && <div>บันทึกคืนเงินเมื่อ {formatSessionStart(b.cancellation.refunded_at)}</div>}
+                      <div style={{ marginTop: 4 }}>รายการนี้ถูกยกเลิกแล้ว ไม่ต้องชำระค่าเช่าส่วนที่เหลือหน้างาน</div>
+                    </div>
+                  )}
                   {b.status === "confirmed" && (
                     <div style={{ background: goodSoft, border: `1px dashed ${goodBorder}`, borderRadius: 12, padding: "8px 12px", fontSize: 12, fontWeight: 600, color: good }}>
                       ✅ การจองได้รับการยืนยันแล้ว! กรุณามารับมือถือก่อนคอนเสิร์ตครับ

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { logServerError } from "@/lib/apiLog";
+import { readCancellationSummaries } from "@/lib/bookingCancellationServer";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -83,13 +84,15 @@ export async function GET(req: NextRequest) {
       phones:phone_id ( id, model_name, image_url, price )
     `)
     .eq("user_id", userId)
-    .in("status", ["pending", "confirmed", "rejected", "waiting_review"])
+    .in("status", ["pending", "confirmed", "rejected", "waiting_review", "cancelled"])
     .order("created_at", { ascending: false });
 
   if (error) { logServerError("/api/bookings/my-v2", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
+  const bookings = data ?? [];
+  const cancellations = await readCancellationSummaries(supabaseAdmin, bookings.filter(b => b.status === "cancelled").map(b => b.id));
   return NextResponse.json(
-    { bookings: data ?? [] },
+    { bookings: bookings.map(b => ({ ...b, cancellation: cancellations.get(b.id) ?? null })) },
     { headers: { "Cache-Control": "no-store" } }
   );
 }

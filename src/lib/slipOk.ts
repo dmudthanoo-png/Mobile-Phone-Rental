@@ -100,14 +100,15 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
   // 1) ดึงข้อมูล booking + มัดจำต่อเครื่องของรุ่นนั้น (ยอดที่ควรจะโอนมา = มัดจำ x จำนวนเครื่อง)
   const { data: bookingRaw, error: bErr } = await supabase
     .from("bookings")
-    .select("id, slip_url, qty, deposit_amount, phones ( deposit )")
+    .select("id, status, slip_url, qty, deposit_amount, phones ( deposit )")
     .eq("id", bookingId)
     .maybeSingle();
 
   if (bErr) return { ok: false, error: bErr.message };
   if (!bookingRaw) return { ok: false, error: "booking not found" };
 
-  const booking = bookingRaw as unknown as { id: string; slip_url: string | null; qty: number | null; deposit_amount: number | null; phones: { deposit: number } | null };
+  const booking = bookingRaw as unknown as { id: string; status: string | null; slip_url: string | null; qty: number | null; deposit_amount: number | null; phones: { deposit: number } | null };
+  if (booking.status === "cancelled") return { ok: false, error: "รายการนี้ยกเลิกแล้ว เก็บผลตรวจสลิปเดิมไว้เป็นหลักฐาน" };
   if (!booking.slip_url) return { ok: false, error: "booking has no slip" };
 
   // ใช้ยอดมัดจำที่บันทึกไว้ตอนจองเป็นหลัก — ถ้าคิดสดจากราคาปัจจุบันจะเพี้ยน 2 กรณี:
@@ -285,13 +286,14 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
       slip_verified_at: new Date().toISOString(),
     }, { count: "exact" })
     .eq("id", bookingId)
-    .eq("slip_url", booking.slip_url);
+    .eq("slip_url", booking.slip_url)
+    .or("status.is.null,status.neq.cancelled");
 
   if (!updErr && !updatedCount) {
-    // สลิปถูกเปลี่ยนไปแล้วระหว่างรอผล — ทิ้งผลนี้ไป ใบใหม่จะมีการตรวจของตัวเองตามมา
+    // สลิปหรือสถานะเปลี่ยนระหว่างรอผล (เช่น ถูกยกเลิก) — ไม่เขียนทับหลักฐานเดิม
     return {
       ok: true, verified: false,
-      message: "สลิปถูกเปลี่ยนระหว่างรอผลตรวจ ระบบจึงไม่นำผลเดิมมาใช้",
+      message: "สลิปหรือสถานะการจองเปลี่ยนระหว่างรอผลตรวจ ระบบจึงไม่นำผลนี้มาใช้",
       amount: readAmount, expected_amount: expectedAmount, trans_ref: transRef, raw: slipOkResult,
     };
   }
@@ -311,7 +313,8 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
           slip_verified_at: new Date().toISOString(),
         })
         .eq("id", bookingId)
-        .eq("slip_url", booking.slip_url);
+        .eq("slip_url", booking.slip_url)
+        .or("status.is.null,status.neq.cancelled");
 
       return {
         ok: true,

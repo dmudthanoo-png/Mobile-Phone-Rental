@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { cancellationLabel } from "@/lib/bookingCancellation";
+import { cancellationLabel, formatRefundAmount, isRefundAmount } from "@/lib/bookingCancellation";
 import type { CancellationRecord } from "@/lib/bookingCancellationServer";
 
 type Details = {
   booking: { id: string; ref_number: string; renter_name: string; status: string };
   cancellation: CancellationRecord | null;
+  refund_amount: number | null;
   can_cancel: boolean; blocked_reason: string | null; can_manage_refund: boolean;
 };
 const field: CSSProperties = { width: "100%", padding: 10, border: "1px solid #DDD", borderRadius: 8, font: "inherit", boxSizing: "border-box" };
@@ -46,7 +47,10 @@ export default function BookingCancellationDialog({ bookingId, onClose, onSaved 
     const res = await fetch(`${endpoint}/cancellation`, { cache: "no-store" });
     const out = await res.json();
     if (!res.ok) throw new Error(out.error || "โหลดรายการไม่สำเร็จ");
-    if (mounted.current && version === readVersion.current) setDetails(out);
+    if (mounted.current && version === readVersion.current) {
+      setDetails(out);
+      setChecked(false); // Never carry consent for an old displayed amount forward.
+    }
   }
 
   async function mutate(path: string, method: string, body: object | FormData) {
@@ -83,13 +87,16 @@ export default function BookingCancellationDialog({ bookingId, onClose, onSaved 
   }
 
   const c = details?.cancellation;
+  const refundAmount = c?.refund_amount ?? details?.refund_amount;
+  const validAmount = isRefundAmount(refundAmount);
+  const amountLabel = validAmount ? `${formatRefundAmount(refundAmount)} บาท` : "(รอตรวจสอบยอด)";
   const close = () => { if (!busyRef.current) onClose(); };
   return (
     <div onClick={close} style={{ position: "fixed", inset: 0, zIndex: 1000, padding: 20, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <section role="dialog" aria-modal="true" aria-labelledby="cancel-title" onClick={e => e.stopPropagation()}
         style={{ width: "100%", maxWidth: 510, maxHeight: "90vh", overflow: "auto", background: "white", borderRadius: 16, padding: 22, color: "#241F1C", fontSize: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 id="cancel-title" style={{ fontSize: 18, margin: 0 }}>ยกเลิกการจอง — คืนมัดจำ 100 บาท</h2>
+          <h2 id="cancel-title" style={{ fontSize: 18, margin: 0 }}>ยกเลิกการจอง — คืนมัดจำ {amountLabel}</h2>
           <button type="button" aria-label="ปิดหน้าต่าง" disabled={busy} onClick={close} style={button}>✕</button>
         </div>
         {error && <p role="alert" style={{ padding: 12, background: "#FFF1F2", color: "#9F1239", borderRadius: 8 }}>{error}</p>}
@@ -97,32 +104,32 @@ export default function BookingCancellationDialog({ bookingId, onClose, onSaved 
         {details && <>
           <p><strong>{details.booking.renter_name}</strong><br />REF {details.booking.ref_number}</p>
           <p style={{ padding: 12, background: "#FFF8E6", borderRadius: 8 }}>
-            คืนเฉพาะมัดจำ 100 บาท ไม่รวมค่าเช่าที่จะจ่ายหน้างาน<br />เก็บประวัติและสลิปเดิมไว้ ไม่ส่งข้อความ LINE
+            คืนเฉพาะมัดจำที่รับจริง {amountLabel} ไม่รวมค่าเช่าที่จะจ่ายหน้างาน<br />เก็บประวัติและสลิปเดิมไว้ ไม่ส่งข้อความ LINE
           </p>
-          {!c ? <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0 }}>
+          {!c ? <fieldset disabled={busy || !validAmount} style={{ border: 0, padding: 0, margin: 0 }}>
             {!details.can_cancel ? <p role="alert">{details.blocked_reason}</p> : <>
               <label>เหตุผลที่แอดมินอนุมัติยกเลิกและคืนมัดจำ
                 <textarea value={reason} onChange={e => setReason(e.target.value)} minLength={3} maxLength={500} rows={3} style={{ ...field, marginTop: 8 }} />
               </label>
               <label style={{ display: "flex", gap: 8, margin: "16px 0" }}>
                 <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
-                ตรวจแล้วว่าร้านรับมัดจำ 100 บาท และอนุมัติคืนให้รายการนี้ การยกเลิกจะปล่อยเครื่องและเลนส์ให้จองได้อีก
+                ตรวจแล้วว่าร้านรับมัดจำ {amountLabel} และอนุมัติคืนให้รายการนี้ การยกเลิกจะปล่อยเครื่องและเลนส์ให้จองได้อีก
               </label>
               <button type="button" disabled={!checked || reason.trim().length < 3} style={{ ...button, background: "#FFF1F2", color: "#9F1239" }}
-                onClick={() => mutate("cancellation", "POST", { reason, confirmed_deposit: true })}>
-                ยืนยันยกเลิก — รอคืนมัดจำ 100 บาท
+                onClick={() => mutate("cancellation", "POST", { reason, confirmed_deposit: true, expected_refund_amount: refundAmount })}>
+                ยืนยันยกเลิก — รอคืนมัดจำ {amountLabel}
               </button>
             </>}
           </fieldset> : <>
             <p><strong>{cancellationLabel(c)}</strong><br />ยกเลิกเมื่อ {date(c.cancelled_at)} โดย {c.cancelled_by_username}<br />เหตุผล: {c.reason}</p>
             {c.refund_status === "pending" && <>
               <p>กดรับงานก่อนโอนเงิน เพื่อกันแอดมินสองคนโอนซ้ำ ระบบไม่ได้โอนเงินให้อัตโนมัติ</p>
-              <button type="button" disabled={busy} style={button} onClick={() => mutate("refund", "PATCH", { action: "claim" })}>รับงานคืนมัดจำ 100 บาท</button>
+              <button type="button" disabled={busy || !validAmount} style={button} onClick={() => mutate("refund", "PATCH", { action: "claim", expected_refund_amount: refundAmount })}>รับงานคืนมัดจำ {amountLabel}</button>
             </>}
             {c.refund_status === "processing" && <>
               <p>ผู้รับงาน: <strong>{c.processing_by_username}</strong> · {c.processing_at ? date(c.processing_at) : ""}</p>
-              {!details.can_manage_refund ? <p role="alert">แอดมินคนอื่นกำลังคืนเงิน ห้ามโอนซ้ำ กรุณาประสานผู้รับงาน</p> : <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0 }}>
-                <p>ตรวจสอบบัญชีปลายทางกับลูกค้าและโอนคืนเอง 100 บาท จากนั้นบันทึกหลักฐานด้านล่าง หากโอนแล้วห้ามคืนงานหรือโอนซ้ำ</p>
+              {!details.can_manage_refund ? <p role="alert">แอดมินคนอื่นกำลังคืนเงิน ห้ามโอนซ้ำ กรุณาประสานผู้รับงาน</p> : <fieldset disabled={busy || !validAmount} style={{ border: 0, padding: 0, margin: 0 }}>
+                <p>ตรวจสอบบัญชีปลายทางกับลูกค้าและโอนคืนเอง {amountLabel} จากนั้นบันทึกหลักฐานด้านล่าง หากโอนแล้วห้ามคืนงานหรือโอนซ้ำ</p>
                 <label>เลขอ้างอิงธุรกรรมโอนคืน
                   <input value={reference} onChange={e => setReference(e.target.value)} maxLength={120} autoComplete="off" style={{ ...field, margin: "8px 0 14px" }} />
                 </label>
@@ -130,13 +137,14 @@ export default function BookingCancellationDialog({ bookingId, onClose, onSaved 
                   <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setProof(e.target.files?.[0] ?? null)} style={{ ...field, marginTop: 8 }} />
                 </label>
                 <label style={{ display: "flex", gap: 8, margin: "16px 0" }}>
-                  <input type="checkbox" checked={transferred} onChange={e => setTransferred(e.target.checked)} />โอนคืนให้ลูกค้าแล้ว 100 บาท และหลักฐานเป็นของรายการนี้
+                  <input type="checkbox" checked={transferred} onChange={e => setTransferred(e.target.checked)} />โอนคืนให้ลูกค้าแล้ว {amountLabel} และหลักฐานเป็นของรายการนี้
                 </label>
                 <button type="button" disabled={!proof || reference.trim().length < 3 || !transferred} style={{ ...button, background: "#E1FAEC" }} onClick={() => {
                   if (!proof) return;
                   const form = new FormData(); form.set("proof", proof); form.set("reference", reference); form.set("transferred", "true");
+                  form.set("expected_refund_amount", String(refundAmount));
                   void mutate("refund", "POST", form);
-                }}>บันทึกคืนมัดจำแล้ว 100 บาท</button>
+                }}>บันทึกคืนมัดจำแล้ว {amountLabel}</button>
                 <button type="button" style={{ ...button, marginTop: 12 }} onClick={() => {
                   if (window.confirm("ยืนยันว่าคุณยังไม่ได้โอนเงินและไม่มีรายการโอนค้างอยู่? ห้ามคืนงานหากโอนไปแล้ว เพราะผู้อื่นอาจโอนซ้ำ")) {
                     void mutate("refund", "PATCH", { action: "release", not_transferred: true });

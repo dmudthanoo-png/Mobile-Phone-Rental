@@ -9,12 +9,15 @@ const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const bookingId = id(1), adminA = id(101), adminB = id(102), phone = id(201), lens = id(301), session = id(401), user = id(501);
 const migration = readFileSync(new URL('../scripts/add_booking_cancellation.sql', import.meta.url), 'utf8');
 const one = async (sql, params = []) => (await db.query(sql, params)).rows[0];
-const cancel = async (booking = bookingId, admin = adminA, reason = 'Customer request approved by shop') =>
-  (await one('select public.admin_cancel_booking($1,$2,$3) as result', [booking, admin, reason])).result;
+const cancel = async (booking = bookingId, admin = adminA, reason = 'Customer request approved by shop', expected = 100) =>
+  (await one('select public.admin_cancel_booking($1,$2,$3,$4) as result', [booking, admin, reason, expected])).result;
 const refund = async (action, { booking = bookingId, admin = adminA, reference = null, path = null } = {}) =>
   (await one('select public.admin_manage_booking_refund($1,$2,$3,$4,$5) as result', [booking, admin, action, reference, path])).result;
 const booking = () => one('select * from bookings where id=$1', [bookingId]);
-const cancellation = () => one('select * from booking_cancellations where booking_id=$1', [bookingId]);
+const cancellation = async () => {
+  const row = await one('select * from booking_cancellations where booking_id=$1', [bookingId]);
+  return row ? { ...row, refund_amount: Number(row.refund_amount) } : undefined;
+};
 async function proof(booking = bookingId, suffix = 701) {
   const path = `${booking}/${id(suffix)}.png`;
   await db.query('insert into storage.objects(bucket_id,name) values ($1,$2)', ['refund-proofs', path]);
@@ -108,10 +111,94 @@ test('fulfillment blocks cancellation for delivered, returned and files-sent boo
   }
 });
 test('unknown/incorrect deposits are never guessed from the current phone deposit', async () => {
-  await db.exec('update bookings set deposit_amount=200'); assert.equal((await cancel()).error,'DEPOSIT_NOT_100');
+  await db.exec('update bookings set deposit_amount=200'); assert.equal((await cancel()).error,'DEPOSIT_MISMATCH');
   await db.exec('update bookings set deposit_amount=null, slip_verified=false'); assert.equal((await cancel()).error,'DEPOSIT_UNKNOWN');
   await db.exec('update bookings set deposit_amount=100, slip_verified=true, slip_verify_amount=200'); assert.equal((await cancel()).error,'DEPOSIT_MISMATCH');
+  await db.exec('update bookings set slip_verified=false'); assert.equal((await cancel()).error,'DEPOSIT_MISMATCH');
   assert.equal(Number((await one('select count(*) n from booking_cancellations')).n),0);
+});
+
+test('THB 200 deposit refunds 200, not rental total/current catalog price or qty multiplied twice', async () => {
+  await db.exec('update bookings set deposit_amount=200, slip_verify_amount=200, qty=2; update phones set deposit=999');
+  assert.equal((await cancel(bookingId, adminA, 'Refund actual deposit', 200)).ok, true);
+  assert.equal((await cancellation()).refund_amount, 200);
+  assert.equal((await booking()).total_amount, 1000);
+  await refund('claim');
+  await refund('complete', { reference: 'BANK-200', path: await proof() });
+  assert.equal((await cancellation()).refund_amount, 200);
+  assert.equal((await cancellation()).refund_status, 'refunded');
+  assert.match((await one("select action from admin_audit_log where action like 'บันทึกคืนมัดจำแล้ว%'")).action, /200(?:\.00)? บาท/);
+  const summary = (await one('select admin_cancellation_money_summary() result')).result;
+  assert.deepEqual(summary, { revenue: 0, deposit_received: 200, refund_pending: 0, refunded_amount: 200 });
+});
+
+test('confirmed manual payment without SlipOK amount uses its accepted deposit', async () => {
+  await db.exec('update bookings set deposit_amount=300, slip_verified=false, slip_verify_amount=null');
+  assert.equal((await cancel(bookingId, adminA, 'Checked original payment', 300)).ok, true);
+  assert.equal((await cancellation()).refund_amount, 300);
+});
+
+test('legacy verified deposit can retain satang without rounding, while invalid/unknown money is blocked', async () => {
+  await db.exec('update bookings set deposit_amount=null');
+  for (const amount of ['0', '-1', '200.001', '10000000000', 'NaN', 'Infinity']) {
+    await db.query('update bookings set slip_verify_amount=$1::numeric', [amount]);
+    assert.equal((await cancel()).error, 'DEPOSIT_INVALID');
+  }
+  await db.exec('update bookings set slip_verify_amount=200.5');
+  assert.equal((await cancel(bookingId, adminA, 'Verified legacy payment', 200.5)).ok, true);
+  assert.equal((await cancellation()).refund_amount, 200.5);
+  assert.equal((await booking()).deposit_amount, null);
+});
+
+test('changed or client-invented refund amount cannot override the database amount', async () => {
+  await db.exec('update bookings set deposit_amount=200, slip_verify_amount=200');
+  for (const expected of [100, 99999, null]) {
+    assert.equal((await cancel(bookingId, adminA, 'Checked old preview', expected)).error, 'REFUND_AMOUNT_CHANGED');
+    assert.equal((await booking()).status, 'confirmed');
+    assert.equal(await cancellation(), undefined);
+  }
+  assert.equal((await cancel(bookingId, adminA, 'Checked new preview', 200)).ok, true);
+});
+
+test('refund snapshot is immutable and migration preserves already-recorded money', async () => {
+  await cancel(); await refund('claim');
+  await refund('complete', { reference: 'KEEP-REF', path: await proof() });
+  const old = await cancellation();
+  await assert.rejects(db.exec('update booking_cancellations set refund_amount=200'), /CANCELLATION_REFUND_AMOUNT_READ_ONLY/);
+  await db.exec(migration);
+  assert.deepEqual(await cancellation(), old);
+  assert.equal((await cancel(bookingId, adminA, 'Retry after upgrade', 99999)).unchanged, true);
+  assert.deepEqual(await cancellation(), old);
+});
+
+test('upgrade from fixed-100 schema keeps existing evidence and removes the unsafe old RPC overload', async () => {
+  await cancel(); await refund('claim');
+  await refund('complete', { reference: 'LEGACY-100', path: await proof() });
+  const old = await cancellation();
+  // Reproduce the old column/check/default and old three-argument function.
+  await db.exec(`
+    alter table booking_cancellations drop constraint booking_cancellations_refund_amount_check;
+    alter table booking_cancellations alter column refund_amount type integer using refund_amount::integer;
+    alter table booking_cancellations alter column refund_amount set default 100;
+    alter table booking_cancellations add constraint booking_cancellations_refund_amount_check check (refund_amount=100);
+    create function admin_cancel_booking(uuid,uuid,text) returns jsonb language sql as $$ select '{"ok":true}'::jsonb $$;
+  `);
+  await db.exec(migration);
+  assert.deepEqual(await cancellation(), old);
+  assert.equal((await one("select to_regprocedure('public.admin_cancel_booking(uuid,uuid,text)') as old_rpc")).old_rpc, null);
+  assert.equal((await one("select column_default from information_schema.columns where table_name='booking_cancellations' and column_name='refund_amount'")).column_default, null);
+  await db.query("insert into bookings(id,ref_number,status,total_amount,deposit_amount,slip_verify_amount,slip_verified) values ($1,'AFTER-UPGRADE','confirmed',3000,200,200,true)", [id(2)]);
+  assert.equal((await cancel(id(2), adminA, 'Actual deposit after upgrade', 200)).ok, true);
+  assert.equal(Number((await one('select refund_amount from booking_cancellations where booking_id=$1', [id(2)])).refund_amount), 200);
+});
+
+test('summary adds mixed refund amounts rather than multiplying booking count by 100', async () => {
+  await cancel(); await refund('claim');
+  await refund('complete', { reference: 'PAID-100', path: await proof() });
+  await db.query("insert into bookings(id,ref_number,status,total_amount,deposit_amount) values ($1,'PENDING-200','confirmed',3000,200),($2,'ACTIVE','confirmed',800,300)", [id(2),id(3)]);
+  assert.equal((await cancel(id(2), adminA, 'Awaiting actual deposit refund', 200)).ok, true);
+  assert.deepEqual((await one('select admin_cancellation_money_summary() result')).result,
+    { revenue: 800, deposit_received: 600, refund_pending: 200, refunded_amount: 100 });
 });
 test('old NULL deposit can use an actually verified THB 100 slip, without changing historical fields', async () => {
   await db.exec('update bookings set deposit_amount=null'); assert.equal((await cancel()).ok,true);

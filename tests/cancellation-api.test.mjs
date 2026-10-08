@@ -34,6 +34,7 @@ function harness({authorized=true, result={ok:true}, error=null, resolve=()=>({d
   const mocks={
     'next/server':{NextResponse:response,after:fn=>background.push(fn)},
     '@/lib/bookingCancellationServer':server,
+    '@/lib/bookingCancellation':loadTs('src/lib/bookingCancellation.ts'),
     '@/lib/imageUpload':loadTs('src/lib/imageUpload.ts'),
   };
   return {server,calls,storage,background,client,
@@ -60,22 +61,22 @@ test('cross-origin requests, invalid ids and empty cancellation requests cannot 
   for(const body of [{},null,{reason:'valid'},{reason:'x',confirmed_deposit:true}])assert.equal((await h.cancellation.POST(jsonReq('/cancellation',body),ctx)).status,400);
   assert.equal(h.calls.length,0);
 });
-test('cancellation never trusts a client amount/admin ID and never calls LINE',async()=>{
-  const h=harness();const res=await h.cancellation.POST(jsonReq('/cancellation',{reason:'Verified cancellation',confirmed_deposit:true,refund_amount:99999,admin_id:'attacker'}),ctx);
+test('cancellation passes preview as acknowledgement only, never an arbitrary refund/admin ID or LINE call',async()=>{
+  const h=harness();const res=await h.cancellation.POST(jsonReq('/cancellation',{reason:'Verified cancellation',confirmed_deposit:true,expected_refund_amount:200,refund_amount:99999,admin_id:'attacker'}),ctx);
   assert.equal(res.status,200);
-  assert.deepEqual(h.calls[0].args,['admin_cancel_booking',{p_booking_id:bookingId,p_admin_id:adminId,p_reason:'Verified cancellation'}]);
+  assert.deepEqual(h.calls[0].args,['admin_cancel_booking',{p_booking_id:bookingId,p_admin_id:adminId,p_reason:'Verified cancellation',p_expected_refund_amount:200}]);
   assert.equal(h.background.length,1); // only the optional Sheets copy
   await h.background[0](); // no webhook configured -> no external side effects
   for(const file of ['cancellation','refund'])assert(!readFileSync(new URL(`../src/app/api/admin/bookings/[id]/${file}/route.ts`,import.meta.url),'utf8').includes('lineMessaging'));
 });
 test('missing migration produces a clear setup error, never a success',async()=>{
   const h=harness({error:{code:'PGRST202',message:'function missing'}});
-  const res=await h.cancellation.POST(jsonReq('/cancellation',{reason:'valid reason',confirmed_deposit:true}),ctx);
+  const res=await h.cancellation.POST(jsonReq('/cancellation',{reason:'valid reason',confirmed_deposit:true,expected_refund_amount:100}),ctx);
   assert.equal(res.status,503);assert.match(res.body.error,/add_booking_cancellation.sql/);assert.equal(h.background.length,0);
 });
 test('NULL RPC responses and business conflicts are not reported as success',async()=>{
-  for(const [result,status] of [[null,503],[{error:'DEPOSIT_NOT_100'},409],[{error:'NOT_FOUND'},404]]){
-    const h=harness({result});assert.equal((await h.cancellation.POST(jsonReq('/cancellation',{reason:'valid reason',confirmed_deposit:true}),ctx)).status,status);
+  for(const [result,status] of [[null,503],[{error:'DEPOSIT_INVALID'},409],[{error:'REFUND_AMOUNT_CHANGED'},409],[{error:'NOT_FOUND'},404]]){
+    const h=harness({result});assert.equal((await h.cancellation.POST(jsonReq('/cancellation',{reason:'valid reason',confirmed_deposit:true,expected_refund_amount:100}),ctx)).status,status);
   }
 });
 test('release requires explicit acknowledgement that no money was transferred',async()=>{
@@ -84,10 +85,10 @@ test('release requires explicit acknowledgement that no money was transferred',a
   assert.equal((await h.refund.PATCH(jsonReq('/refund',{action:'release',not_transferred:true},'PATCH'),ctx)).status,200);
 });
 function refundForm(bytes=new Uint8Array([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])){
-  const form=new FormData();form.set('proof',new File([bytes],'refund.png',{type:'image/png'}));form.set('reference','BANK-TEST');form.set('transferred','true');return form;
+  const form=new FormData();form.set('proof',new File([bytes],'refund.png',{type:'image/png'}));form.set('reference','BANK-TEST');form.set('transferred','true');form.set('expected_refund_amount','100');return form;
 }
 const refundReq=form=>new Request(url+'/refund',{method:'POST',body:form});
-const ownClaim=()=>({data:{refund_status:'processing',processing_by:adminId},error:null});
+const ownClaim=()=>({data:{refund_status:'processing',processing_by:adminId,refund_amount:100},error:null});
 test('refund evidence cannot be submitted without the claim or with spoofed image bytes',async()=>{
   const other=harness({resolve:()=>({data:{refund_status:'processing',processing_by:'other'},error:null})});
   assert.equal((await other.refund.POST(refundReq(refundForm()),ctx)).status,409);assert.equal(other.storage.length,0);
@@ -171,19 +172,81 @@ test('summary without cancellations preserves old amounts and needs no new RPC',
   assert(!calls.some(c=>c.kind==='rpc'));
 });
 
-test('refund UI presents distinct pending, claimed-by-another and completed states with no LINE action',()=>{
+test('refund UI uses the stored amount in every state with no LINE action',()=>{
   const labels=loadTs('src/lib/bookingCancellation.ts');
-  for(const status of ['pending','processing','refunded']){
+  for(const amount of [100,200,1250.5]) for(const status of ['pending','processing','refunded']) for(const own of [false,true]){
     let n=0;
-    const details={booking:{id:bookingId,ref_number:'TEST',renter_name:'TEST',status:'cancelled'},can_cancel:false,can_manage_refund:false,
-      cancellation:{booking_id:bookingId,refund_amount:100,refund_status:status,cancelled_at:'2026-10-07T00:00:00Z',reason:'TEST',processing_by_username:'another admin'}};
+    const details={booking:{id:bookingId,ref_number:'TEST',renter_name:'TEST',status:'cancelled'},can_cancel:false,can_manage_refund:own,
+      refund_amount:99999, // The recorded cancellation amount must take precedence.
+      cancellation:{booking_id:bookingId,refund_amount:amount,refund_status:status,cancelled_at:'2026-10-07T00:00:00Z',reason:'TEST',processing_by_username:'another admin'}};
     const component=loadTs('src/app/admin/BookingCancellationDialog.tsx',{
       react:{useState:init=>[n++===0?details:init,()=>{}],useEffect:()=>{},useRef:init=>({current:init})},'@/lib/bookingCancellation':labels,
     }).default;
     const html=renderToStaticMarkup(component({bookingId,onClose:()=>{},onSaved:()=>{}}));
+    const formatted=labels.formatRefundAmount(amount);
     assert(html.includes('ไม่ส่งข้อความ LINE'));
-    if(status==='pending')assert(html.includes('รับงานคืนมัดจำ 100 บาท'));
-    if(status==='processing'){assert(html.includes('ห้ามโอนซ้ำ'));assert(!html.includes('type="file"'));}
+    assert(html.includes(`คืนมัดจำ ${formatted} บาท`));assert(!html.includes('99,999'));
+    if(amount!==100)assert(!html.includes('100 บาท'));
+    if(status==='pending')assert(html.includes(`รับงานคืนมัดจำ ${formatted} บาท`));
+    if(status==='processing'){
+      assert(html.includes('โอนซ้ำ'));
+      assert.equal(html.includes('type="file"'),own);
+      if(own)assert(html.includes(`บันทึกคืนมัดจำแล้ว ${formatted} บาท`));
+    }
     if(status==='refunded'){assert(html.includes('คืนเงินแล้ว ห้ามโอนซ้ำ'));assert(html.includes('ดูหลักฐานคืนเงิน'));}
   }
+});
+
+test('cancellation preview returns confirmed deposit, blocks disagreements, and preserves existing refund snapshot',async()=>{
+  for(const [deposit,verified,slip,expected] of [[200,true,200,200],[300,false,null,300],[null,true,200.5,200.5],[200,true,100,null],[200,false,100,null],[null,false,200,null],[0,false,null,null]]){
+    const h=harness({resolve:call=>({data:call.table==='bookings'?{
+      id:bookingId,status:'confirmed',deposit_amount:deposit,slip_verified:verified,slip_verify_amount:slip,
+    }:null,error:null})});
+    const res=await h.cancellation.GET(new Request(url),ctx);
+    assert.equal(res.status,200);assert.equal(res.body.refund_amount,expected);assert.equal(res.body.can_cancel,expected!==null);
+  }
+  const h=harness({resolve:call=>({data:call.table==='bookings'?{
+    id:bookingId,status:'cancelled',deposit_amount:200,slip_verified:true,slip_verify_amount:200,
+  }:{refund_amount:100,refund_status:'pending'},error:null})});
+  const res=await h.cancellation.GET(new Request(url),ctx);
+  assert.equal(res.body.refund_amount,100);assert.equal(res.body.can_cancel,false);
+});
+
+test('invalid or missing displayed refund amount is rejected before cancellation RPC',async()=>{
+  for(const amount of [undefined,null,0,-100,200.001,'200',10000000000]){
+    const h=harness();
+    assert.equal((await h.cancellation.POST(jsonReq('/cancellation',{reason:'valid reason',confirmed_deposit:true,expected_refund_amount:amount}),ctx)).status,400);
+    assert.equal(h.calls.length,0);
+  }
+});
+
+test('cached fixed-100 clients cannot claim or record a THB 200 refund',async()=>{
+  for(const expected of [undefined,100,200]){
+    const h=harness({resolve:()=>({data:{refund_amount:200,refund_status:'processing',processing_by:adminId},error:null})});
+    const claim=await h.refund.PATCH(jsonReq('/refund',{action:'claim',expected_refund_amount:expected},'PATCH'),ctx);
+    assert.equal(claim.status,expected===200?200:expected===undefined?400:409);
+    const form=refundForm();
+    if(expected===undefined)form.delete('expected_refund_amount');else form.set('expected_refund_amount',String(expected));
+    const result=await h.refund.POST(refundReq(form),ctx);
+    assert.equal(result.status,expected===200?200:expected===undefined?400:409);
+    assert.equal(h.storage.filter(c=>c[0]==='upload').length,expected===200?1:0);
+  }
+});
+
+test('customer labels and pre-cancellation button use the actual amount including satang',()=>{
+  const labels=loadTs('src/lib/bookingCancellation.ts');
+  for(const amount of [100,200,1250.5]){
+    const formatted=labels.formatRefundAmount(amount);
+    assert.equal(labels.cancellationLabel({refund_status:'pending',refund_amount:amount}),`ยกเลิกแล้ว — รอคืนมัดจำ ${formatted} บาท`);
+    assert.equal(labels.cancellationLabel({refund_status:'refunded',refund_amount:amount}),`ยกเลิกแล้ว — คืนมัดจำ ${formatted} บาทแล้ว`);
+    let n=0;
+    const component=loadTs('src/app/admin/BookingCancellationDialog.tsx',{
+      react:{useState:init=>[n++===0?{booking:{renter_name:'TEST',ref_number:'TEST'},cancellation:null,refund_amount:amount,can_cancel:true}:init,()=>{}],useEffect:()=>{},useRef:init=>({current:init})},
+      '@/lib/bookingCancellation':labels,
+    }).default;
+    const html=renderToStaticMarkup(component({bookingId,onClose:()=>{},onSaved:()=>{}}));
+    assert(html.includes(`ยืนยันยกเลิก — รอคืนมัดจำ ${formatted} บาท`));
+    assert(html.includes(`ร้านรับมัดจำ ${formatted} บาท`));
+  }
+  for(const amount of [null,0,-1,NaN])assert.match(labels.cancellationLabel({refund_amount:amount,refund_status:'refunded'}),/กำลังตรวจสอบ/);
 });

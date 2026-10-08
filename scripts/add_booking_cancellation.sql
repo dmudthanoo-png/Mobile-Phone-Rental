@@ -1,11 +1,11 @@
--- Run once in Supabase SQL Editor BEFORE deploying the cancellation feature.
+-- Run in Supabase SQL Editor BEFORE deploying (rerun to upgrade the THB 100 version).
 -- Additive migration: does not cancel/refund any existing booking or change stock.
--- Scope: one confirmed, not-yet-delivered booking; refund exactly THB 100; no LINE.
+-- Scope: one confirmed, not-yet-delivered booking; refund its accepted deposit; no LINE.
 begin;
 
 create table if not exists public.booking_cancellations (
   booking_id uuid primary key references public.bookings(id),
-  refund_amount integer not null default 100 check (refund_amount = 100),
+  refund_amount numeric(12,2) not null,
   refund_status text not null default 'pending' check (refund_status in ('pending', 'processing', 'refunded')),
   reason text not null check (char_length(btrim(reason)) between 3 and 500),
   cancelled_at timestamptz not null default now(),
@@ -28,6 +28,12 @@ create table if not exists public.booking_cancellations (
       and refunded_at is not null and refunded_by is not null and refund_reference is not null and refund_proof_path is not null)
   )
 );
+-- Upgrade the earlier fixed-100 schema WITHOUT recomputing any past refunds.
+alter table public.booking_cancellations drop constraint if exists booking_cancellations_refund_amount_check;
+alter table public.booking_cancellations alter column refund_amount drop default;
+alter table public.booking_cancellations alter column refund_amount type numeric(12,2) using refund_amount::numeric(12,2);
+alter table public.booking_cancellations add constraint booking_cancellations_refund_amount_check
+  check (refund_amount > 0 and refund_amount <= 9999999999.99);
 create index if not exists booking_cancellations_status_idx on public.booking_cancellations(refund_status);
 alter table public.booking_cancellations enable row level security;
 revoke all on public.booking_cancellations from PUBLIC, anon, authenticated;
@@ -46,12 +52,18 @@ create policy refund_proofs_service_only on storage.objects as restrictive
 for all to anon, authenticated
 using (bucket_id <> 'refund-proofs') with check (bucket_id <> 'refund-proofs');
 
-create or replace function public.admin_cancel_booking(p_booking_id uuid, p_admin_id uuid, p_reason text)
+-- Remove the old overload; cached clients must reload rather than confirm an
+-- amount they have not seen. Do not cascade: unexpected dependencies must stop rollout.
+drop function if exists public.admin_cancel_booking(uuid, uuid, text);
+create or replace function public.admin_cancel_booking(
+  p_booking_id uuid, p_admin_id uuid, p_reason text, p_expected_refund_amount numeric
+)
 returns jsonb language plpgsql set search_path = public as $function$
 declare
   b public.bookings%rowtype;
   c public.booking_cancellations%rowtype;
   v_username text;
+  v_refund_amount numeric;
 begin
   select username into v_username from public.admin_users where id = p_admin_id;
   if not found then return jsonb_build_object('error', 'UNAUTHORIZED'); end if;
@@ -74,28 +86,35 @@ begin
   end if;
   -- Never infer money from the current phone price. A confirmed booking is the
   -- admin's acceptance of the payment; a verified slip can cover old NULL deposits.
-  if b.deposit_amount is not null then
-    if b.deposit_amount <> 100 then return jsonb_build_object('error', 'DEPOSIT_NOT_100'); end if;
-  elsif b.slip_verified is not true or b.slip_verify_amount is distinct from 100::numeric then
-    return jsonb_build_object('error', 'DEPOSIT_UNKNOWN');
+  v_refund_amount := coalesce(b.deposit_amount::numeric,
+    case when b.slip_verified is true then b.slip_verify_amount else null end);
+  if v_refund_amount is null then return jsonb_build_object('error', 'DEPOSIT_UNKNOWN'); end if;
+  if not (v_refund_amount > 0 and v_refund_amount <= 9999999999.99)
+    or round(v_refund_amount, 2) <> v_refund_amount then
+    return jsonb_build_object('error', 'DEPOSIT_INVALID');
   end if;
-  if b.slip_verified is true and b.slip_verify_amount is not null and b.slip_verify_amount <> 100 then
+  -- Even a non-passing slip may expose an over/underpayment. Never silently use
+  -- the expected deposit when the returned amount disagrees; review it first.
+  if b.slip_verify_amount is not null and b.slip_verify_amount <> v_refund_amount then
     return jsonb_build_object('error', 'DEPOSIT_MISMATCH');
   end if;
+  if p_expected_refund_amount is distinct from v_refund_amount then
+    return jsonb_build_object('error', 'REFUND_AMOUNT_CHANGED');
+  end if;
 
-  insert into public.booking_cancellations(booking_id, reason, cancelled_by, cancelled_by_username)
-  values (p_booking_id, btrim(p_reason), p_admin_id, v_username);
+  insert into public.booking_cancellations(booking_id, refund_amount, reason, cancelled_by, cancelled_by_username)
+  values (p_booking_id, v_refund_amount, btrim(p_reason), p_admin_id, v_username);
   -- Stock is counted from active bookings. Do NOT change catalog quantities,
   -- session quotas, historical amounts, deposit, lens details or the original slip.
   update public.bookings set status = 'cancelled' where id = p_booking_id;
   insert into public.admin_audit_log(admin_username, action, detail)
-  values (v_username, 'ยกเลิกการจอง — รอคืนมัดจำ 100 บาท',
+  values (v_username, format('ยกเลิกการจอง — รอคืนมัดจำ %s บาท', v_refund_amount),
     format('booking %s · REF %s · %s', p_booking_id, b.ref_number, btrim(p_reason)));
   return jsonb_build_object('ok', true, 'unchanged', false);
 end;
 $function$;
-revoke all on function public.admin_cancel_booking(uuid, uuid, text) from PUBLIC, anon, authenticated;
-grant execute on function public.admin_cancel_booking(uuid, uuid, text) to service_role;
+revoke all on function public.admin_cancel_booking(uuid, uuid, text, numeric) from PUBLIC, anon, authenticated;
+grant execute on function public.admin_cancel_booking(uuid, uuid, text, numeric) to service_role;
 
 create or replace function public.admin_manage_booking_refund(
   p_booking_id uuid, p_admin_id uuid, p_action text,
@@ -133,7 +152,7 @@ begin
     update public.booking_cancellations set refund_status = 'processing',
       processing_by = p_admin_id, processing_by_username = v_username, processing_at = now()
     where booking_id = p_booking_id;
-    v_action_label := 'รับงานคืนมัดจำ 100 บาท';
+    v_action_label := format('รับงานคืนมัดจำ %s บาท', c.refund_amount);
   else
     if c.refund_status <> 'processing' or c.processing_by is distinct from p_admin_id then
       return jsonb_build_object('error', 'CLAIM_REQUIRED');
@@ -160,7 +179,7 @@ begin
         refunded_by = p_admin_id, refunded_by_username = v_username,
         refund_reference = v_reference, refund_proof_path = p_proof_path
       where booking_id = p_booking_id;
-      v_action_label := 'บันทึกคืนมัดจำแล้ว 100 บาท';
+      v_action_label := format('บันทึกคืนมัดจำแล้ว %s บาท', c.refund_amount);
     end if;
   end if;
   insert into public.admin_audit_log(admin_username, action, detail)
@@ -197,6 +216,22 @@ returns jsonb language sql stable set search_path = public as $function$
 $function$;
 revoke all on function public.admin_cancellation_money_summary() from PUBLIC, anon, authenticated;
 grant execute on function public.admin_cancellation_money_summary() to service_role;
+
+-- Freeze the agreed refund once cancellation is recorded. Retries, later price
+-- edits and subsequent deployments must never change money already owed/paid.
+create or replace function public.protect_cancellation_refund_amount()
+returns trigger language plpgsql set search_path = public as $function$
+begin
+  if new.refund_amount is distinct from old.refund_amount then
+    raise exception 'CANCELLATION_REFUND_AMOUNT_READ_ONLY';
+  end if;
+  return new;
+end;
+$function$;
+revoke all on function public.protect_cancellation_refund_amount() from PUBLIC, anon, authenticated;
+drop trigger if exists protect_cancellation_refund_amount on public.booking_cancellations;
+create trigger protect_cancellation_refund_amount before update on public.booking_cancellations
+for each row execute function public.protect_cancellation_refund_amount();
 
 -- Preserve the original payment/equipment history, including late SlipOK results.
 create or replace function public.protect_cancelled_booking()

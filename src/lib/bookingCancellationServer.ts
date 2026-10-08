@@ -36,7 +36,7 @@ export function cancellationDatabaseError(error: { message: string; code?: strin
   logServerError("booking cancellation", error.message);
   const missing = ["42P01", "42883", "PGRST202", "PGRST205"].includes(error.code ?? "");
   return NextResponse.json({ error: missing
-    ? "ยังไม่ได้ติดตั้งระบบคืนมัดจำ กรุณารัน scripts/add_booking_cancellation.sql ก่อน"
+    ? "กรุณาติดตั้งหรืออัปเดตระบบคืนมัดจำด้วย scripts/add_booking_cancellation.sql ฉบับล่าสุด"
     : "บันทึกไม่สำเร็จหรือยังยืนยันผลไม่ได้ กรุณาโหลดรายการล่าสุดก่อนทำซ้ำ" }, { status: 503 });
 }
 
@@ -44,9 +44,10 @@ const errors: Record<string, string> = {
   UNAUTHORIZED: "ไม่มีสิทธิ์ดำเนินการ", NOT_FOUND: "ไม่พบรายการนี้",
   INVALID_REASON: "กรุณาระบุเหตุผล 3–500 ตัวอักษร", NOT_CONFIRMED: "ยกเลิกได้เฉพาะรายการที่ยืนยันแล้ว",
   ALREADY_FULFILLED: "รายการนี้มีการส่งมอบ/คืนเครื่อง/ส่งไฟล์แล้ว ไม่สามารถยกเลิกผ่านขั้นตอนนี้",
-  DEPOSIT_NOT_100: "มัดจำของรายการนี้ไม่ใช่ 100 บาท กรุณาตรวจสอบ — ระบบนี้คืนเฉพาะมัดจำ 100 บาท",
-  DEPOSIT_UNKNOWN: "ยังยืนยันยอดมัดจำ 100 บาทของรายการเก่านี้ไม่ได้ กรุณาตรวจสอบหลักฐานก่อน",
+  DEPOSIT_UNKNOWN: "ยังยืนยันยอดมัดจำที่รับจริงของรายการนี้ไม่ได้ กรุณาตรวจสอบหลักฐานก่อน",
+  DEPOSIT_INVALID: "ยอดมัดจำไม่ถูกต้อง ต้องมากกว่า 0 และมีทศนิยมไม่เกิน 2 ตำแหน่ง กรุณาตรวจสอบหลักฐาน",
   DEPOSIT_MISMATCH: "ยอดมัดจำกับผลตรวจสลิปไม่ตรงกัน กรุณาตรวจสอบก่อนยกเลิก",
+  REFUND_AMOUNT_CHANGED: "ยอดมัดจำเปลี่ยนไปจากที่แสดง กรุณาโหลดข้อมูลล่าสุดและตรวจยอดก่อนยืนยันอีกครั้ง",
   NOT_CANCELLED: "รายการนี้ยังไม่ได้ยกเลิก", ALREADY_REFUNDED: "บันทึกคืนเงินแล้ว ห้ามโอนซ้ำ",
   CLAIMED_BY_OTHER: "แอดมินคนอื่นกำลังดำเนินการคืนเงิน ห้ามโอนซ้ำ",
   CLAIM_REQUIRED: "ต้องรับงานคืนเงินด้วยบัญชีนี้ก่อน ห้ามโอนจนกว่าจะรับงานสำเร็จ",

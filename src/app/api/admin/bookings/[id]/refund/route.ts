@@ -4,6 +4,7 @@ import {
   cancellationContext, cancellationDatabaseError, cancellationRpcError, REFUND_PROOF_BUCKET, syncCancelledBooking,
 } from "@/lib/bookingCancellationServer";
 import { sniffImageMimeType, validateImageUpload } from "@/lib/imageUpload";
+import { isRefundAmount } from "@/lib/bookingCancellation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,15 @@ export async function PATCH(req: NextRequest, ctx: Context) {
   const body = await req.json().catch(() => null);
   if (!["claim", "release"].includes(body?.action) || (body.action === "release" && body.not_transferred !== true)) {
     return NextResponse.json({ error: "คำสั่งไม่ถูกต้อง หรือต้องยืนยันว่ายังไม่ได้โอนก่อนคืนงาน" }, { status: 400 });
+  }
+  if (body.action === "claim") {
+    // Cached fixed-100 UIs must reload before taking a variable-amount refund.
+    if (!isRefundAmount(body.expected_refund_amount)) return NextResponse.json({ error: "กรุณาโหลดข้อมูลล่าสุดและยืนยันยอดมัดจำก่อนรับงาน" }, { status: 400 });
+    const { data: c, error } = await auth.supabase.from("booking_cancellations")
+      .select("refund_amount").eq("booking_id", auth.id).maybeSingle();
+    if (error) return cancellationDatabaseError(error);
+    if (!c) return NextResponse.json({ error: "ไม่พบรายการคืนเงิน" }, { status: 404 });
+    if (Number(c.refund_amount) !== body.expected_refund_amount) return cancellationRpcError({ error: "REFUND_AMOUNT_CHANGED" })!;
   }
   const { data, error } = await auth.supabase.rpc("admin_manage_booking_refund", {
     p_booking_id: auth.id, p_admin_id: auth.adminId, p_action: body.action,
@@ -33,8 +43,10 @@ export async function POST(req: NextRequest, ctx: Context) {
   const form = await req.formData().catch(() => null);
   const proof = form?.get("proof");
   const reference = form?.get("reference");
+  const expectedAmount = Number(form?.get("expected_refund_amount"));
+  if (!isRefundAmount(expectedAmount)) return NextResponse.json({ error: "กรุณาโหลดสถานะล่าสุดและตรวจยอดโอนคืนก่อนบันทึก ห้ามโอนซ้ำ" }, { status: 400 });
   if (typeof reference !== "string" || reference.trim().length < 3 || reference.trim().length > 120 || form?.get("transferred") !== "true") {
-    return NextResponse.json({ error: "ระบุเลขอ้างอิง 3–120 ตัวอักษร และยืนยันว่าโอนคืน 100 บาทแล้ว" }, { status: 400 });
+    return NextResponse.json({ error: "ระบุเลขอ้างอิง 3–120 ตัวอักษร และยืนยันว่าโอนคืนครบตามยอดมัดจำของรายการแล้ว" }, { status: 400 });
   }
   if (!(proof instanceof File) || proof.size === 0) return NextResponse.json({ error: "กรุณาแนบภาพหลักฐานโอนคืน" }, { status: 400 });
   const invalid = validateImageUpload(proof);
@@ -42,11 +54,13 @@ export async function POST(req: NextRequest, ctx: Context) {
   const { supabase, id, adminId } = auth;
   // Check BEFORE storing a file, then check again under a lock inside the RPC.
   const { data: c, error: readError } = await supabase.from("booking_cancellations")
-    .select("refund_status,processing_by").eq("booking_id", id).maybeSingle();
+    .select("refund_status,processing_by,refund_amount").eq("booking_id", id).maybeSingle();
   if (readError) return cancellationDatabaseError(readError);
   if (!c) return NextResponse.json({ error: "ไม่พบรายการคืนเงิน" }, { status: 404 });
   if (c.refund_status === "refunded") return NextResponse.json({ ok: true, unchanged: true });
   if (c.refund_status !== "processing" || c.processing_by !== adminId) return NextResponse.json({ error: "ต้องรับงานคืนเงินด้วยบัญชีนี้ก่อน ห้ามโอนซ้ำ" }, { status: 409 });
+  // Stored refund amount is immutable. This is an acknowledgement, not an edit.
+  if (Number(c.refund_amount) !== expectedAmount) return cancellationRpcError({ error: "REFUND_AMOUNT_CHANGED" })!;
   const buffer = Buffer.from(await proof.arrayBuffer());
   const mime = sniffImageMimeType(buffer);
   if (!mime) return NextResponse.json({ error: "หลักฐานต้องเป็นรูป JPG, PNG หรือ WebP จริง" }, { status: 400 });

@@ -23,9 +23,10 @@ export async function PATCH(req: NextRequest, ctx: Context) {
     // Cached fixed-100 UIs must reload before taking a variable-amount refund.
     if (!isRefundAmount(body.expected_refund_amount)) return NextResponse.json({ error: "กรุณาโหลดข้อมูลล่าสุดและยืนยันยอดมัดจำก่อนรับงาน" }, { status: 400 });
     const { data: c, error } = await auth.supabase.from("booking_cancellations")
-      .select("refund_amount").eq("booking_id", auth.id).maybeSingle();
+      .select("refund_amount,refund_status").eq("booking_id", auth.id).maybeSingle();
     if (error) return cancellationDatabaseError(error);
     if (!c) return NextResponse.json({ error: "ไม่พบรายการคืนเงิน" }, { status: 404 });
+    if (c.refund_status === "not_entitled") return cancellationRpcError({ error: "REFUND_NOT_ENTITLED" })!;
     if (Number(c.refund_amount) !== body.expected_refund_amount) return cancellationRpcError({ error: "REFUND_AMOUNT_CHANGED" })!;
   }
   const { data, error } = await auth.supabase.rpc("admin_manage_booking_refund", {
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest, ctx: Context) {
     .select("refund_status,processing_by,refund_amount").eq("booking_id", id).maybeSingle();
   if (readError) return cancellationDatabaseError(readError);
   if (!c) return NextResponse.json({ error: "ไม่พบรายการคืนเงิน" }, { status: 404 });
+  if (c.refund_status === "not_entitled") return cancellationRpcError({ error: "REFUND_NOT_ENTITLED" })!;
   if (c.refund_status === "refunded") return NextResponse.json({ ok: true, unchanged: true });
   if (c.refund_status !== "processing" || c.processing_by !== adminId) return NextResponse.json({ error: "ต้องรับงานคืนเงินด้วยบัญชีนี้ก่อน ห้ามโอนซ้ำ" }, { status: 409 });
   // Stored refund amount is immutable. This is an acknowledgement, not an edit.

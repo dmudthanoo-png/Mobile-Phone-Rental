@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import BookingCancellationDialog from "./BookingCancellationDialog";
-import { cancellationLabel, formatRefundAmount, resolveCancellationDeposit, type CancellationSummary } from "@/lib/bookingCancellation";
+import { cancellationLabel, type CancellationSummary } from "@/lib/bookingCancellation";
 
 // ─────────────────────────────── types ───────────────────────────────
 type Booking = {
@@ -1989,10 +1989,7 @@ export default function AdminPage() {
                         <button disabled={!pending||loading} onClick={()=>setBookingStatus(b.id,"rejected")} style={btnStyle("red",!pending||loading)}>❌ ปฏิเสธ</button>
                         {(b.status === "cancelled" || (b.status === "confirmed" && !b.delivered_at && !b.returned_at && !b.files_sent_at)) && (
                           <button onClick={() => setCancellationBookingId(b.id)} style={btnStyle("white")}>
-                            {b.status === "cancelled" ? "ดูสถานะ / จัดการคืนมัดจำ" : (() => {
-                              const { amount } = resolveCancellationDeposit(b);
-                              return amount == null ? "ยกเลิก — ตรวจยอดคืนมัดจำ" : `ยกเลิก — คืนมัดจำ ${formatRefundAmount(amount)} บาท`;
-                            })()}
+                            {b.status === "cancelled" ? (b.cancellation?.refund_status === "not_entitled" ? "ดูประวัติการยกเลิก" : "ดูสถานะ / จัดการคืนมัดจำ") : "ยกเลิก"}
                           </button>
                         )}
                         {/* ยืนยันไปแล้วจะปฏิเสธไม่ได้ (สลิปถูกล็อกกับรายการนี้แล้ว) แต่แก้เลนส์ได้ */}

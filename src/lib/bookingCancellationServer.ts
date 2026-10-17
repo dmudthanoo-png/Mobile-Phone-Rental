@@ -41,6 +41,9 @@ export function cancellationDatabaseError(error: { message: string; code?: strin
 }
 
 const errors: Record<string, string> = {
+  INVALID_REFUND_MODE: "กรุณาเลือกกรณีคืนมัดจำหรือไม่คืนมัดจำก่อนยืนยัน",
+  CANCELLATION_MODE_LOCKED: "รายการนี้ยืนยันการยกเลิกแล้ว ไม่สามารถสลับกรณีคืนมัดจำ/ไม่คืนมัดจำได้",
+  REFUND_NOT_ENTITLED: "รายการนี้ยกเลิกแบบไม่คืนมัดจำ ไม่สามารถรับงานหรือบันทึกคืนเงินได้",
   UNAUTHORIZED: "ไม่มีสิทธิ์ดำเนินการ", NOT_FOUND: "ไม่พบรายการนี้",
   INVALID_REASON: "กรุณาระบุเหตุผล 3–500 ตัวอักษร", NOT_CONFIRMED: "ยกเลิกได้เฉพาะรายการที่ยืนยันแล้ว",
   ALREADY_FULFILLED: "รายการนี้มีการส่งมอบ/คืนเครื่อง/ส่งไฟล์แล้ว ไม่สามารถยกเลิกผ่านขั้นตอนนี้",

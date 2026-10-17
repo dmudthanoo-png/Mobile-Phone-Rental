@@ -27,13 +27,15 @@ export function resolveCancellationDeposit(booking: {
 export type CancellationSummary = {
   booking_id: string;
   refund_amount: number;
-  refund_status: "pending" | "processing" | "refunded";
+  refund_status: "pending" | "processing" | "refunded" | "not_entitled";
   cancelled_at: string;
   refunded_at: string | null;
 };
 
 export function cancellationLabel(cancellation?: CancellationSummary | null) {
-  if (!cancellation || !isRefundAmount(cancellation.refund_amount)) return "ยกเลิกแล้ว — กำลังตรวจสอบสถานะคืนเงิน";
+  if (cancellation?.refund_status === "not_entitled" && cancellation.refund_amount === 0) return "ยกเลิกแล้ว — ไม่คืนมัดจำ";
+  if (!cancellation || !isRefundAmount(cancellation.refund_amount)
+    || !["pending", "processing", "refunded"].includes(cancellation.refund_status)) return "ยกเลิกแล้ว — กำลังตรวจสอบสถานะคืนเงิน";
   const amount = formatRefundAmount(cancellation.refund_amount);
   return cancellation.refund_status === "refunded"
     ? `ยกเลิกแล้ว — คืนมัดจำ ${amount} บาทแล้ว`

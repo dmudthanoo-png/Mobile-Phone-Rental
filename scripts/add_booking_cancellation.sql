@@ -1,12 +1,12 @@
--- Run in Supabase SQL Editor BEFORE deploying (rerun to upgrade the THB 100 version).
+-- Run in Supabase SQL Editor BEFORE deploying (also upgrades earlier refund-only versions).
 -- Additive migration: does not cancel/refund any existing booking or change stock.
--- Scope: one confirmed, not-yet-delivered booking; refund its accepted deposit; no LINE.
+-- Scope: one confirmed, not-yet-delivered booking; explicitly refund OR retain deposit; no LINE.
 begin;
 
 create table if not exists public.booking_cancellations (
   booking_id uuid primary key references public.bookings(id),
   refund_amount numeric(12,2) not null,
-  refund_status text not null default 'pending' check (refund_status in ('pending', 'processing', 'refunded')),
+  refund_status text not null default 'pending',
   reason text not null check (char_length(btrim(reason)) between 3 and 500),
   cancelled_at timestamptz not null default now(),
   cancelled_by uuid not null,
@@ -18,22 +18,29 @@ create table if not exists public.booking_cancellations (
   refunded_by uuid,
   refunded_by_username text,
   refund_reference text unique,
-  refund_proof_path text unique,
-  constraint booking_cancellation_refund_state check (
-    (refund_status = 'pending' and processing_by is null and processing_at is null
-      and refunded_at is null and refunded_by is null and refund_reference is null and refund_proof_path is null)
-    or (refund_status = 'processing' and processing_by is not null and processing_at is not null
-      and refunded_at is null and refunded_by is null and refund_reference is null and refund_proof_path is null)
-    or (refund_status = 'refunded' and processing_by is not null and processing_at is not null
-      and refunded_at is not null and refunded_by is not null and refund_reference is not null and refund_proof_path is not null)
-  )
+  refund_proof_path text unique
 );
 -- Upgrade the earlier fixed-100 schema WITHOUT recomputing any past refunds.
 alter table public.booking_cancellations drop constraint if exists booking_cancellations_refund_amount_check;
+alter table public.booking_cancellations drop constraint if exists booking_cancellations_refund_status_check;
+alter table public.booking_cancellations drop constraint if exists booking_cancellation_refund_state;
 alter table public.booking_cancellations alter column refund_amount drop default;
 alter table public.booking_cancellations alter column refund_amount type numeric(12,2) using refund_amount::numeric(12,2);
 alter table public.booking_cancellations add constraint booking_cancellations_refund_amount_check
-  check (refund_amount > 0 and refund_amount <= 9999999999.99);
+  check ((refund_status = 'not_entitled' and refund_amount = 0)
+    or (refund_status <> 'not_entitled' and refund_amount > 0 and refund_amount <= 9999999999.99));
+alter table public.booking_cancellations add constraint booking_cancellations_refund_status_check
+  check (refund_status in ('pending', 'processing', 'refunded', 'not_entitled'));
+alter table public.booking_cancellations add constraint booking_cancellation_refund_state check (
+  (refund_status = 'not_entitled' and processing_by is null and processing_by_username is null and processing_at is null
+    and refunded_at is null and refunded_by is null and refunded_by_username is null and refund_reference is null and refund_proof_path is null)
+  or (refund_status = 'pending' and processing_by is null and processing_at is null
+    and refunded_at is null and refunded_by is null and refund_reference is null and refund_proof_path is null)
+  or (refund_status = 'processing' and processing_by is not null and processing_at is not null
+    and refunded_at is null and refunded_by is null and refund_reference is null and refund_proof_path is null)
+  or (refund_status = 'refunded' and processing_by is not null and processing_at is not null
+    and refunded_at is not null and refunded_by is not null and refund_reference is not null and refund_proof_path is not null)
+);
 create index if not exists booking_cancellations_status_idx on public.booking_cancellations(refund_status);
 alter table public.booking_cancellations enable row level security;
 revoke all on public.booking_cancellations from PUBLIC, anon, authenticated;
@@ -52,11 +59,12 @@ create policy refund_proofs_service_only on storage.objects as restrictive
 for all to anon, authenticated
 using (bucket_id <> 'refund-proofs') with check (bucket_id <> 'refund-proofs');
 
--- Remove the old overload; cached clients must reload rather than confirm an
--- amount they have not seen. Do not cascade: unexpected dependencies must stop rollout.
+-- Remove old overloads; cached clients must reload and choose a cancellation case.
+-- Do not cascade: unexpected dependencies must stop rollout.
 drop function if exists public.admin_cancel_booking(uuid, uuid, text);
+drop function if exists public.admin_cancel_booking(uuid, uuid, text, numeric);
 create or replace function public.admin_cancel_booking(
-  p_booking_id uuid, p_admin_id uuid, p_reason text, p_expected_refund_amount numeric
+  p_booking_id uuid, p_admin_id uuid, p_reason text, p_expected_refund_amount numeric, p_refund_mode text
 )
 returns jsonb language plpgsql set search_path = public as $function$
 declare
@@ -64,11 +72,15 @@ declare
   c public.booking_cancellations%rowtype;
   v_username text;
   v_refund_amount numeric;
+  v_refund_status text;
 begin
   select username into v_username from public.admin_users where id = p_admin_id;
   if not found then return jsonb_build_object('error', 'UNAUTHORIZED'); end if;
   if p_reason is null or char_length(btrim(p_reason)) not between 3 and 500 then
     return jsonb_build_object('error', 'INVALID_REASON');
+  end if;
+  if p_refund_mode is null or p_refund_mode not in ('refund', 'no_refund') then
+    return jsonb_build_object('error', 'INVALID_REFUND_MODE');
   end if;
 
   -- Same first lock as lens editing and fulfillment updates. Recheck after lock.
@@ -76,6 +88,9 @@ begin
   if not found then return jsonb_build_object('error', 'NOT_FOUND'); end if;
   select * into c from public.booking_cancellations where booking_id = p_booking_id;
   if b.status = 'cancelled' and found then
+    if (c.refund_status = 'not_entitled') <> (p_refund_mode = 'no_refund') then
+      return jsonb_build_object('error', 'CANCELLATION_MODE_LOCKED');
+    end if;
     return jsonb_build_object('ok', true, 'unchanged', true);
   end if;
   if coalesce(b.status, '') <> 'confirmed' then
@@ -84,37 +99,46 @@ begin
   if b.delivered_at is not null or b.returned_at is not null or b.files_sent_at is not null then
     return jsonb_build_object('error', 'ALREADY_FULFILLED');
   end if;
-  -- Never infer money from the current phone price. A confirmed booking is the
-  -- admin's acceptance of the payment; a verified slip can cover old NULL deposits.
-  v_refund_amount := coalesce(b.deposit_amount::numeric,
-    case when b.slip_verified is true then b.slip_verify_amount else null end);
-  if v_refund_amount is null then return jsonb_build_object('error', 'DEPOSIT_UNKNOWN'); end if;
-  if not (v_refund_amount > 0 and v_refund_amount <= 9999999999.99)
-    or round(v_refund_amount, 2) <> v_refund_amount then
-    return jsonb_build_object('error', 'DEPOSIT_INVALID');
-  end if;
-  -- Even a non-passing slip may expose an over/underpayment. Never silently use
-  -- the expected deposit when the returned amount disagrees; review it first.
-  if b.slip_verify_amount is not null and b.slip_verify_amount <> v_refund_amount then
-    return jsonb_build_object('error', 'DEPOSIT_MISMATCH');
-  end if;
-  if p_expected_refund_amount is distinct from v_refund_amount then
-    return jsonb_build_object('error', 'REFUND_AMOUNT_CHANGED');
+  if p_refund_mode = 'no_refund' then
+    -- No outgoing money and no refund task. Original deposit/slip stay unchanged.
+    -- Missing old deposit metadata must not keep an otherwise cancelled unit held.
+    v_refund_amount := 0;
+    v_refund_status := 'not_entitled';
+  else
+    -- Never infer money from the current phone price. A confirmed booking is the
+    -- admin's acceptance of the payment; a verified slip can cover old NULL deposits.
+    v_refund_amount := coalesce(b.deposit_amount::numeric,
+      case when b.slip_verified is true then b.slip_verify_amount else null end);
+    if v_refund_amount is null then return jsonb_build_object('error', 'DEPOSIT_UNKNOWN'); end if;
+    if not (v_refund_amount > 0 and v_refund_amount <= 9999999999.99)
+      or round(v_refund_amount, 2) <> v_refund_amount then
+      return jsonb_build_object('error', 'DEPOSIT_INVALID');
+    end if;
+    -- Even a non-passing slip may expose an over/underpayment. Never silently use
+    -- the expected deposit when the returned amount disagrees; review it first.
+    if b.slip_verify_amount is not null and b.slip_verify_amount <> v_refund_amount then
+      return jsonb_build_object('error', 'DEPOSIT_MISMATCH');
+    end if;
+    if p_expected_refund_amount is distinct from v_refund_amount then
+      return jsonb_build_object('error', 'REFUND_AMOUNT_CHANGED');
+    end if;
+    v_refund_status := 'pending';
   end if;
 
-  insert into public.booking_cancellations(booking_id, refund_amount, reason, cancelled_by, cancelled_by_username)
-  values (p_booking_id, v_refund_amount, btrim(p_reason), p_admin_id, v_username);
+  insert into public.booking_cancellations(booking_id, refund_amount, refund_status, reason, cancelled_by, cancelled_by_username)
+  values (p_booking_id, v_refund_amount, v_refund_status, btrim(p_reason), p_admin_id, v_username);
   -- Stock is counted from active bookings. Do NOT change catalog quantities,
   -- session quotas, historical amounts, deposit, lens details or the original slip.
   update public.bookings set status = 'cancelled' where id = p_booking_id;
   insert into public.admin_audit_log(admin_username, action, detail)
-  values (v_username, format('ยกเลิกการจอง — รอคืนมัดจำ %s บาท', v_refund_amount),
+  values (v_username, case when p_refund_mode = 'no_refund' then 'ยกเลิกการจอง — ไม่คืนมัดจำ'
+    else format('ยกเลิกการจอง — รอคืนมัดจำ %s บาท', v_refund_amount) end,
     format('booking %s · REF %s · %s', p_booking_id, b.ref_number, btrim(p_reason)));
   return jsonb_build_object('ok', true, 'unchanged', false);
 end;
 $function$;
-revoke all on function public.admin_cancel_booking(uuid, uuid, text, numeric) from PUBLIC, anon, authenticated;
-grant execute on function public.admin_cancel_booking(uuid, uuid, text, numeric) to service_role;
+revoke all on function public.admin_cancel_booking(uuid, uuid, text, numeric, text) from PUBLIC, anon, authenticated;
+grant execute on function public.admin_cancel_booking(uuid, uuid, text, numeric, text) to service_role;
 
 create or replace function public.admin_manage_booking_refund(
   p_booking_id uuid, p_admin_id uuid, p_action text,
@@ -138,6 +162,7 @@ begin
   if b.status is distinct from 'cancelled' then return jsonb_build_object('error', 'NOT_CANCELLED'); end if;
   select * into c from public.booking_cancellations where booking_id = p_booking_id for update;
   if not found then return jsonb_build_object('error', 'NOT_FOUND'); end if;
+  if c.refund_status = 'not_entitled' then return jsonb_build_object('error', 'REFUND_NOT_ENTITLED'); end if;
   if c.refund_status = 'refunded' then
     -- Retries must never overwrite the first successful refund/evidence.
     if p_action = 'complete' then return jsonb_build_object('ok', true, 'unchanged', true); end if;
@@ -200,7 +225,7 @@ create or replace function public.admin_cancellation_money_summary()
 returns jsonb language sql stable set search_path = public as $function$
   select jsonb_build_object(
     'revenue', active.revenue,
-    'deposit_received', active.deposit + refunds.pending_amount + refunds.paid_amount,
+    'deposit_received', active.deposit + refunds.pending_amount + refunds.paid_amount + retained.amount,
     'refund_pending', refunds.pending_amount,
     'refunded_amount', refunds.paid_amount
   )
@@ -212,7 +237,17 @@ returns jsonb language sql stable set search_path = public as $function$
     select coalesce(sum(refund_amount) filter (where refund_status in ('pending', 'processing')), 0) as pending_amount,
       coalesce(sum(refund_amount) filter (where refund_status = 'refunded'), 0) as paid_amount
     from public.booking_cancellations
-  ) refunds;
+  ) refunds
+  cross join (
+    -- A no-refund cancellation must not erase money the shop already received.
+    -- Booking payment fields are frozen on cancellation. Do not use rental value
+    -- or guess unknown legacy deposits from the current catalog price.
+    select coalesce(sum(coalesce(b.deposit_amount, case
+      when b.slip_verified is true and b.slip_verify_amount > 0 and b.slip_verify_amount <= 9999999999.99
+        and round(b.slip_verify_amount, 2) = b.slip_verify_amount then b.slip_verify_amount else 0 end)), 0) as amount
+    from public.booking_cancellations c join public.bookings b on b.id = c.booking_id
+    where c.refund_status = 'not_entitled'
+  ) retained;
 $function$;
 revoke all on function public.admin_cancellation_money_summary() from PUBLIC, anon, authenticated;
 grant execute on function public.admin_cancellation_money_summary() to service_role;
@@ -222,6 +257,9 @@ grant execute on function public.admin_cancellation_money_summary() to service_r
 create or replace function public.protect_cancellation_refund_amount()
 returns trigger language plpgsql set search_path = public as $function$
 begin
+  if (new.refund_status = 'not_entitled') is distinct from (old.refund_status = 'not_entitled') then
+    raise exception 'CANCELLATION_MODE_LOCKED';
+  end if;
   if new.refund_amount is distinct from old.refund_amount then
     raise exception 'CANCELLATION_REFUND_AMOUNT_READ_ONLY';
   end if;

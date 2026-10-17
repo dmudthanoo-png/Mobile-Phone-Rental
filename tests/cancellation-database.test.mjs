@@ -9,8 +9,9 @@ const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const bookingId = id(1), adminA = id(101), adminB = id(102), phone = id(201), lens = id(301), session = id(401), user = id(501);
 const migration = readFileSync(new URL('../scripts/add_booking_cancellation.sql', import.meta.url), 'utf8');
 const one = async (sql, params = []) => (await db.query(sql, params)).rows[0];
-const cancel = async (booking = bookingId, admin = adminA, reason = 'Customer request approved by shop', expected = 100) =>
-  (await one('select public.admin_cancel_booking($1,$2,$3,$4) as result', [booking, admin, reason, expected])).result;
+const cancel = async (booking = bookingId, admin = adminA, reason = 'Customer request approved by shop', expected = 100, mode = 'refund') =>
+  (await one('select public.admin_cancel_booking($1,$2,$3,$4,$5) as result', [booking, admin, reason, expected, mode])).result;
+const cancelWithoutRefund = (booking = bookingId) => cancel(booking, adminA, 'Customer cancelled without refund', null, 'no_refund');
 const refund = async (action, { booking = bookingId, admin = adminA, reference = null, path = null } = {}) =>
   (await one('select public.admin_manage_booking_refund($1,$2,$3,$4,$5) as result', [booking, admin, action, reference, path])).result;
 const booking = () => one('select * from bookings where id=$1', [bookingId]);
@@ -89,8 +90,8 @@ test('cancellation changes only status, keeps original money/slip/lens, and writ
   assert.equal((await cancel()).unchanged,true);
   assert.equal(Number((await one('select count(*) n from admin_audit_log')).n),1);
 });
-test('catalog and session stock unchanged, while a new hold can reserve the released phone AND lens', async () => {
-  await cancel();
+for (const mode of ['refund', 'no_refund']) test(`${mode}: catalog stock unchanged, a new hold can reserve the released phone AND lens`, async () => {
+  await cancel(bookingId, adminA, 'Cancel and release stock', 100, mode);
   for(const table of ['phones','lenses','session_phone_inventory','session_lens_inventory']) assert.equal((await one(`select qty from ${table}`)).qty,1);
   const hold = (await one('select create_booking_hold($1,$2,$3,1,$4,1,$5,$6,1000,100,420) as result', [id(502),session,phone,lens,'New customer','0000000000'])).result;
   assert.equal(hold.ok,true);
@@ -101,12 +102,14 @@ test('only confirmed bookings may be cancelled', async () => {
   for(const status of ['pending','rejected','waiting_review',null]) {
     await db.query('update bookings set status=$1 where id=$2',[status,bookingId]);
     assert.equal((await cancel()).error,'NOT_CONFIRMED');
+    assert.equal((await cancelWithoutRefund()).error,'NOT_CONFIRMED');
   }
 });
 test('fulfillment blocks cancellation for delivered, returned and files-sent bookings', async () => {
   for(const column of ['delivered_at','returned_at','files_sent_at']) {
     await db.exec(`update bookings set ${column}=now()`);
     assert.equal((await cancel()).error,'ALREADY_FULFILLED');
+    assert.equal((await cancelWithoutRefund()).error,'ALREADY_FULFILLED');
     await db.exec(`update bookings set ${column}=null`);
   }
 });
@@ -182,10 +185,12 @@ test('upgrade from fixed-100 schema keeps existing evidence and removes the unsa
     alter table booking_cancellations alter column refund_amount set default 100;
     alter table booking_cancellations add constraint booking_cancellations_refund_amount_check check (refund_amount=100);
     create function admin_cancel_booking(uuid,uuid,text) returns jsonb language sql as $$ select '{"ok":true}'::jsonb $$;
+    create function admin_cancel_booking(uuid,uuid,text,numeric) returns jsonb language sql as $$ select '{"ok":true}'::jsonb $$;
   `);
   await db.exec(migration);
   assert.deepEqual(await cancellation(), old);
   assert.equal((await one("select to_regprocedure('public.admin_cancel_booking(uuid,uuid,text)') as old_rpc")).old_rpc, null);
+  assert.equal((await one("select to_regprocedure('public.admin_cancel_booking(uuid,uuid,text,numeric)') as old_rpc")).old_rpc, null);
   assert.equal((await one("select column_default from information_schema.columns where table_name='booking_cancellations' and column_name='refund_amount'")).column_default, null);
   await db.query("insert into bookings(id,ref_number,status,total_amount,deposit_amount,slip_verify_amount,slip_verified) values ($1,'AFTER-UPGRADE','confirmed',3000,200,200,true)", [id(2)]);
   assert.equal((await cancel(id(2), adminA, 'Actual deposit after upgrade', 200)).ok, true);
@@ -210,9 +215,9 @@ test('invalid actor, booking and reason rejected without writes', async () => {
   for(const reason of ['', '  ', 'x'.repeat(501),null]) assert.equal((await cancel(bookingId,adminA,reason)).error,'INVALID_REASON');
   assert.equal(Number((await one('select count(*) n from booking_cancellations')).n),0);
 });
-test('audit failure rolls back the cancellation, not just the log', async () => {
+for (const mode of ['refund', 'no_refund']) test(`${mode}: audit failure rolls back cancellation, not just the log`, async () => {
   await db.exec("create function reject_test_audit() returns trigger language plpgsql as $$ begin raise exception 'test audit failure'; end $$; create trigger reject_test_audit before insert on admin_audit_log for each row execute function reject_test_audit()");
-  try { await assert.rejects(cancel(),/test audit failure/); assert.equal((await booking()).status,'confirmed'); assert.equal(await cancellation(),undefined); }
+  try { await assert.rejects(cancel(bookingId,adminA,'Atomic cancellation',100,mode),/test audit failure/); assert.equal((await booking()).status,'confirmed'); assert.equal(await cancellation(),undefined); }
   finally { await db.exec('drop trigger reject_test_audit on admin_audit_log; drop function reject_test_audit()'); }
 });
 test('refund work can only be owned by one admin and cannot be completed by another', async () => {
@@ -246,8 +251,8 @@ test('bank transfer reference cannot refund two bookings', async () => {
   assert.equal((await refund('complete',{booking:id(2),reference:' same-ref ',path:await proof(id(2),702)})).error,'REFERENCE_USED');
   assert.equal((await one('select refund_status from booking_cancellations where booking_id=$1',[id(2)])).refund_status,'processing');
 });
-test('cancelled booking cannot be resurrected, edited, deleted or have its slip/payment replaced', async () => {
-  await cancel();
+for (const mode of ['refund', 'no_refund']) test(`${mode}: cancelled booking cannot be resurrected, edited, deleted or have its slip/payment replaced`, async () => {
+  await cancel(bookingId,adminA,'Freeze cancelled booking',100,mode);
   for(const sql of ["status='confirmed'",'total_amount=0','deposit_amount=0',"slip_verify_ref='reused'",'slip_verified=false','lens_qty=0']) {
     await assert.rejects(db.exec(`update bookings set ${sql}`),/CANCELLED_BOOKING_READ_ONLY/);
   }
@@ -258,6 +263,81 @@ test('cancelled booking cannot be resurrected, edited, deleted or have its slip/
 test('normal lens editing still works before cancellation', async () => {
   const result=(await one('select admin_set_booking_lens($1,null,0) result',[bookingId])).result;
   assert.equal(result.ok,true); assert.equal((await booking()).total_amount,800); assert.equal((await booking()).status,'confirmed');
+});
+
+test('no-refund cancellation preserves history, leaves fulfillment and cannot create any refund work', async () => {
+  const original = await booking();
+  assert.equal((await cancelWithoutRefund()).ok, true);
+  assert.deepEqual(await booking(), { ...original, status: 'cancelled' });
+  const c = await cancellation();
+  assert.equal(c.refund_amount, 0); assert.equal(c.refund_status, 'not_entitled');
+  assert.equal(c.cancelled_by, adminA); assert.equal(c.cancelled_by_username, 'admin-a');
+  assert.equal(c.reason, 'Customer cancelled without refund'); assert(c.cancelled_at);
+  for (const field of ['processing_by','processing_by_username','processing_at','refunded_at','refunded_by','refunded_by_username','refund_reference','refund_proof_path']) assert.equal(c[field], null);
+  assert.equal((await one("select count(*) n from bookings where status='confirmed'")).n, 0);
+  // The fulfillment API updates only confirmed rows; a cancelled row remains intact.
+  assert.equal((await db.query("update bookings set delivered_at=now() where id=$1 and status='confirmed' returning id", [bookingId])).rows.length, 0);
+  for (const action of ['claim','release','complete']) assert.equal((await refund(action, { reference: 'REFUND-NOT-ALLOWED', path: await proof(bookingId, 710 + action.length) })).error, 'REFUND_NOT_ENTITLED');
+  assert.equal((await cancelWithoutRefund()).unchanged, true);
+  assert.deepEqual(await cancellation(), c);
+  assert.equal(Number((await one('select count(*) n from admin_audit_log')).n), 1);
+  assert.match((await one('select action from admin_audit_log')).action, /ไม่คืนมัดจำ/);
+});
+
+test('no cancellation mode is implied for old or invalid clients', async () => {
+  for (const mode of [null, '', 'cancel', 'REFUND']) {
+    assert.equal((await cancel(bookingId, adminA, 'Choose case first', 100, mode)).error, 'INVALID_REFUND_MODE');
+  }
+  assert.equal((await booking()).status, 'confirmed'); assert.equal(await cancellation(), undefined);
+  await assert.rejects(db.exec(`select admin_cancel_booking('${bookingId}','${adminA}','Old client',100)`), /does not exist/);
+});
+
+test('no-refund case cannot be changed through retries, direct SQL or a new migration', async () => {
+  await cancelWithoutRefund(); const old = await cancellation();
+  assert.equal((await cancel()).error, 'CANCELLATION_MODE_LOCKED');
+  await assert.rejects(db.exec("update booking_cancellations set refund_status='pending', refund_amount=100"), /CANCELLATION_MODE_LOCKED/);
+  await assert.rejects(db.exec("update booking_cancellations set refund_reference='FAKE-TRANSFER'"), /booking_cancellation_refund_state/);
+  await assert.rejects(db.exec('update booking_cancellations set refund_amount=100'), /CANCELLATION_REFUND_AMOUNT_READ_ONLY/);
+  await db.exec(migration);
+  assert.deepEqual(await cancellation(), old);
+  assert.equal((await cancel()).error, 'CANCELLATION_MODE_LOCKED');
+  assert.equal((await cancelWithoutRefund()).unchanged, true);
+});
+
+test('refund case cannot be changed to no-refund in pending, processing or refunded state', async () => {
+  await cancel();
+  for (const state of ['pending','processing','refunded']) {
+    if (state === 'processing') await refund('claim');
+    if (state === 'refunded') await refund('complete', { reference: 'KEEP-REFUND', path: await proof() });
+    const old = await cancellation(); assert.equal(old.refund_status, state);
+    assert.equal((await cancelWithoutRefund()).error, 'CANCELLATION_MODE_LOCKED');
+    await assert.rejects(db.exec("update booking_cancellations set refund_status='not_entitled', refund_amount=0"), /CANCELLATION_MODE_LOCKED/);
+    await db.exec(migration);
+    assert.deepEqual(await cancellation(), old);
+    assert.equal((await cancel()).unchanged, true);
+  }
+});
+
+for (const [deposit, verified, slip, gross] of [[200,true,200,200],[null,true,200.5,200.5],[null,false,200,0],[100,true,200,100]]) {
+  test(`retained deposit summary: deposit=${deposit}, verified=${verified}, slip=${slip}`, async () => {
+    await db.query('update bookings set deposit_amount=$1, slip_verified=$2, slip_verify_amount=$3', [deposit,verified,slip]);
+    const original = await booking();
+    assert.equal((await cancelWithoutRefund()).ok, true);
+    assert.deepEqual(await booking(), { ...original, status: 'cancelled' });
+    assert.deepEqual((await one('select admin_cancellation_money_summary() result')).result,
+      { revenue: 0, deposit_received: gross, refund_pending: 0, refunded_amount: 0 });
+  });
+}
+
+test('mixed active, retained, awaiting and refunded deposits are counted exactly once', async () => {
+  await cancelWithoutRefund();
+  await db.query("insert into bookings(id,ref_number,status,total_amount,deposit_amount) values ($1,'WAITING','confirmed',3000,200),($2,'PAID','confirmed',3000,300),($3,'ACTIVE','confirmed',4000,400)", [id(2),id(3),id(4)]);
+  await cancel(id(2), adminA, 'Waiting refund', 200);
+  await cancel(id(3), adminA, 'Paid refund', 300);
+  await refund('claim', { booking: id(3) });
+  await refund('complete', { booking: id(3), reference: 'PAID-300', path: await proof(id(3)) });
+  assert.deepEqual((await one('select admin_cancellation_money_summary() result')).result,
+    { revenue: 4000, deposit_received: 1000, refund_pending: 200, refunded_amount: 300 });
 });
 test('RPC and refund table are inaccessible to browser roles; service role can execute', async () => {
   for(const role of ['anon','authenticated']) {

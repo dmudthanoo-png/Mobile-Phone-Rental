@@ -12,6 +12,7 @@ const ctx={params:Promise.resolve({id:bookingId})};
 const response={json:(body, init={})=>({body,status:init.status??200,headers:init.headers})};
 const noLog={logServerError:()=>{}};
 const url=`https://test.invalid/api/admin/bookings/${bookingId}`;
+const dialogStyles=new Proxy({}, {get:(_target,key)=>key==='__esModule'?false:String(key)});
 let oldFetch;
 before(()=>{ oldFetch=globalThis.fetch; globalThis.fetch=async()=>{throw new Error('Tests must not use the network');}; });
 after(()=>{globalThis.fetch=oldFetch;});
@@ -181,6 +182,7 @@ test('refund UI uses the stored amount in every state with no LINE action',()=>{
       refund_amount:99999, // The recorded cancellation amount must take precedence.
       cancellation:{booking_id:bookingId,refund_amount:amount,refund_status:status,cancelled_at:'2026-10-07T00:00:00Z',reason:'TEST',processing_by_username:'another admin'}};
     const component=loadTs('src/app/admin/BookingCancellationDialog.tsx',{
+      './BookingCancellationDialog.module.css':dialogStyles,
       react:{useState:init=>[n++===0?details:init,()=>{}],useEffect:()=>{},useRef:init=>({current:init})},'@/lib/bookingCancellation':labels,
     }).default;
     const html=renderToStaticMarkup(component({bookingId,onClose:()=>{},onSaved:()=>{}}));
@@ -244,6 +246,7 @@ test('customer labels and pre-cancellation button use the actual amount includin
     assert.equal(labels.cancellationLabel({refund_status:'refunded',refund_amount:amount}),`ยกเลิกแล้ว — คืนมัดจำ ${formatted} บาทแล้ว`);
     let n=0;
     const component=loadTs('src/app/admin/BookingCancellationDialog.tsx',{
+      './BookingCancellationDialog.module.css':dialogStyles,
       react:{useState:init=>{const i=n++;return [i===0?{booking:{renter_name:'TEST',ref_number:'TEST'},cancellation:null,refund_amount:amount,can_cancel:true,can_cancel_without_refund:true}:i===9?'refund':init,()=>{}];},useEffect:()=>{},useRef:init=>({current:init})},
       '@/lib/bookingCancellation':labels,
     }).default;
@@ -320,6 +323,7 @@ test('no-refund record cannot claim, release, upload evidence or create proof li
 function cancellationUi(details, overrides={}) {
   const states={0:details,...overrides};let n=0;
   const component=loadTs('src/app/admin/BookingCancellationDialog.tsx',{
+    './BookingCancellationDialog.module.css':dialogStyles,
     react:{useState:init=>{const i=n++;if(!Object.hasOwn(states,i))states[i]=init;return [states[i],v=>{states[i]=v;}];},useEffect:()=>{},useRef:init=>({current:init})},
     '@/lib/bookingCancellation':loadTs('src/lib/bookingCancellation.ts'),
   }).default;
@@ -412,4 +416,144 @@ test('stale fulfillment requests cannot update a cancelled booking or its notes'
     assert.equal((await api.POST(jsonReq('/fulfillment',body))).status,404);
   }
   assert.equal(calls.length,4);
+});
+
+test('short cancellation reasons explain the disabled button with accessible validation',()=>{
+  for(const reason of ['-', '  ', 'ab']) {
+    const ui=cancellationUi(cancellableDetails(),{3:reason,4:true,9:'no_refund'});
+    const tree=ui.render(),html=renderToStaticMarkup(tree);
+    const input=nodes(tree).find(n=>n.type==='textarea');
+    assert.equal(input.props['aria-invalid'],true);
+    assert.equal(input.props['aria-describedby'],'cancellation-reason-hint');
+    assert(html.includes('กรุณาระบุเหตุผลอย่างน้อย 3 ตัวอักษร'));
+    assert.equal(confirmButton(tree).props.disabled,true);
+    assert.equal(confirmButton(tree).props['aria-describedby'],'cancellation-action-hint');
+    confirmButton(tree).props.onClick(); // Disabled handler must not send any request either.
+  }
+  const ui=cancellationUi(cancellableDetails(),{3:'ลูกค้าขอยกเลิก',4:true,9:'no_refund'});
+  const tree=ui.render();
+  assert.equal(nodes(tree).find(n=>n.type==='textarea').props['aria-invalid'],false);
+  assert.equal(confirmButton(tree).props.disabled,false);
+  assert.equal(confirmButton(tree).props['aria-describedby'],undefined);
+});
+
+test('dialog explains refresh and styles disabled actions separately without changing refund rules',()=>{
+  const html=renderToStaticMarkup(cancellationUi(cancellableDetails()).render());
+  assert(html.includes('ดูข้อมูลล่าสุด ไม่ทำรายการซ้ำ'));
+  assert(html.includes('ระบุเหตุผล 3–500 ตัวอักษร'));
+  assert(html.includes('เลือกกรณีการยกเลิกก่อนดำเนินการ'));
+  const css=readFileSync(new URL('../src/app/admin/BookingCancellationDialog.module.css',import.meta.url),'utf8');
+  assert(css.includes('button:disabled'));assert(css.includes('cursor: not-allowed'));
+  assert(css.includes('@media (max-width: 380px)'));assert(css.includes(':focus-visible'));
+});
+
+test('cancellation dialog loads scoped styles with the existing website brand colors',()=>{
+  const source=readFileSync(new URL('../src/app/admin/BookingCancellationDialog.tsx',import.meta.url),'utf8');
+  const css=readFileSync(new URL('../src/app/admin/BookingCancellationDialog.module.css',import.meta.url),'utf8');
+  const admin=readFileSync(new URL('../src/app/admin/page.tsx',import.meta.url),'utf8').toLowerCase();
+  assert(source.includes('import styles from "./BookingCancellationDialog.module.css"'));
+  const tokens=Object.fromEntries([...css.matchAll(/--cancel-([\w-]+):\s*(#[a-f\d]{6});/gi)].map(match=>[match[1],match[2].toLowerCase()]));
+  for(const name of ['ink','border','background','accent','accent-bright','accent-soft']) {
+    assert(tokens[name],`Missing dialog theme token: ${name}`);
+    assert(admin.includes(tokens[name]),`${name} must match an existing admin brand color`);
+  }
+  // The text-safe pink also backs white button text; brighter brand pink is for accents.
+  const luminance=color=>{
+    const rgb=color.slice(1).match(/../g).map(hex=>parseInt(hex,16)/255);
+    const linear=rgb.map(c=>c<=0.04045?c/12.92:((c+0.055)/1.055)**2.4);
+    return linear[0]*0.2126+linear[1]*0.7152+linear[2]*0.0722;
+  };
+  assert(1.05/(luminance(tokens.accent)+0.05)>=4.5,'White button text must be readable on the main accent');
+  for(const background of ['accent-soft','selected']) {
+    assert((luminance(tokens[background])+0.05)/(luminance(tokens['accent-ink'])+0.05)>=4.5,
+      `Small pink text must be readable on ${background}`);
+  }
+});
+
+function viewportUi(viewport, initialOverflow='') {
+  const effects=[];
+  const values=new Map(initialOverflow ? [['overflow',[initialOverflow,'important']]] : []);
+  const style={
+    setProperty:(key,value,priority='')=>values.set(key,[value,priority]),
+    getPropertyValue:key=>values.get(key)?.[0]??'',
+    getPropertyPriority:key=>values.get(key)?.[1]??'',
+    removeProperty:key=>values.delete(key),
+  };
+  const overlayValues=new Map(),attributes=new Set();
+  const overlay={style:{setProperty:(key,value)=>overlayValues.set(key,value),removeProperty:key=>overlayValues.delete(key)},
+    toggleAttribute:(key,on)=>on?attributes.add(key):attributes.delete(key),removeAttribute:key=>attributes.delete(key)};
+  const component=loadTs('src/app/admin/BookingCancellationDialog.tsx',{
+    './BookingCancellationDialog.module.css':dialogStyles,
+    react:{useState:init=>[init,()=>{}],useEffect:fn=>effects.push(fn),useRef:init=>({current:init})},
+    '@/lib/bookingCancellation':loadTs('src/lib/bookingCancellation.ts'),
+  }).default;
+  const tree=component({bookingId,onClose:()=>{},onSaved:()=>{}});
+  tree.props.ref.current=overlay;
+  const originalWindow=Object.getOwnPropertyDescriptor(globalThis,'window');
+  const originalDocument=Object.getOwnPropertyDescriptor(globalThis,'document');
+  Object.defineProperty(globalThis,'window',{configurable:true,value:{visualViewport:viewport}});
+  Object.defineProperty(globalThis,'document',{configurable:true,value:{body:{style}}});
+  return {values,overlayValues,attributes,mount:()=>{
+    assert.equal(effects.length,2);
+    return effects[1](); // Layout effect only: never run the API-loading effect.
+  },restore:()=>{
+    if(originalWindow)Object.defineProperty(globalThis,'window',originalWindow);else delete globalThis.window;
+    if(originalDocument)Object.defineProperty(globalThis,'document',originalDocument);else delete globalThis.document;
+  }};
+}
+
+test('mobile dialog follows keyboard height and panning, preserves pinch zoom, and restores scrolling',()=>{
+  const listeners=new Map();
+  const viewport={height:760,offsetTop:0,scale:1,
+    addEventListener:(event,listener)=>listeners.set(event,listener),
+    removeEventListener:(event,listener)=>{assert.equal(listeners.get(event),listener);listeners.delete(event);}};
+  const ui=viewportUi(viewport,'scroll');let cleanup;
+  try {
+    cleanup=ui.mount();
+    assert.deepEqual(ui.values.get('overflow'),['hidden','']);
+    assert.equal(ui.overlayValues.get('--cancel-viewport-height'),'760px');
+    assert.equal(ui.attributes.has('data-compact-viewport'),false);
+    assert.equal(listeners.size,2);
+    viewport.height=320;viewport.offsetTop=40;listeners.get('resize')();
+    assert.equal(ui.overlayValues.get('--cancel-viewport-height'),'320px');
+    assert.equal(ui.attributes.has('data-compact-viewport'),true);
+    viewport.offsetTop=80;listeners.get('scroll')();
+    assert.equal(ui.overlayValues.get('--cancel-viewport-top'),'80px');
+    viewport.scale=2;viewport.height=160;listeners.get('resize')();
+    assert.equal(ui.overlayValues.get('--cancel-viewport-height'),'320px');
+    viewport.scale=1;viewport.height=760;viewport.offsetTop=0;listeners.get('resize')();
+    assert.equal(ui.overlayValues.get('--cancel-viewport-height'),'760px');
+    assert.equal(ui.attributes.has('data-compact-viewport'),false);
+    cleanup();cleanup=null;
+    assert.equal(listeners.size,0);assert.equal(ui.overlayValues.size,0);assert.equal(ui.attributes.size,0);
+    assert.deepEqual(ui.values.get('overflow'),['scroll','important']);
+    cleanup=ui.mount(); // React Strict Mode setup/cleanup must remain safe.
+    assert.equal(listeners.size,2);
+  } finally {cleanup?.();ui.restore();}
+  assert.equal(listeners.size,0);
+  assert.deepEqual(ui.values.get('overflow'),['scroll','important']);
+});
+
+test('mobile layout falls back to CSS without VisualViewport and does not leave the page scroll-locked',()=>{
+  const ui=viewportUi(undefined);let cleanup;
+  try {
+    cleanup=ui.mount();
+    assert.deepEqual(ui.values.get('overflow'),['hidden','']);
+    assert.equal(ui.overlayValues.size,0);
+    cleanup();cleanup=null;
+    assert.equal(ui.values.has('overflow'),false);
+  } finally {cleanup?.();ui.restore();}
+});
+
+test('mobile CSS stacks choices, enlarges touch targets and keeps short-screen forms scrollable',()=>{
+  const css=readFileSync(new URL('../src/app/admin/BookingCancellationDialog.module.css',import.meta.url),'utf8');
+  const mobile=css.split('@media (max-width: 600px)')[1].split('@media (max-width: 380px)')[0];
+  assert(mobile.includes('grid-template-columns: minmax(0, 1fr)'));
+  assert(mobile.includes('min-height: 48px'));assert(mobile.includes('.dialog .field { font-size: 16px; }'));
+  for(const edge of ['top','right','bottom','left'])assert(mobile.includes(`safe-area-inset-${edge}`));
+  assert(css.includes('.overlay[data-compact-viewport] .dialog { display: block; overflow-y: auto;'));
+  assert(css.includes('@media (max-height: 460px)'));assert(css.includes('@media (pointer: coarse)'));
+  const tree=cancellationUi(cancellableDetails()).render();
+  assert(nodes(tree).filter(n=>n.type==='input').every(input=>
+    nodes(tree).some(label=>label.type==='label'&&nodes(label.props.children).includes(input))));
 });

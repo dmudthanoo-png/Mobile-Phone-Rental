@@ -1,0 +1,187 @@
+.overlay {
+  --cancel-viewport-gap: 48px;
+  position: fixed;
+  inset: 0;
+  top: var(--cancel-viewport-top, 0px);
+  bottom: auto;
+  height: 100vh;
+  height: var(--cancel-viewport-height, 100dvh);
+  box-sizing: border-box;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(36, 31, 28, .48);
+  backdrop-filter: blur(5px);
+  overscroll-behavior: contain;
+}
+.dialog {
+  /* Match the admin's warm cream / pink palette; use strong pink for readable text. */
+  --cancel-ink: #241f1c;
+  --cancel-muted: #7a6d61;
+  --cancel-accent: #d81f5e;
+  --cancel-accent-ink: #b7194f;
+  --cancel-accent-bright: #f2467e;
+  --cancel-accent-soft: #ffe3ee;
+  --cancel-selected: #fff1f6;
+  --cancel-border: #f2e4d6;
+  --cancel-surface: #fff;
+  --cancel-background: #fffbf7;
+  --cancel-soft: #fff9f3;
+  --cancel-input: #fefcfa;
+  width: 100%;
+  min-width: 0;
+  max-width: 560px;
+  max-height: calc(100vh - var(--cancel-viewport-gap));
+  max-height: min(940px, calc(var(--cancel-viewport-height, 100dvh) - var(--cancel-viewport-gap)));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--cancel-border);
+  border-radius: 24px;
+  background: var(--cancel-background);
+  box-shadow: 0 28px 90px -24px rgba(36, 31, 28, .4);
+  color: var(--cancel-ink);
+  font: 14px/1.65 var(--font-noto-thai), "Leelawadee UI", "Segoe UI", sans-serif;
+  color-scheme: light;
+  overflow-wrap: anywhere;
+}
+.dialog, .dialog * { box-sizing: border-box; }
+.dialog :where(button, input, textarea) { font: inherit; }
+.dialog button { transition: background-color .15s, border-color .15s; }
+.dialog button:disabled, .dialog fieldset:disabled button { cursor: not-allowed; background: #f1eee9; border-color: #e8dfd6; color: #8a7f76; box-shadow: none; }
+.dialog input { accent-color: var(--cancel-accent); }
+.dialog :is(button, input, textarea, a):focus-visible { outline: 3px solid var(--cancel-accent-bright); outline-offset: 3px; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 26px 18px; flex-shrink: 0; }
+.heading { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.heading > div { min-width: 0; }
+.headerIcon { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 14px; background: var(--cancel-accent-soft); color: var(--cancel-accent-ink); font: 28px/1 sans-serif; }
+.eyebrow { margin: 0 0 2px; color: var(--cancel-muted); font-size: 11px; letter-spacing: .03em; }
+.title { margin: 0; font-size: 21px; font-weight: 700; line-height: 1.4; }
+.iconButton { width: 40px; min-height: 40px; border: 1px solid var(--cancel-border); border-radius: 12px; background: var(--cancel-surface); color: var(--cancel-muted); cursor: pointer; flex-shrink: 0; }
+.iconButton:hover:not(:disabled) { background: var(--cancel-selected); }
+.body { overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 20px; padding: 0 26px 22px; min-height: 0; }
+.booking { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 16px; background: var(--cancel-soft); border: 1px solid var(--cancel-border); border-radius: 14px; }
+.customer { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; }
+.customer > div { min-width: 0; overflow-wrap: anywhere; }
+.avatar { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; background: var(--cancel-accent-soft); color: var(--cancel-accent-ink); font-weight: 600; }
+.reference { color: var(--cancel-muted); font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.badge { border: 1px solid var(--cancel-border); background: var(--cancel-surface); color: var(--cancel-muted); border-radius: 20px; padding: 3px 9px; font-size: 11px; white-space: nowrap; }
+.info { display: flex; align-items: flex-start; gap: 9px; margin: 14px 0 20px; color: var(--cancel-muted); font-size: 12px; }
+.info p { margin: 0; }
+.info p span { color: var(--cancel-muted); }
+.infoIcon { flex-shrink: 0; display: grid; place-items: center; width: 17px; height: 17px; margin-top: 2px; border: 1px solid #ab9c8d; border-radius: 50%; color: var(--cancel-muted); font: 12px Georgia, serif; }
+.form, .choices { min-width: 0; margin: 0; padding: 0; border: 0; }
+.sectionTitle { display: flex; align-items: center; gap: 8px; padding: 0; margin: 0; font-size: 13px; font-weight: 600; }
+.sectionTitle > span { display: inline-grid; place-items: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: 7px; color: var(--cancel-accent-ink); background: var(--cancel-accent-soft); font-size: 11px; }
+.choiceGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 10px; }
+.choice { display: flex; flex-direction: column; padding: 13px 14px; border: 1px solid var(--cancel-border); border-radius: 14px; cursor: pointer; background: var(--cancel-surface); transition: border-color .15s, background-color .15s; }
+.choice:hover { border-color: var(--cancel-accent-bright); background: var(--cancel-selected); }
+.choice:focus-within { outline: 2px solid var(--cancel-accent-bright); outline-offset: 2px; }
+.choice.selected { border-color: var(--cancel-accent-bright); background: var(--cancel-selected); box-shadow: inset 0 0 0 1px var(--cancel-accent-bright); }
+.choiceHeading { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; font-weight: 500; }
+.choiceHeading input { margin: 0; width: 17px; height: 17px; flex-shrink: 0; }
+.choiceValue { font-size: 18px; margin: 5px 0 3px; line-height: 1.5; font-weight: 650; overflow-wrap: anywhere; }
+.selected .choiceValue { color: var(--cancel-accent-ink); }
+.choiceCaption { font-size: 11px; color: var(--cancel-muted); }
+.modeDescription { margin: 10px 0 12px; color: var(--cancel-muted); font-size: 12px; }
+.modeDescription p { margin: 0; }
+.warning { display: flex; align-items: flex-start; gap: 9px; margin: 0 0 20px; padding: 10px 12px; background: #fff8e9; border: 1px solid #f3e4bf; border-radius: 10px; color: #835d19; font-size: 12px; }
+.warning > span { display: grid; place-items: center; flex-shrink: 0; border: 1px solid #c69b4d; border-radius: 50%; width: 16px; height: 16px; margin-top: 2px; font-size: 11px; font-weight: 700; }
+.labelRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.counter { font-size: 11px; color: var(--cancel-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.field { display: block; width: 100%; min-width: 0; border: 1px solid var(--cancel-border); border-radius: 12px; background: var(--cancel-input); padding: 11px 13px; color: var(--cancel-ink); font-size: 14px; }
+.field::placeholder { color: var(--cancel-muted); }
+textarea.field { resize: vertical; min-height: 84px; max-height: 240px; }
+.field.invalid { border-color: #c84d70; background: #fffafb; }
+.hint, .fieldError { margin: 6px 0 0; font-size: 11px; }
+.hint { color: var(--cancel-muted); }
+.fieldError { color: #b52e55; }
+.confirmation { display: flex; align-items: flex-start; gap: 10px; padding: 13px 14px; margin: 16px 0; border: 1px solid var(--cancel-border); border-radius: 12px; background: var(--cancel-soft); font-size: 12px; cursor: pointer; }
+.confirmation input { width: 17px; height: 17px; flex-shrink: 0; margin: 3px 0 0; }
+.unavailable { color: var(--cancel-muted); cursor: not-allowed; }
+.primaryButton { display: block; width: 100%; padding: 12px 14px; min-height: 46px; border: 1px solid var(--cancel-accent); border-radius: 12px; background: linear-gradient(135deg, var(--cancel-accent), #c01850); box-shadow: 0 4px 12px rgba(242, 70, 126, .2); color: #fff; font-weight: 600; cursor: pointer; }
+.primaryButton:hover:not(:disabled) { background: #bd194f; }
+.actionHint { margin: 8px 0 0; color: var(--cancel-muted); font-size: 11px; text-align: center; }
+.footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 26px; flex-shrink: 0; background: var(--cancel-soft); border-top: 1px solid var(--cancel-border); }
+.footer > div { min-width: 0; }
+.footer > button { flex-shrink: 0; }
+.footer p { color: var(--cancel-muted); font-size: 11px; margin: 0 0 0 25px; }
+.refreshButton { padding: 4px 0; min-height: 32px; border: 0; background: transparent; color: var(--cancel-muted); cursor: pointer; font-size: 12px; }
+.refreshButton > span { font-size: 20px; margin-right: 6px; vertical-align: -1px; }
+.refreshButton:hover:not(:disabled) { color: var(--cancel-accent-ink); }
+.secondaryButton { padding: 9px 18px; min-height: 42px; border: 1px solid var(--cancel-border); border-radius: 11px; background: var(--cancel-surface); color: var(--cancel-ink); cursor: pointer; }
+.secondaryButton:hover:not(:disabled) { background: var(--cancel-selected); }
+.statusCard { border: 1px solid var(--cancel-border); border-radius: 15px; background: var(--cancel-selected); padding: 18px; margin-bottom: 14px; }
+.statusCard h3 { font-size: 17px; color: var(--cancel-accent-ink); line-height: 1.6; margin: 4px 0 12px; }
+.completed { background: #f2faf5; border-color: #d0e7d9; }
+.completed h3 { color: #286342; }
+.history { margin: 12px 0; font-size: 12px; }
+.history > div { display: grid; grid-template-columns: 105px minmax(0, 1fr); gap: 10px; margin-top: 8px; }
+.history dt { color: var(--cancel-muted); }
+.history dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.description { color: var(--cancel-muted); margin: 14px 0; font-size: 13px; }
+.inputLabel { display: block; margin: 16px 0; font-size: 13px; }
+.inputLabel .field { margin-top: 8px; }
+.fileInput { padding: 12px; background: var(--cancel-input); border-style: dashed; }
+.fileInput::file-selector-button { background: var(--cancel-accent-soft); color: var(--cancel-accent-ink); border: 0; border-radius: 7px; padding: 8px; margin-right: 8px; font: inherit; cursor: pointer; }
+.releaseButton { padding: 10px 0; width: 100%; min-height: 44px; margin-top: 8px; background: transparent; color: var(--cancel-muted); border: 0; cursor: pointer; font-size: 12px; }
+.error { background: #fff1f4; border: 1px solid #f2d2dc; color: #ac2d50; border-radius: 12px; padding: 12px 14px; font-size: 13px; margin: 0 0 16px; }
+.loading { color: var(--cancel-muted); text-align: center; padding: 12px; }
+.success { color: #286342; background: #edf8f0; padding: 12px; border-radius: 10px; }
+.proofLink { color: var(--cancel-accent-ink); text-decoration: underline; }
+@media (max-width: 600px) {
+  .overlay {
+    --cancel-viewport-gap: calc(16px + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
+    padding: calc(8px + env(safe-area-inset-top, 0px)) calc(8px + env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) calc(8px + env(safe-area-inset-left, 0px));
+  }
+  .dialog { border-radius: 20px; font-size: 16px; }
+  .header { padding: 14px 16px 12px; gap: 8px; }
+  .heading { gap: 8px; }
+  .headerIcon { width: 38px; height: 38px; border-radius: 12px; }
+  .body { padding: 0 16px 18px; }
+  .footer { padding: 10px 16px; gap: 8px; }
+  .footer p { margin-left: 0; font-size: 12px; }
+  .title { font-size: 20px; }
+  .booking { padding: 12px; gap: 8px; }
+  .choiceGrid { grid-template-columns: minmax(0, 1fr); }
+  .choice { padding: 12px 14px; min-height: 96px; }
+  .choiceHeading, .sectionTitle, .inputLabel { font-size: 14px; }
+  .choiceHeading input, .confirmation input { width: 20px; height: 20px; }
+  .choiceValue { font-size: 19px; }
+  .choiceCaption, .reference, .badge, .eyebrow, .counter, .hint, .fieldError, .actionHint { font-size: 12px; }
+  .info, .modeDescription, .warning, .description, .history, .error { font-size: 13px; }
+  .confirmation { font-size: 14px; min-height: 56px; }
+  .dialog .field { font-size: 16px; }
+  textarea.field { min-height: 112px; }
+  .iconButton, .refreshButton, .secondaryButton, .primaryButton, .releaseButton { min-height: 48px; }
+  .iconButton { width: 48px; }
+  .primaryButton { font-size: 15px; padding: 13px 12px; }
+  .secondaryButton, .refreshButton, .releaseButton { font-size: 14px; }
+  .secondaryButton { padding: 10px 16px; }
+  .history > div { grid-template-columns: minmax(0, 1fr); gap: 2px; margin-top: 12px; }
+  .statusCard { padding: 14px; }
+  .fileInput::file-selector-button { min-height: 44px; }
+}
+@media (max-width: 380px) {
+  .title { font-size: 18px; }
+  .headerIcon { display: none; }
+}
+/* On short screens / above the keyboard, let the entire dialog scroll so fixed
+   header/footer areas cannot squeeze the form out of view. */
+.overlay[data-compact-viewport] .dialog { display: block; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 16px; }
+.overlay[data-compact-viewport] .body { overflow: visible; }
+@media (max-height: 460px) {
+  .dialog { display: block; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 16px; }
+  .body { overflow: visible; }
+}
+@media (pointer: coarse) {
+  .iconButton, .refreshButton, .secondaryButton, .primaryButton, .releaseButton { min-height: 48px; }
+  .iconButton { width: 48px; }
+  .dialog .field { font-size: 16px; }
+  .confirmation { min-height: 48px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dialog button, .choice { transition: none; }
+}

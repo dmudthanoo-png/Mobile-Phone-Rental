@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
     .from("bookings")
     .select(`
       id, created_at, renter_name, renter_phone, total_amount, slip_url, ref_number, status,
-      add_lens, lens_price,
+      add_lens, lens_price, discount_code, discount_amount,
       concert_sessions:session_id (
         id, start_at, end_at, note,
         concerts:concert_id ( id, title, venue_name, poster_url )

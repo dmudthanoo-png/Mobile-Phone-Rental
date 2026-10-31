@@ -46,7 +46,7 @@ export async function POST(
     .select(
       // ⚠️ ต้องดึง renter_name และ phones.deposit ด้วย ไม่งั้นข้อความที่ส่งซ้ำจะไม่มีชื่อผู้จอง
       // และรายการเก่าที่ยังไม่มี deposit_amount จะโชว์มัดจำเป็น 0 ทำให้ยอดคงเหลือผิด
-      "status, line_message_status, user_id, line_sub, ref_number, renter_name, qty, lens_qty, total_amount, deposit_amount, " +
+      "status, line_message_status, user_id, line_sub, ref_number, renter_name, qty, lens_qty, total_amount, deposit_amount, discount_code, discount_amount, " +
       "line_message_attempt_count, phones ( model_name, deposit ), lenses ( name ), " +
       "concert_sessions ( start_at, note, concerts ( title ) )"
     )

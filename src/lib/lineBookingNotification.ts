@@ -13,6 +13,8 @@ export type BookingLineNotificationRow = {
   lens_qty: number | null;
   total_amount: number | null;
   deposit_amount?: number | null;
+  discount_code?: string | null;
+  discount_amount?: number | null;
   line_message_attempt_count: number | null;
   phones: { model_name: string; deposit: number | null } | null;
   lenses: { name: string } | null;
@@ -87,6 +89,8 @@ export async function sendAndRecordBookingApprovalLineMessage(
     lensName: booking.lenses?.name ?? null,
     lensQty: booking.lens_qty,
     totalAmount: booking.total_amount,
+    discountCode: booking.discount_code,
+    discountAmount: booking.discount_amount,
     // ใช้ยอดมัดจำที่บันทึกไว้ตอนจองเป็นหลัก — ถ้าคิดสดจากราคาปัจจุบัน พอแอดมินแก้ราคามัดจำ
     // ทีหลัง ข้อความที่ส่งซ้ำให้ลูกค้าเก่าจะโชว์ยอดไม่ตรงกับที่โอนมาจริง
     // (การจองเก่าที่ยังไม่มีค่านี้ ค่อย fallback ไปคิดสดแบบเดิม)

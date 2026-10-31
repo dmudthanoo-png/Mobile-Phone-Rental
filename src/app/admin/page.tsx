@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import BookingCancellationDialog from "./BookingCancellationDialog";
+import DiscountCodesPanel from "./DiscountCodesPanel";
 import { cancellationLabel, type CancellationSummary } from "@/lib/bookingCancellation";
 
 // ─────────────────────────────── types ───────────────────────────────
@@ -12,6 +13,8 @@ type Booking = {
   renter_line_name?: string | null;
   renter_phone: string;
   total_amount: number;
+  discount_code?: string | null;
+  discount_amount?: number;
   deposit_amount?: number | null;
   slip_url: string | null;
   ref_number: string | null;
@@ -321,6 +324,7 @@ const TAB_ITEMS = [
   { key: "concerts" as const, icon: "🎫", label: "คอนเสิร์ต & รอบ" },
   { key: "phones" as const, icon: "📱", label: "มือถือ & Inventory" },
   { key: "lenses" as const, icon: "🔭", label: "เลนส์" },
+  { key: "discounts" as const, icon: "🏷️", label: "โค้ดส่วนลด" },
   { key: "reviews" as const, icon: "⭐", label: "รีวิว" },
   { key: "announcement" as const, icon: "📣", label: "ประกาศ" },
   { key: "admins" as const, icon: "🛡️", label: "จัดการแอดมิน" },
@@ -367,7 +371,7 @@ export default function AdminPage() {
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [auditFilter, setAuditFilter] = useState("");
   const [auditSearch, setAuditSearch] = useState("");
-  const [tab, setTab] = useState<"bookings"|"fulfillment"|"users"|"concerts"|"phones"|"lenses"|"reviews"|"announcement"|"admins"|"auditlog">("bookings");
+  const [tab, setTab] = useState<(typeof TAB_ITEMS)[number]["key"]>("bookings");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -1835,6 +1839,7 @@ export default function AdminPage() {
         </div>
 
         {/* ═══════════════ TAB: BOOKINGS ═══════════════ */}
+        {tab === "discounts" && <DiscountCodesPanel />}
         {tab === "bookings" && (
           <div>
             <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:12, alignItems:"center" }}>
@@ -1937,7 +1942,11 @@ export default function AdminPage() {
                         <InfoCell label="เวลาคอนเสิร์ต"  value={sessionTime} />
                         <InfoCell label="สถานที่"         value={venue} />
                         <InfoCell label="รุ่นมือถือ"      value={phoneModel} />
-                        <InfoCell label={b.status === "cancelled" ? "มูลค่าเดิม (ไม่นับยอดจองรวม)" : "ยอดชำระ"} value={money(b.total_amount)} />
+                        <InfoCell label={b.status === "cancelled" ? "มูลค่าเดิม (ไม่นับยอดจองรวม)" : b.discount_amount ? "ยอดสุทธิหลังลด" : "ยอดชำระ"} value={money(b.total_amount)} />
+                        {!!b.discount_amount && <>
+                          <InfoCell label="ยอดก่อนลด" value={money(b.total_amount + b.discount_amount)} />
+                          <InfoCell label={`ส่วนลด ${b.discount_code}`} value={`−${money(b.discount_amount)}`} />
+                        </>}
                         <InfoCell label="ชื่อไลน์"        value={b.renter_line_name ?? "-"} />
                         <InfoCell label="เบอร์โทร"       value={b.renter_phone ?? "-"} />
                         <InfoCell label="วันที่จอง"      value={fmtDT(b.created_at)} />

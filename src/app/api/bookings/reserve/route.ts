@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 import { findOrCreateLineUser } from "@/lib/lineSession";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacyNotice";
 import { logServerError } from "@/lib/apiLog";
+import { DISCOUNT_CODE_PATTERN, normalizeDiscountCode } from "@/lib/discounts";
+import { discountDatabaseError, discountOriginError, discountRpcError } from "@/lib/discountServer";
 
 export const runtime = "nodejs"; // ✅ สำคัญ: crypto ใช้บน node runtime
 export const dynamic = "force-dynamic";
@@ -74,11 +76,16 @@ async function getAuthedUser(req: NextRequest) {
 // ตัดสต็อกทันทีแบบมีวันหมดอายุ เพื่อให้ "ถ้าเห็นเลขบัญชี = ได้เครื่องแน่นอน" ไม่ต้องลุ้นว่าโอนแล้วจะโดนตัดหน้า
 export async function POST(req: NextRequest) {
   try {
+    const originError = discountOriginError(req); if (originError) return originError;
     const auth = await getAuthedUser(req);
     if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { supabase, userId } = auth;
 
     const body = await req.json().catch(() => null);
+    const discountCode = normalizeDiscountCode(body?.discount_code);
+    if (discountCode && (!DISCOUNT_CODE_PATTERN.test(discountCode) || !Number.isInteger(body?.expected_discount_amount))) {
+      return NextResponse.json({ error: "กรุณากดใช้โค้ดและตรวจสอบยอดก่อนดำเนินการ" }, { status: 400 });
+    }
     const session_id = String((body as Record<string, unknown>)?.session_id ?? "").trim();
     const phone_id = String((body as Record<string, unknown>)?.phone_id ?? "").trim();
     const renter_name = String((body as Record<string, unknown>)?.renter_name ?? "").trim();
@@ -161,7 +168,11 @@ export async function POST(req: NextRequest) {
     // ยอดมัดจำที่ต้องโอน ต้องไม่เกินยอดรวม
     const depositDue = Math.min(Math.round(deposit * qty), totalAmount);
 
-    const { data, error } = await supabase.rpc("create_booking_hold", {
+    const { data, error } = discountCode ? await supabase.rpc("create_discount_booking_hold", {
+      p_user_id: userId, p_code: discountCode, p_session_id: session_id, p_phone_id: phone_id,
+      p_qty: qty, p_lens_id: lens_id, p_lens_qty: lens_qty, p_renter_name: renter_name,
+      p_renter_phone: renter_phone, p_expected_discount: body.expected_discount_amount,
+    }) : await supabase.rpc("create_booking_hold", {
       p_user_id: userId,
       p_session_id: session_id,
       p_phone_id: phone_id,
@@ -175,7 +186,7 @@ export async function POST(req: NextRequest) {
       p_hold_seconds: HOLD_SECONDS,
     });
 
-    if (error) { logServerError("/api/bookings/reserve", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
+    if (error) { if (discountCode) return discountDatabaseError(error); logServerError("/api/bookings/reserve", error); return NextResponse.json({ error: error.message }, { status: 500 }); }
 
     const result = data as { ok?: boolean; error?: string; booking_id?: string; expires_at?: string } | null;
     const errCode = result?.error;
@@ -192,8 +203,10 @@ export async function POST(req: NextRequest) {
           { status: 429 }
         );
       }
+      if (discountCode) return discountRpcError(result) ?? discountDatabaseError({ message: "Invalid discount hold response" });
       return NextResponse.json({ error: errCode }, { status: 400 });
     }
+    if (discountCode) { const invalid = discountRpcError(data); if (invalid) return invalid; }
 
     // เก็บชื่อไลน์ลงแถวที่กันไว้ (แยกเป็น update ต่างหาก จะได้ไม่ต้องแก้ signature ของ RPC ที่ deploy ไปแล้ว)
     if (result?.booking_id && renter_line_name) {
@@ -201,7 +214,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { ok: true, booking_id: result?.booking_id ?? null, expires_at: result?.expires_at ?? null, total_amount: totalAmount },
+      discountCode ? data : { ok: true, booking_id: result?.booking_id ?? null, expires_at: result?.expires_at ?? null, total_amount: totalAmount, deposit_amount: depositDue },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (err: unknown) {
@@ -214,6 +227,7 @@ export async function POST(req: NextRequest) {
 // DELETE /api/bookings/reserve — คืนเครื่องที่กันไว้ (ลูกค้ากดย้อนกลับ/ออกจากขั้นตอนจอง)
 export async function DELETE(req: NextRequest) {
   try {
+    const originError = discountOriginError(req); if (originError) return originError;
     const auth = await getAuthedUser(req);
     if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { supabase, userId } = auth;

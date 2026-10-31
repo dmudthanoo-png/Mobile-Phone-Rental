@@ -19,6 +19,8 @@ type Booking = {
   renter_name: string;
   renter_phone?: string | null;
   total_amount: number;
+  discount_code?: string | null;
+  discount_amount?: number;
   slip_url: string | null;
   ref_number: string | null;
   status: "confirmed" | "rejected" | "pending" | "waiting_review" | string;
@@ -345,7 +347,11 @@ export default function BookingsPage() {
                     {[
                       ["🗓️", "วันเวลาคอนเสิร์ต", sessionLabel],
                       ["📍", "สถานที่",            venueName],
-                      ["💰", b.status === "cancelled" ? "มูลค่าการจองเดิม (ยกเลิกแล้ว)" : "ยอดชำระ", `฿${b.total_amount.toLocaleString()}`],
+                      ["💰", b.status === "cancelled" ? "มูลค่าการจองเดิม (ยกเลิกแล้ว)" : b.discount_amount ? "ยอดสุทธิหลังลด" : "ยอดชำระ", `฿${b.total_amount.toLocaleString()}`],
+                      ...(b.discount_amount ? [
+                        ["🏷️", `ส่วนลด ${b.discount_code}`, `−฿${b.discount_amount.toLocaleString()}`],
+                        ["🧾", "ยอดก่อนลด", `฿${(b.total_amount + b.discount_amount).toLocaleString()}`],
+                      ] : []),
                       ["🕐", "วันที่จอง",          new Date(b.created_at).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })],
                     ].map(([icon, label, val]) => (
                       <div key={`${b.id}-${label}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>

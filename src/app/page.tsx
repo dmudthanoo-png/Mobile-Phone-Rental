@@ -8,6 +8,8 @@ import AnnouncementBanner from "./AnnouncementBanner";
 import HowToBookAndFaq from "./HowToBookAndFaq";
 import Footer from "./Footer";
 import PrivacyPolicyContent from "./privacy-policy/PrivacyPolicyContent";
+import DiscountCodeInput from "./DiscountCodeInput";
+import { validDiscountQuote, type DiscountQuote, type DiscountHold } from "@/lib/discounts";
 
 type MeUser = {
   line_sub: string;
@@ -243,6 +245,10 @@ export default function PhoneRentalHome() {
   const [phoneQty, setPhoneQty] = useState(1);
   const [selectedLensId, setSelectedLensId] = useState<string | null>(null);
   const [lensQty, setLensQty] = useState(0);
+  const [discountDraft, setDiscountDraft] = useState("");
+  const [discountQuote, setDiscountQuote] = useState<(DiscountQuote & { cartKey:string }) | null>(null);
+  const [discountHold, setDiscountHold] = useState<(DiscountHold & { cartKey:string }) | null>(null);
+  const holdReleaseRef = useRef<Promise<unknown> | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -291,11 +297,17 @@ export default function PhoneRentalHome() {
 
   const depositFee  = (selectedPhone?.deposit ?? 0) * phoneQty;
   const lensPrice   = selectedLens ? selectedLens.price * lensQty : 0;
-  const totalAmount = (selectedPhone ? Number(selectedPhone.price) * phoneQty : 0) + lensPrice;
+  const cartKey = JSON.stringify([selectedSessionId,selectedPhoneId,phoneQty,selectedLensId,lensQty]);
+  const appliedDiscount = discountQuote?.cartKey === cartKey ? discountQuote : null;
+  const heldDiscount = discountHold?.cartKey === cartKey && discountHold.code === appliedDiscount?.code ? discountHold : null;
+  const priceQuote = heldDiscount ?? appliedDiscount;
+  const subtotalAmount = priceQuote?.subtotal_amount ?? ((selectedPhone ? Number(selectedPhone.price) * phoneQty : 0) + lensPrice);
+  const discountAmount = priceQuote?.discount_amount ?? 0;
+  const totalAmount = priceQuote?.total_amount ?? subtotalAmount;
 
   // ── ลูกค้าโอนแค่ค่ามัดจำตอนจอง ส่วนที่เหลือชำระตอนรับเครื่อง ──
   // มัดจำต้องไม่เกินยอดรวม (กันกรณีตั้งมัดจำสูงกว่าค่าเช่า แล้วยอดคงเหลือติดลบ)
-  const transferAmount = Math.min(depositFee, totalAmount);
+  const transferAmount = priceQuote?.deposit_amount ?? Math.min(depositFee, subtotalAmount);
   const balanceDue     = Math.max(0, totalAmount - transferAmount);
 
   const handleSignOut = async () => {
@@ -473,10 +485,14 @@ export default function PhoneRentalHome() {
 
   // คืนเครื่องที่กันไว้ (ถ้ามี) — ยิงแบบ best-effort ไม่ต้องรอผล เพราะถึงพลาดก็หมดอายุเองอยู่แล้ว
   const releaseHold = () => {
-    fetch("/api/bookings/reserve", { method: "DELETE", cache: "no-store" }).catch(() => {});
+    setDiscountHold(null);
+    holdReleaseRef.current = (holdReleaseRef.current ?? Promise.resolve()).then(
+      () => fetch("/api/bookings/reserve", { method: "DELETE", cache: "no-store" }).catch(() => {})
+    );
   };
 
   const goToStep1 = () => {
+    setDiscountDraft(""); setDiscountQuote(null); setDiscountHold(null);
     releaseHold();
     setSelectedConcertId(null);
     resetBelowConcert();
@@ -549,7 +565,8 @@ export default function PhoneRentalHome() {
   useEffect(() => {
     setNowTick(Date.now()); // sync ทุกครั้งที่สลับ step กันเวลาค้างจากรอบก่อน
     if ((step === 3 || step === 4) && timerStepKey !== step) {
-      setTimerExpiresAt(Date.now() + (STEP_TIME_LIMITS[step] ?? 5 * 60) * 1000);
+      const pageDeadline = Date.now() + (STEP_TIME_LIMITS[step] ?? 5 * 60) * 1000;
+      setTimerExpiresAt(step === 4 && heldDiscount ? Math.min(pageDeadline, Date.parse(heldDiscount.expires_at)) : pageDeadline);
       setTimerStepKey(step);
     }
     if (step !== 3 && step !== 4) {
@@ -614,6 +631,7 @@ export default function PhoneRentalHome() {
     if (step === 2) return !selectedSessionId || !selectedPhoneId;
     if (step === 3) {
       return !renterLineName.trim()
+        || (!!discountDraft.trim() && !appliedDiscount)
         || !renterName.trim()
         || !renterPhone.trim()
         || renterPhone.trim().length !== 10
@@ -639,6 +657,9 @@ export default function PhoneRentalHome() {
     if (acknowledgingPrivacyNotice) return;
 
     if (step === 3) {
+      if (discountDraft.trim() && !appliedDiscount) {
+        setPageError("กรุณากดใช้โค้ดให้สำเร็จ หรือเอาโค้ดออกก่อนดำเนินการ"); return;
+      }
       if (!selectedSessionId || !selectedPhoneId || !selectedPhone) {
         setPageError("กรุณาเลือก รอบ และ มือถือ");
         setStep(2);
@@ -671,6 +692,7 @@ export default function PhoneRentalHome() {
 
         // ✅ กันเครื่องไว้ก่อนพาไปหน้าโอนเงิน — ตัดสต็อกทันทีแบบมีวันหมดอายุ
         // ถ้าของหมดจะรู้ตรงนี้เลย (ก่อนเห็นเลขบัญชี/ก่อนโอนเงิน) ไม่ใช่ไปรู้ตอนกดยืนยันหลังโอนไปแล้ว
+        await holdReleaseRef.current;
         const holdRes = await fetch("/api/bookings/reserve", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -683,6 +705,7 @@ export default function PhoneRentalHome() {
             lens_id: selectedLensId,
             lens_qty: lensQty,
             qty: phoneQty,
+            ...(appliedDiscount ? { discount_code:appliedDiscount.code,expected_discount_amount:appliedDiscount.discount_amount } : {}),
           }),
           cache: "no-store",
         });
@@ -709,6 +732,14 @@ export default function PhoneRentalHome() {
           throw new Error(out?.error || "กันเครื่องไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
         }
 
+        const holdOut = await holdRes.json();
+        const holdBookingId = typeof holdOut?.booking_id === "string" ? holdOut.booking_id : "";
+        if (appliedDiscount) {
+          if (!validDiscountQuote(holdOut) || !holdBookingId || holdOut.code !== appliedDiscount.code) {
+            throw new Error("ยังยืนยันส่วนลดไม่ได้ กรุณาโหลดหน้าใหม่ก่อนโอนเงิน");
+          }
+          setDiscountHold({ ...holdOut, booking_id:holdBookingId, cartKey });
+        } else setDiscountHold(null);
         setStep(4);
       } catch (e: unknown) {
         setPageError(e instanceof Error ? e.message : "ไม่สามารถดำเนินการต่อได้ กรุณาลองใหม่อีกครั้ง");
@@ -744,6 +775,11 @@ export default function PhoneRentalHome() {
         form.append("renter_line_name", renterLineName.trim());
         form.append("renter_phone", renterPhone.trim());
         form.append("total_amount", String(totalAmount));
+        if (appliedDiscount) {
+          if (!heldDiscount) throw new Error("ไม่พบรายการกันส่วนลด กรุณาตรวจสอบก่อนโอนเงิน");
+          form.append("discount_code", heldDiscount.code);
+          form.append("booking_id", heldDiscount.booking_id);
+        }
         if (selectedLensId && lensQty > 0) {
           form.append("lens_id",  selectedLensId);
           form.append("lens_qty", String(lensQty));
@@ -1332,6 +1368,10 @@ export default function PhoneRentalHome() {
                 </div>
               )}
 
+              <DiscountCodeInput key={cartKey} value={discountDraft} quote={appliedDiscount} disabled={acknowledgingPrivacyNotice || submitting}
+                cart={{session_id:selectedSessionId,phone_id:selectedPhoneId,qty:phoneQty,lens_id:selectedLensId,lens_qty:lensQty}}
+                onChange={value=>{setDiscountDraft(value);setDiscountQuote(null);setDiscountHold(null);}}
+                onApply={quote=>{setDiscountQuote(quote?{...quote,cartKey}:null);setDiscountHold(null);}} />
               <div style={{ ...doodle.cardYellow, padding: 16, color: ink }}>
                 <div style={{ fontWeight: 700, fontSize: 12, color: sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>สรุปการจอง</div>
                 {[
@@ -1348,9 +1388,12 @@ export default function PhoneRentalHome() {
                   </div>
                 ))}
                 <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600, fontSize: 13, marginTop: 4, color: ink }}>
-                  <span>ยอดเช่ารวมทั้งหมด</span>
+                  <span>{discountAmount > 0 ? "ยอดสุทธิหลังส่วนลด" : "ยอดเช่ารวมทั้งหมด"}</span>
                   <span>฿{totalAmount}</span>
                 </div>
+                {discountAmount > 0 && <div style={{fontSize:13,color:accentStrong,marginTop:6}}>
+                  ยอดก่อนลด ฿{subtotalAmount} · โค้ด {priceQuote?.code} ลด ฿{discountAmount}
+                </div>}
                 <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15, marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${borderStrong}`, color: ink }}>
                   <span>โอนตอนนี้ (มัดจำ)</span>
                   <span style={{ color: accentStrong, fontSize: 18 }}>฿{transferAmount}</span>
@@ -1439,9 +1482,12 @@ export default function PhoneRentalHome() {
 
               <div style={{ ...doodle.card, padding: "12px 16px", marginBottom: 16, color: ink }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600 }}>
-                  <span style={{ color: sub }}>ยอดเช่ารวมทั้งหมด</span>
+                  <span style={{ color: sub }}>{discountAmount > 0 ? "ยอดสุทธิหลังส่วนลด" : "ยอดเช่ารวมทั้งหมด"}</span>
                   <span>฿{totalAmount}</span>
                 </div>
+                {discountAmount > 0 && <div style={{fontSize:13,color:accentStrong,marginTop:6}}>
+                  ยอดก่อนลด ฿{subtotalAmount} · โค้ด {priceQuote?.code} ลด ฿{discountAmount}
+                </div>}
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, marginTop: 6 }}>
                   <span style={{ color: sub }}>โอนตอนนี้ (มัดจำ)</span>
                   <span style={{ color: accentStrong }}>฿{transferAmount}</span>
@@ -1605,6 +1651,7 @@ export default function PhoneRentalHome() {
                   ["มือถือ",       selectedPhone ? `${selectedPhone.model_name} x${phoneQty}` : "-"],
                   ...(selectedLens && lensQty > 0 ? [["Lens ซูม", `${selectedLens.name} x${lensQty} = ฿${lensPrice}`]] : []),
                   ["ยอดเช่ารวม",   `฿${totalAmount}`],
+                  ...(discountAmount > 0 ? [["ส่วนลด", `${priceQuote?.code} −฿${discountAmount} (ก่อนลด ฿${subtotalAmount})`]] : []),
                   ["โอนแล้ว (มัดจำ)", `฿${transferAmount}`],
                   ["ชำระตอนรับเครื่อง", `฿${balanceDue}`],
                 ].map(([k, v]) => (

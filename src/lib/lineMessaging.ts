@@ -9,6 +9,8 @@ type BookingApprovedLineMessageInput = {
   lensName: string | null;
   lensQty: number | null;
   totalAmount: number | null;
+  discountCode?: string | null;
+  discountAmount?: number | null;
   depositPaid: number | null;
 };
 
@@ -120,6 +122,7 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
   const totalAmount = Number(input.totalAmount ?? 0);
   const depositPaid = Math.max(0, Number(input.depositPaid ?? 0));
   const balanceDue = Math.max(0, totalAmount - depositPaid);
+  const discountAmount = Math.max(0, Number(input.discountAmount ?? 0));
 
   const rows = [
     flexRow("🎫 งาน", displayValue(input.concertTitle)),
@@ -129,7 +132,11 @@ function buildBookingApprovedFlexMessage(input: BookingApprovedLineMessageInput)
     ...(hasLens
       ? [flexRow("🔭 เลนส์เสริม", `${displayValue(input.lensName)} × ${lensQty} ชิ้น`, { highlightBg: BRAND.peachSoft })]
       : []),
-    flexRow("💰 ยอดเช่ารวม", `฿${displayAmount(totalAmount)}`, { emphasize: true }),
+    ...(discountAmount > 0 ? [
+      flexRow("ยอดก่อนลด", `฿${displayAmount(totalAmount + discountAmount)}`),
+      flexRow(`ส่วนลด ${displayValue(input.discountCode)}`, `−฿${displayAmount(discountAmount)}`),
+    ] : []),
+    flexRow(discountAmount > 0 ? "💰 ยอดสุทธิ" : "💰 ยอดเช่ารวม", `฿${displayAmount(totalAmount)}`, { emphasize: true }),
   ];
 
   // กล่องสรุปมัดจำ/ค้างชำระ แยกออกมาเป็น 2 ช่องคู่กัน (ไม่ใช้ label|value แถวเดียว

@@ -7,6 +7,8 @@ import { findOrCreateLineUser } from "@/lib/lineSession";
 import { sniffImageMimeType } from "@/lib/imageUpload";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacyNotice";
 import { logServerError } from "@/lib/apiLog";
+import { DISCOUNT_CODE_PATTERN, normalizeDiscountCode } from "@/lib/discounts";
+import { discountDatabaseError, discountOriginError, discountRpcError, discountUuid } from "@/lib/discountServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,6 +48,7 @@ function verifySessionJWT(token: string, secret: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    const originError = discountOriginError(req); if (originError) return originError;
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const sessionSecret = process.env.APP_SESSION_SECRET;
@@ -85,6 +88,11 @@ export async function POST(req: NextRequest) {
     }
 
     const user_id = linkedUser.userId;
+    const discountCode = normalizeDiscountCode(form.get("discount_code"));
+    const discountBookingId = String(form.get("booking_id") ?? "");
+    if (discountCode && (!DISCOUNT_CODE_PATTERN.test(discountCode) || !discountUuid.test(discountBookingId))) {
+      return NextResponse.json({ error: "ไม่พบรายการกันเครื่องพร้อมส่วนลด กรุณาตรวจสอบก่อนโอนเงิน" }, { status: 400 });
+    }
 
     const session_id   = String(form.get("session_id")   ?? "").trim();
     const phone_id     = String(form.get("phone_id")     ?? "").trim();
@@ -126,6 +134,10 @@ export async function POST(req: NextRequest) {
     // 2.5-4) ตรวจทุกอย่างที่ไม่ขึ้นต่อกันพร้อมกันในรอบเดียว (เดิมยิงต่อคิวทีละ query รวม 7 round-trip
     // ทำให้ผู้ใช้ต้องรอสะสม) — ลำดับการ "เช็คผลลัพธ์" ยังเหมือนเดิมทุกประการ ข้อความ error จึงไม่เปลี่ยน
     // หมายเหตุ: รวม query concert_sessions ที่เดิมยิงซ้ำ 2 รอบ (เช็คสิทธิ์ + ดึงชื่อไป Google Sheet) เหลือรอบเดียว
+    let pendingQuery = supabaseAdmin.from("bookings").select("*", { count: "exact", head: true })
+      .eq("user_id", user_id).eq("status", "pending").not("slip_url", "is", null);
+    // A retry of the third accepted booking must be able to return its existing result.
+    if (discountCode) pendingQuery = pendingQuery.neq("id", discountBookingId);
     const [ackRes, sessionRes, phoneRes, priceRes, lensRes, pendingRes] = await Promise.all([
       // ต้องรับทราบนโยบายความเป็นส่วนตัวเวอร์ชันปัจจุบันก่อนเสมอ — เช็คฝั่ง server
       // ห้ามพึ่งแค่ลำดับการกดปุ่มฝั่ง client เพราะ endpoint นี้เรียกตรงได้โดยข้ามหน้า UI
@@ -169,14 +181,7 @@ export async function POST(req: NextRequest) {
         : Promise.resolve({ data: null, error: null }),
       // rate limit — นับตาม user_id (ตัวตนจริงจาก LINE login) ไม่ใช่ renter_phone
       // เพราะ renter_phone เป็นช่องกรอกอิสระ เปลี่ยนเบอร์ไปเรื่อยๆ เพื่อหลบ limit ได้ถ้านับแค่เบอร์
-      supabaseAdmin
-        .from("bookings")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user_id)
-        .eq("status", "pending")
-        // นับเฉพาะรายการที่ "แนบสลิปแล้ว" ให้ตรงกับกติกาฝั่ง SQL
-        // ถ้านับรวมของที่ลูกค้ากันไว้ด้วย ตัวเขาเองจะโดนบล็อกไม่ให้ยืนยันของตัวเอง
-        .not("slip_url", "is", null),
+      pendingQuery,
     ]);
 
     if (ackRes.error) { logServerError("/api/bookings/upload-slip", ackRes.error.message); return NextResponse.json({ error: ackRes.error.message }, { status: 500 }); }
@@ -250,11 +255,11 @@ export async function POST(req: NextRequest) {
     }
 
     const ext = sniffedType === "image/png" ? "png" : sniffedType === "image/webp" ? "webp" : "jpg";
-    const fileName = `bookings/${user_id}/${session_id}/${phone_id}/${Date.now()}.${ext}`;
+    const fileName = `bookings/${user_id}/${session_id}/${phone_id}/${crypto.randomUUID()}.${ext}`;
 
     const { error: upErr } = await supabaseAdmin.storage
       .from("slips")
-      .upload(fileName, buffer, { contentType: sniffedType, upsert: true });
+      .upload(fileName, buffer, { contentType: sniffedType, upsert: false });
 
     if (upErr) {
       logServerError("/api/bookings/upload-slip", `upload failed: ${upErr.message}`);
@@ -272,7 +277,12 @@ export async function POST(req: NextRequest) {
 
     // 6) เปลี่ยน "เครื่องที่กันไว้" ให้เป็นการจองจริงแบบ atomic (เติมสลิป + ล้างวันหมดอายุ)
     //    ถ้าของที่กันไว้หมดอายุ/ไม่มีแล้ว RPC จะเช็คสต็อกแล้วสร้างใหม่ให้เหมือนเดิม (ถ้าของยังเหลือ)
-    const rpc = await supabaseAdmin.rpc("finalize_booking_with_slip", {
+    const rpc = discountCode ? await supabaseAdmin.rpc("finalize_discount_booking", {
+      p_user_id: user_id, p_booking_id: discountBookingId, p_code: discountCode,
+      p_session_id: session_id, p_phone_id: phone_id, p_qty: qty, p_lens_id: lens_id,
+      p_lens_qty: lens_qty, p_renter_name: renter_name, p_renter_phone: renter_phone,
+      p_slip_url: slip_url, p_expected_total: amount,
+    }) : await supabaseAdmin.rpc("finalize_booking_with_slip", {
       p_user_id:      user_id,
       p_session_id:   session_id,
       p_phone_id:     phone_id,
@@ -287,6 +297,13 @@ export async function POST(req: NextRequest) {
     });
 
     if (rpc.error) {
+      if (discountCode) {
+        // A timeout can occur AFTER commit; do not delete a possibly accepted slip.
+        if (["P0001", "23505", "23514", "22003", "42883", "PGRST202"].includes(rpc.error.code ?? "")) {
+          await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
+        }
+        return discountDatabaseError(rpc.error);
+      }
       const msg = rpc.error.message || "";
       await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
       if (msg.includes("SOLD_OUT_PHONE")) {
@@ -319,8 +336,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 500 });
     }
 
+    if (discountCode) {
+      const failure = discountRpcError(rpc.data);
+      if (failure) {
+        if (rpc.data?.error) await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
+        return failure;
+      }
+    }
+
     const rpcRow = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
-    const row = rpcRow as { booking_id: string; ref_number: string } | null;
+    const row = rpcRow as { booking_id: string; ref_number: string; reused?: boolean; total_amount?: number;
+      deposit_amount?: number; discount_amount?: number; discount_code?: string; lens_price?: number; slip_url?: string } | null;
 
     if (!row?.booking_id) {
       await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
@@ -328,13 +354,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "rpc_no_result" }, { status: 500 });
     }
 
+    if (row.reused) {
+      await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
+      return NextResponse.json({ ...row, ok: true }, { headers: { "Cache-Control": "no-store" } });
+    }
+
+    // Read the actual stored snapshot, including a coupon accepted by an old client.
+    const { data: savedMoney, error: moneyError } = await supabaseAdmin.from("bookings")
+      .select("total_amount,deposit_amount,discount_code,discount_amount,lens_price")
+      .eq("id", row.booking_id).maybeSingle();
+    if (moneyError) logServerError("upload-slip price snapshot", moneyError.message);
+    const saved = discountCode ? row : savedMoney;
+    const actualTotal = saved?.total_amount;
+
     // เก็บชื่อไลน์ลง booking (เผื่อกรณีที่ hold หมดอายุแล้ว RPC สร้างแถวใหม่ ชื่อไลน์จะไม่หาย)
     if (renter_line_name) {
       await supabaseAdmin.from("bookings").update({ renter_line_name }).eq("id", row.booking_id);
     }
 
     // 7) บันทึก snapshot ราคาเลนส์ลง booking (สำหรับแสดงผลในหน้าประวัติ)
-    if (lens_id && lens_qty > 0 && lensPrice) {
+    if (saved && !saved.discount_amount && lens_id && lens_qty > 0 && lensPrice) {
       const { error: lensErr } = await supabaseAdmin
         .from("bookings")
         .update({ add_lens: true, lens_price: lensPrice * lens_qty })
@@ -364,7 +403,7 @@ export async function POST(req: NextRequest) {
           .catch((err) => {
             console.error("auto slip verify failed:", err instanceof Error ? err.message : err);
           }),
-        syncBookingToSheet({
+        actualTotal != null ? syncBookingToSheet({
           event: "created",
           booking_id: row.booking_id,
           ref_number: row.ref_number ?? null,
@@ -377,9 +416,9 @@ export async function POST(req: NextRequest) {
           qty,
           lens_name: lensName,
           lens_qty: lens_id && lens_qty > 0 ? lens_qty : 0,
-          total_amount: verifiedAmount,
+          total_amount: actualTotal,
           created_at: new Date().toISOString(),
-        }),
+        }) : Promise.resolve(),
       ]);
     });
 
@@ -392,7 +431,9 @@ export async function POST(req: NextRequest) {
         qty,
         lens_id,
         lens_qty,
-        lens_price: lens_id && lens_qty > 0 ? lensPrice * lens_qty : 0,
+        lens_price: saved?.discount_amount ? saved.lens_price : lens_id && lens_qty > 0 ? lensPrice * lens_qty : 0,
+        ...(saved ? { total_amount: saved.total_amount, deposit_amount: saved.deposit_amount,
+          discount_code: saved.discount_code, discount_amount: saved.discount_amount } : {}),
       },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );

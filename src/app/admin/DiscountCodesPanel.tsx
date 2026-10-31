@@ -88,7 +88,9 @@ export default function DiscountCodesPanel(){
     {loading?<p role="status">กำลังโหลด…</p>:<div className={styles.grid}>{codes.map(c=>{
       const limited=c.max_uses!=null,reserved=Number(c.reserved_count)||0,used=Number(c.used_count)||0;
       const left=limited?Math.max(0,c.max_uses!-used-reserved):null;
-      const now=Date.now(),state=c.deleted_at?"ลบแล้ว":!c.active?"พักใช้งาน":now>=Date.parse(c.expires_at)?"หมดอายุ":now<Date.parse(c.starts_at)?"ยังไม่เริ่ม":limited&&used>=c.max_uses!?"สิทธิ์เต็ม":"ใช้งานได้";
+      const now=Date.now(),state=c.deleted_at?"ลบแล้ว":!c.active?"พักใช้งาน":now>=Date.parse(c.expires_at)?"หมดอายุ":now<Date.parse(c.starts_at)?"ยังไม่เริ่ม":limited&&used>=c.max_uses!?"สิทธิ์เต็ม"
+        // สิทธิ์ที่เหลือถูกกันไว้หมด ลูกค้าใหม่ใช้ไม่ได้จนกว่าจะมีคนหมดเวลากันเครื่อง
+        :limited&&left===0?"เต็มชั่วคราว":"ใช้งานได้";
       return <article key={c.id} className={`${styles.card} ${history?.id===c.id?styles.selected:""}`}>
         <div className={styles.codeRow}><h3>{c.code}</h3><span className={styles.badge}>{state}</span></div><p>{c.name}</p>
         <div className={styles.value}>ลด {amount(c.amount)} บาท</div>

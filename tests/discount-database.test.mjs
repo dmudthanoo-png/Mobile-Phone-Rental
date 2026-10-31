@@ -349,3 +349,29 @@ test('admin can set, clear and validate the quota; listing shows holds; older 9-
   assert.equal(row.max_uses,3);assert.equal(row.reserved_count,1);assert.equal(row.used_count,0);
   assert.equal((await one("select has_function_privilege('authenticated','discount_code_taken(uuid,uuid)','EXECUTE') allowed")).allowed,false);
 });
+
+test('changing the cart while holding the last slot keeps the same slot instead of locking the customer out',async()=>{
+  await setQuota(1);
+  assert.equal((await hold()).ok,true);
+  const changed=await hold('SAVE50',user,50,2,1);assert.equal(changed.ok,true,'a new cart replaces my own hold, not another slot');
+  assert.equal(Number((await one('select count(*) n from bookings where user_id=$1',[user])).n),1);
+  assert.equal((await hold('SAVE50',id(40))).error,'DISCOUNT_QUOTA_FULL');
+  await db.query('select create_booking_hold($1,$2,$3,1,null,0,$4,$5,500,100,420)',[user,session,phone,'Test','000']);
+  assert.equal((await hold('SAVE50',id(40))).ok,true,'switching to a normal-price hold frees the coupon slot');
+});
+
+test('a rejected or deleted booking keeps its quota slot, and resubmitting its slip does not take a second one',async()=>{
+  await setQuota(2);
+  const a=await hold();await finalize(a);await db.query("update bookings set status='rejected' where id=$1",[a.booking_id]);
+  assert.equal((await result("select update_booking_slip($1,$2,'replacement-slip',0) r",[a.booking_id,user])).ok,true);
+  assert.equal((await result('select discount_code_taken(id,null) r from discount_codes')),1);
+  const b=await hold('SAVE50',id(40));await finalize(b,id(40));
+  await db.query('delete from bookings where id=$1',[b.booking_id]);
+  assert.equal((await result('select discount_code_taken(id,null) r from discount_codes')),2);
+  assert.equal((await hold('SAVE50',id(41))).error,'DISCOUNT_QUOTA_FULL');
+});
+
+test('codes created through the old 9-argument RPC stay unlimited',async()=>{
+  assert.equal((await create('OLDPAGE')).ok,true);
+  assert.equal((await one("select max_uses from discount_codes where code='OLDPAGE'")).max_uses,null);
+});

@@ -61,6 +61,22 @@ test('cancellation during SlipOK verification discards the late result', async (
   assert.equal(writes(h).length, 1);
 });
 
+test('a duplicate or unsuccessful SlipOK answer is never marked verified, even with complete data', async () => {
+  const realFetch = globalThis.fetch;
+  try {
+    for (const body of [
+      { success: false, code: 1012, message: 'duplicate', data: { amount: 100, transRef: 'DUP-REF', receiver: { name: 'testshop' } } },
+      { success: true, data: { success: false, code: 1014, amount: 100, transRef: 'DUP-REF', receiver: { name: 'testshop' } } },
+      { success: false, code: 1010, data: { amount: 100, transRef: 'LATE-REF', receiver: { name: 'testshop' } } },
+    ]) {
+      globalThis.fetch = async () => Response.json(body);
+      const h = harness('pending'); const result = await h.verify();
+      assert.equal(result.ok, true); assert.equal(result.verified, false);
+      assert.equal(writes(h)[0].operations.find(op => op[0] === 'update')[1].slip_verified, false);
+    }
+  } finally { globalThis.fetch = realFetch; }
+});
+
 test('duplicate-payment fallback also guards against overwriting a cancelled booking', async () => {
   const h = harness('confirmed', { error: { code: '23505' }, count: 0 });
   const result = await h.verify();

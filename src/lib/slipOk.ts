@@ -228,7 +228,9 @@ export async function verifySlipForBooking(bookingId: string): Promise<SlipVerif
     amountMatches === false ||
     receiverMatches === false;
 
-  let verified = !hardFail && missing.length === 0;
+  // ต้องให้ SlipOK ยืนยันว่าสำเร็จด้วย — รหัสสลิปซ้ำ/ธนาคารขัดข้องไม่ถือเป็น hardFail ก็จริง
+  // แต่ถ้า SlipOK ตอบ HTTP 200 พร้อมข้อมูลครบ เดิมจะได้ verified=true (ขึ้นเขียว) ทั้งที่ข้อความบอกให้ตรวจเอง
+  let verified = !hardFail && slipOkSuccess && missing.length === 0;
 
   let finalMessage = message;
   // ตัดข้อมูลผู้รับที่ SlipOK ส่งมาแบบย่อ ไว้ช่วยวินิจฉัยตอนตั้งค่าครั้งแรก

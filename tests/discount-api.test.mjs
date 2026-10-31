@@ -213,3 +213,13 @@ test('database expiry and stock conflicts return actionable errors and remove on
     assert.equal(h.storage.filter(s=>s[0]==='remove').length,1);assert.equal(h.background.length,0);
   }
 });
+
+test('a normal booking keeps its uploaded slip when the finalize result is unknown, but removes it when the database rejects it',async()=>{
+  const unknown=harness({rpcData:null,rpcError:{message:'TypeError: fetch failed'}});
+  assert.equal((await unknown.upload.POST(request(slipForm(false)))).status,500);
+  assert.equal(unknown.storage.filter(s=>s[0]==='remove').length,0,'a timeout may have committed the booking with this slip');
+  const soldOut=harness({rpcData:null,rpcError:{code:'P0001',message:'SOLD_OUT_PHONE'}});
+  const r=await soldOut.upload.POST(request(slipForm(false)));
+  assert.equal(r.status,409);assert.equal(r.body.error,'sold_out');
+  assert.equal(soldOut.storage.filter(s=>s[0]==='remove').length,1);
+});

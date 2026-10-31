@@ -297,15 +297,13 @@ export async function POST(req: NextRequest) {
     });
 
     if (rpc.error) {
-      if (discountCode) {
-        // A timeout can occur AFTER commit; do not delete a possibly accepted slip.
-        if (["P0001", "23505", "23514", "22003", "42883", "PGRST202"].includes(rpc.error.code ?? "")) {
-          await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
-        }
-        return discountDatabaseError(rpc.error);
+      // A timeout can occur AFTER commit; do not delete a possibly accepted slip.
+      // ใช้กับการจองปกติด้วย ไม่งั้น booking ที่ commit แล้วจะชี้ไปที่ไฟล์สลิปที่ถูกลบทิ้ง
+      if (["P0001", "23505", "23514", "22003", "42883", "PGRST202"].includes(rpc.error.code ?? "")) {
+        await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
       }
+      if (discountCode) return discountDatabaseError(rpc.error);
       const msg = rpc.error.message || "";
-      await supabaseAdmin.storage.from("slips").remove([fileName]).catch(() => {});
       if (msg.includes("SOLD_OUT_PHONE")) {
         return NextResponse.json({ error: "sold_out" }, { status: 409 });
       }

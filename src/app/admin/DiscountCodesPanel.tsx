@@ -16,8 +16,10 @@ export default function DiscountCodesPanel(){
   const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState("");
   const [form,setForm]=useState<Form|null>(null),[history,setHistory]=useState<Code|null>(null),[uses,setUses]=useState<Usage[]>([]);
   const [usagePage,setUsagePage]=useState(0),[usageTotal,setUsageTotal]=useState(0),[usageLoading,setUsageLoading]=useState(false),[usageError,setUsageError]=useState("");
-  const mutation=useRef(false),readVersion=useRef(0),mounted=useRef(true);
+  const mutation=useRef(false),readVersion=useRef(0),mounted=useRef(true),historyRef=useRef<HTMLElement>(null);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+  // ประวัติอยู่ท้ายรายการ — เลื่อนลงไปให้เห็นทันทีที่กดดู ไม่งั้นแอดมินไม่รู้ว่ามันเปิดแล้ว
+  useEffect(()=>{if(history)historyRef.current?.scrollIntoView({behavior:"smooth",block:"start"});},[history?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const reload=useCallback(async()=>{
     const version=++readVersion.current;setLoading(true);setError("");
     try{
@@ -55,6 +57,8 @@ export default function DiscountCodesPanel(){
     }
     void save({action:form.id?"update":"create",id:form.id,code,name:form.name.trim(),amount:value,starts_at:start,expires_at:end,active:form.active});
   }
+  // ล้างผลของโค้ดก่อนหน้าทันทีตอนสลับ ไม่งั้นจะเห็น "0 รายการ" ของโค้ดเดิมแวบหนึ่งก่อนโหลดเสร็จ
+  function openHistory(c:Code){if(history?.id===c.id)return;setUses([]);setUsageTotal(0);setUsageError("");setUsageLoading(true);setUsagePage(0);setHistory(c);}
   function edit(c:Code){setForm({id:c.id,code:c.code,name:c.name,amount:String(c.amount),start:thaiDateTimeInput(c.starts_at),end:thaiDateTimeInput(c.expires_at),active:c.active});setError("");}
   return <section className={styles.panel} aria-label="จัดการโค้ดส่วนลด">
     <div className={styles.heading}><div><h2>โค้ดส่วนลด</h2><p>ลดเป็นบาทจากยอดรวม · ทุกคอนเสิร์ต · บัญชีละ 1 ครั้งต่อโค้ด · ไม่จำกัดสิทธิ์รวม</p></div>
@@ -79,25 +83,32 @@ export default function DiscountCodesPanel(){
     <p className={styles.note}>“ยอดส่วนลดที่ใช้” รวมรายการรอตรวจ ปฏิเสธ และยกเลิก แยกจากยอดส่วนลดของรายการยืนยันแล้วด้านล่าง</p>
     {loading?<p role="status">กำลังโหลด…</p>:<div className={styles.grid}>{codes.map(c=>{
       const now=Date.now(),state=c.deleted_at?"ลบแล้ว":!c.active?"พักใช้งาน":now>=Date.parse(c.expires_at)?"หมดอายุ":now<Date.parse(c.starts_at)?"ยังไม่เริ่ม":"ใช้งานได้";
-      return <article key={c.id} className={styles.card}>
+      return <article key={c.id} className={`${styles.card} ${history?.id===c.id?styles.selected:""}`}>
         <div className={styles.codeRow}><h3>{c.code}</h3><span className={styles.badge}>{state}</span></div><p>{c.name}</p>
         <div className={styles.value}>ลด {amount(c.amount)} บาท</div>
         <p className={styles.note}>{date(c.starts_at)} — {date(c.expires_at)} (ไทย)</p>
         <dl><div><dt>ใช้แล้ว</dt><dd>{amount(c.used_count)} บัญชี</dd></div><div><dt>ยอดส่วนลดที่ใช้</dt><dd>{amount(c.discount_total)} บาท</dd></div>
           <div><dt>เฉพาะการจองยืนยันแล้ว</dt><dd>{amount(c.confirmed_discount_total)} บาท</dd></div></dl>
-        <div className={styles.actions}><button type="button" onClick={()=>{setHistory(c);setUsagePage(0);}}>ดูประวัติ</button>
+        <div className={styles.actions}><button type="button" aria-pressed={history?.id===c.id} onClick={()=>openHistory(c)}>{history?.id===c.id?"กำลังดูประวัติ":"ดูประวัติ"}</button>
           {!c.deleted_at&&<><button type="button" disabled={busy} onClick={()=>edit(c)}>แก้ไข</button>
             <button type="button" disabled={busy} onClick={()=>void save({id:c.id,action:"set_active",active:!c.active})}>{c.active?"พักโค้ด":"เปิดโค้ด"}</button>
             <button type="button" className={styles.danger} disabled={busy} onClick={()=>{if(window.confirm(`ลบโค้ด ${c.code}? จะหยุดรับการใช้ใหม่ แต่เก็บประวัติและส่วนลดของการจองเดิมไว้`))void save({action:"delete",id:c.id});}}>ลบโค้ด</button></>}
         </div>
       </article>;
     })}{codes.length===0&&<p>ไม่มีโค้ดในรายการนี้</p>}</div>}
-    <div className={styles.actions}><button type="button" disabled={busy||loading||page===0} onClick={()=>setPage(page-1)}>ก่อนหน้า</button><span>หน้า {page+1} · {amount(total)} โค้ด</span><button type="button" disabled={busy||loading||(page+1)*50>=total} onClick={()=>setPage(page+1)}>ถัดไป</button></div>
-    {history&&<section className={styles.card} aria-label={`ประวัติ ${history.code}`}><div className={styles.heading}><h3>ประวัติใช้ {history.code}</h3><button type="button" onClick={()=>setHistory(null)}>ปิดประวัติ</button></div>
+    {total>50&&<div className={styles.pager}><button type="button" disabled={busy||loading||page===0} onClick={()=>setPage(page-1)}>← ก่อนหน้า</button><span>หน้า {page+1} จาก {Math.ceil(total/50)} · {amount(total)} โค้ด</span><button type="button" disabled={busy||loading||(page+1)*50>=total} onClick={()=>setPage(page+1)}>ถัดไป →</button></div>}
+    {history&&<section ref={historyRef} className={`${styles.card} ${styles.history}`} aria-label={`ประวัติ ${history.code}`}>
+      <div className={styles.historyHead}><div><p className={styles.eyebrow}>ประวัติการใช้โค้ด</p><h3>{history.code}</h3>
+        <p className={styles.note}>{history.name} · ลด {amount(history.amount)} บาท{!usageLoading&&!usageError?` · ${amount(usageTotal)} รายการ`:""}</p></div>
+        <button type="button" onClick={()=>setHistory(null)}>ปิดประวัติ</button></div>
       {usageError&&<p role="alert" className={styles.error}>{usageError}</p>}
-      {usageLoading?<p role="status">กำลังโหลดประวัติ…</p>:uses.map(u=><article className={styles.usage} key={u.ref_number}><strong>{u.ref_number}</strong><span>{u.renter_name??"รายการถูกลบแล้ว"} · {statusText[u.status??""]??"ไม่มีรายการจองแล้ว"}</span><span>ส่วนลด {amount(u.amount)} บาท · {date(u.consumed_at)}</span></article>)}
-      {!usageLoading&&!usageError&&uses.length===0&&<p>ยังไม่มีการใช้โค้ดที่ส่งสลิปแล้ว</p>}
-      <div className={styles.actions}><button type="button" disabled={usageLoading||usagePage===0} onClick={()=>setUsagePage(usagePage-1)}>ก่อนหน้า</button><span>หน้า {usagePage+1} · {amount(usageTotal)} รายการ</span><button type="button" disabled={usageLoading||(usagePage+1)*50>=usageTotal} onClick={()=>setUsagePage(usagePage+1)}>ถัดไป</button></div>
+      {usageLoading?<p role="status" className={styles.empty}>กำลังโหลดประวัติ…</p>:uses.length>0&&<ul className={styles.usageList}>{uses.map(u=><li className={styles.usage} key={u.ref_number}>
+        <div className={styles.usageMain}><strong>{u.ref_number}</strong><span>{u.renter_name??"รายการถูกลบแล้ว"}</span></div>
+        <div className={styles.usageMeta}><span className={styles.status} data-status={u.status??"none"}>{statusText[u.status??""]??"ไม่มีรายการจองแล้ว"}</span>
+          <span className={styles.discount}>−{amount(u.amount)} บาท</span><span className={styles.note}>{date(u.consumed_at)}</span></div>
+      </li>)}</ul>}
+      {!usageLoading&&!usageError&&uses.length===0&&<div className={styles.empty}><p>ยังไม่มีการใช้โค้ดที่ส่งสลิปแล้ว</p><p className={styles.note}>รายการจะขึ้นที่นี่เมื่อลูกค้าใช้โค้ดและแนบสลิปสำเร็จ</p></div>}
+      {usageTotal>50&&<div className={styles.pager}><button type="button" disabled={usageLoading||usagePage===0} onClick={()=>setUsagePage(usagePage-1)}>← ก่อนหน้า</button><span>หน้า {usagePage+1} จาก {Math.ceil(usageTotal/50)}</span><button type="button" disabled={usageLoading||(usagePage+1)*50>=usageTotal} onClick={()=>setUsagePage(usagePage+1)}>ถัดไป →</button></div>}
     </section>}
   </section>;
 }

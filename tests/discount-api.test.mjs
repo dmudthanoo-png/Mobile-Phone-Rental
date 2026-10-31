@@ -223,3 +223,17 @@ test('a normal booking keeps its uploaded slip when the finalize result is unkno
   assert.equal(r.status,409);assert.equal(r.body.error,'sold_out');
   assert.equal(soldOut.storage.filter(s=>s[0]==='remove').length,1);
 });
+
+test('admin quota is optional, must be a whole number, and is cleared for non-edit actions',async()=>{
+  const h=harness({rpcData:{ok:true}});
+  const b={action:'create',code:'SAVE50',name:'Test offer',amount:50,starts_at:'2026-10-31T10:00:00+07:00',expires_at:'2026-11-01T10:00:00+07:00',active:true};
+  for(const max_uses of [0,1.5,'10',1000001])assert.equal((await h.admin.POST(request({...b,max_uses}))).status,400);
+  assert.equal(rpcCalls(h).length,0);
+  assert.equal((await h.admin.POST(request({...b,max_uses:100}))).status,200);assert.equal(rpcCalls(h)[0].args[1].p_max_uses,100);
+  assert.equal((await h.admin.POST(request(b))).status,200);assert.equal(rpcCalls(h)[1].args[1].p_max_uses,null,'blank = unlimited');
+  assert.equal((await h.admin.POST(request({action:'set_active',id:booking,active:false,max_uses:5}))).status,200);
+  assert.equal(rpcCalls(h)[2].args[1].p_max_uses,null);
+  const full=harness({rpcData:{error:'DISCOUNT_QUOTA_FULL'}});
+  const r=await full.quote.POST(request({...cart,code:'SAVE50'}));
+  assert.equal(r.status,409);assert.equal(r.body.code,'DISCOUNT_QUOTA_FULL');assert.match(r.body.error,/สิทธิ์ใช้โค้ดนี้เต็มแล้ว/);
+});

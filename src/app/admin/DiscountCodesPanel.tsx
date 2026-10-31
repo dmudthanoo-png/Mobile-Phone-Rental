@@ -3,10 +3,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DISCOUNT_CODE_PATTERN, normalizeDiscountCode, thaiDateTimeInput, thaiDateTimeISO } from "@/lib/discounts";
 import styles from "./DiscountCodesPanel.module.css";
 type Code={id:string;code:string;name:string;amount:number;starts_at:string;expires_at:string;active:boolean;deleted_at:string|null;
-  used_count:number;discount_total:number;confirmed_discount_total:number};
+  max_uses:number|null;used_count:number;reserved_count:number;discount_total:number;confirmed_discount_total:number};
 type Usage={booking_id:string|null;ref_number:string;amount:number;consumed_at:string;renter_name:string|null;status:string|null;total_amount:number|null};
-type Form={id:string|null;code:string;name:string;amount:string;start:string;end:string;active:boolean};
-const freshForm=():Form=>({id:null,code:"",name:"",amount:"50",start:thaiDateTimeInput(new Date().toISOString()),
+type Form={id:string|null;code:string;name:string;amount:string;maxUses:string;start:string;end:string;active:boolean};
+const freshForm=():Form=>({id:null,code:"",name:"",amount:"50",maxUses:"",start:thaiDateTimeInput(new Date().toISOString()),
   end:thaiDateTimeInput(new Date(Date.now()+7*86400000).toISOString()),active:true});
 const amount=(n:number)=>Number(n).toLocaleString("th-TH");
 const date=(value:string)=>new Date(value).toLocaleString("th-TH",{timeZone:"Asia/Bangkok",dateStyle:"medium",timeStyle:"short"});
@@ -52,16 +52,18 @@ export default function DiscountCodesPanel(){
   function submit(){
     if(!form)return;
     const code=normalizeDiscountCode(form.code),value=Number(form.amount),start=thaiDateTimeISO(form.start),end=thaiDateTimeISO(form.end);
-    if(!DISCOUNT_CODE_PATTERN.test(code)||!form.name.trim()||!Number.isInteger(value)||value<1||value>1000000||!start||!end||Date.parse(end)<=Date.parse(start)){
-      setError("กรอกโค้ด 3–32 ตัว (A–Z, 0–9, _ หรือ -) จำนวนเต็ม 1–1,000,000 บาท และเวลาหมดอายุต้องอยู่หลังเวลาเริ่ม");return;
+    const maxUses=form.maxUses.trim()===""?null:Number(form.maxUses);
+    if(!DISCOUNT_CODE_PATTERN.test(code)||!form.name.trim()||!Number.isInteger(value)||value<1||value>1000000||!start||!end||Date.parse(end)<=Date.parse(start)
+      ||(maxUses!==null&&(!Number.isInteger(maxUses)||maxUses<1||maxUses>1000000))){
+      setError("กรอกโค้ด 3–32 ตัว (A–Z, 0–9, _ หรือ -) จำนวนเต็ม 1–1,000,000 บาท จำนวนสิทธิ์ 1–1,000,000 หรือเว้นว่าง และเวลาหมดอายุต้องอยู่หลังเวลาเริ่ม");return;
     }
-    void save({action:form.id?"update":"create",id:form.id,code,name:form.name.trim(),amount:value,starts_at:start,expires_at:end,active:form.active});
+    void save({action:form.id?"update":"create",id:form.id,code,name:form.name.trim(),amount:value,max_uses:maxUses,starts_at:start,expires_at:end,active:form.active});
   }
   // ล้างผลของโค้ดก่อนหน้าทันทีตอนสลับ ไม่งั้นจะเห็น "0 รายการ" ของโค้ดเดิมแวบหนึ่งก่อนโหลดเสร็จ
   function openHistory(c:Code){if(history?.id===c.id)return;setUses([]);setUsageTotal(0);setUsageError("");setUsageLoading(true);setUsagePage(0);setHistory(c);}
-  function edit(c:Code){setForm({id:c.id,code:c.code,name:c.name,amount:String(c.amount),start:thaiDateTimeInput(c.starts_at),end:thaiDateTimeInput(c.expires_at),active:c.active});setError("");}
+  function edit(c:Code){setForm({id:c.id,code:c.code,name:c.name,amount:String(c.amount),maxUses:c.max_uses==null?"":String(c.max_uses),start:thaiDateTimeInput(c.starts_at),end:thaiDateTimeInput(c.expires_at),active:c.active});setError("");}
   return <section className={styles.panel} aria-label="จัดการโค้ดส่วนลด">
-    <div className={styles.heading}><div><h2>โค้ดส่วนลด</h2><p>ลดเป็นบาทจากยอดรวม · ทุกคอนเสิร์ต · บัญชีละ 1 ครั้งต่อโค้ด · ไม่จำกัดสิทธิ์รวม</p></div>
+    <div className={styles.heading}><div><h2>โค้ดส่วนลด</h2><p>ลดเป็นบาทจากยอดรวม · ทุกคอนเสิร์ต · บัญชีละ 1 ครั้งต่อโค้ด · กำหนดจำนวนสิทธิ์รวมได้</p></div>
       <button type="button" className={styles.primary} disabled={busy} onClick={()=>{setForm(freshForm());setError("");}}>+ สร้างโค้ด</button></div>
     {error&&<p role="alert" className={styles.error}>{error}</p>}
     {form&&<form onSubmit={e=>{e.preventDefault();submit();}} className={styles.card}>
@@ -70,11 +72,13 @@ export default function DiscountCodesPanel(){
         <label>รหัสโค้ด<input value={form.code} readOnly={!!form.id} maxLength={32} required autoComplete="off" spellCheck={false} autoCapitalize="characters" onChange={e=>setForm({...form,code:normalizeDiscountCode(e.target.value)})}/></label>
         <label>ชื่อโปรโมชัน<input value={form.name} maxLength={100} required onChange={e=>setForm({...form,name:e.target.value})}/></label>
         <label>ลดกี่บาทต่อการจอง<input type="number" inputMode="numeric" min={1} max={1000000} step={1} value={form.amount} required onChange={e=>setForm({...form,amount:e.target.value})}/></label>
+        <label>จำนวนสิทธิ์รวม<input type="number" inputMode="numeric" min={1} max={1000000} step={1} value={form.maxUses} placeholder="ไม่จำกัด" aria-describedby="discount-quota-hint" onChange={e=>setForm({...form,maxUses:e.target.value})}/>
+          <span id="discount-quota-hint" className={styles.hint}>เว้นว่าง = ไม่จำกัด · นับรวมคนที่กำลังกันเครื่องอยู่</span></label>
         <label>เริ่มใช้ (เวลาไทย)<input type="datetime-local" value={form.start} required onChange={e=>setForm({...form,start:e.target.value})}/></label>
         <label>หมดอายุ (เวลาไทย)<input type="datetime-local" value={form.end} required onChange={e=>setForm({...form,end:e.target.value})}/></label>
         <label className={styles.check}><input type="checkbox" checked={form.active} onChange={e=>setForm({...form,active:e.target.checked})}/> เปิดใช้งาน</label>
       </fieldset>
-      <p className={styles.note}>ไม่ลดมัดจำ · แก้เงื่อนไขมีผลกับการใช้ใหม่เท่านั้น รายการที่กันส่วนลดไว้แล้วใช้ยอดเดิมจนหมดเวลากันเครื่อง</p>
+      <p className={styles.note}>ไม่ลดมัดจำ · แก้เงื่อนไขมีผลกับการใช้ใหม่เท่านั้น รายการที่กันส่วนลดไว้แล้วใช้ยอดเดิมจนหมดเวลากันเครื่อง · ลดจำนวนสิทธิ์ต่ำกว่าที่ใช้ไปแล้วได้ จะหยุดรับการใช้ใหม่ทันที</p>
       {form.id&&<p className={styles.note}>รหัสโค้ดเปลี่ยนไม่ได้ เพื่อรักษาประวัติและสิทธิ์ใช้ครั้งเดียว</p>}
       <div className={styles.actions}><button type="submit" className={styles.primary} disabled={busy}>{busy?"กำลังบันทึก…":"บันทึกโค้ด"}</button><button type="button" disabled={busy} onClick={()=>setForm(null)}>ปิดฟอร์ม</button></div>
     </form>}
@@ -82,12 +86,20 @@ export default function DiscountCodesPanel(){
       <button type="button" disabled={busy||loading} onClick={()=>void reload()}>โหลดรายการล่าสุด</button></div>
     <p className={styles.note}>“ยอดส่วนลดที่ใช้” รวมรายการรอตรวจ ปฏิเสธ และยกเลิก แยกจากยอดส่วนลดของรายการยืนยันแล้วด้านล่าง</p>
     {loading?<p role="status">กำลังโหลด…</p>:<div className={styles.grid}>{codes.map(c=>{
-      const now=Date.now(),state=c.deleted_at?"ลบแล้ว":!c.active?"พักใช้งาน":now>=Date.parse(c.expires_at)?"หมดอายุ":now<Date.parse(c.starts_at)?"ยังไม่เริ่ม":"ใช้งานได้";
+      const limited=c.max_uses!=null,reserved=Number(c.reserved_count)||0,used=Number(c.used_count)||0;
+      const left=limited?Math.max(0,c.max_uses!-used-reserved):null;
+      const now=Date.now(),state=c.deleted_at?"ลบแล้ว":!c.active?"พักใช้งาน":now>=Date.parse(c.expires_at)?"หมดอายุ":now<Date.parse(c.starts_at)?"ยังไม่เริ่ม":limited&&used>=c.max_uses!?"สิทธิ์เต็ม":"ใช้งานได้";
       return <article key={c.id} className={`${styles.card} ${history?.id===c.id?styles.selected:""}`}>
         <div className={styles.codeRow}><h3>{c.code}</h3><span className={styles.badge}>{state}</span></div><p>{c.name}</p>
         <div className={styles.value}>ลด {amount(c.amount)} บาท</div>
         <p className={styles.note}>{date(c.starts_at)} — {date(c.expires_at)} (ไทย)</p>
-        <dl><div><dt>ใช้แล้ว</dt><dd>{amount(c.used_count)} บัญชี</dd></div><div><dt>ยอดส่วนลดที่ใช้</dt><dd>{amount(c.discount_total)} บาท</dd></div>
+        <div className={styles.quota}>
+          <div className={styles.quotaRow}><span>ใช้สิทธิ์แล้ว</span><strong>{limited?`${amount(used)} / ${amount(c.max_uses!)}`:`${amount(used)} · ไม่จำกัด`}</strong></div>
+          {limited&&<div className={styles.meter} role="progressbar" aria-label={`ใช้สิทธิ์ ${used} จาก ${c.max_uses}`} aria-valuemin={0} aria-valuemax={c.max_uses!} aria-valuenow={Math.min(used,c.max_uses!)}>
+            <span style={{width:`${Math.min(100,used/c.max_uses!*100)}%`}}/><span className={styles.meterHold} style={{width:`${Math.min(100-Math.min(100,used/c.max_uses!*100),reserved/c.max_uses!*100)}%`}}/></div>}
+          {(limited||reserved>0)&&<p className={styles.note}>{limited?`เหลือ ${amount(left!)} สิทธิ์`:""}{limited&&reserved>0?" · ":""}{reserved>0?`กำลังกันเครื่องอยู่ ${amount(reserved)}`:""}</p>}
+        </div>
+        <dl><div><dt>ยอดส่วนลดที่ใช้</dt><dd>{amount(c.discount_total)} บาท</dd></div>
           <div><dt>เฉพาะการจองยืนยันแล้ว</dt><dd>{amount(c.confirmed_discount_total)} บาท</dd></div></dl>
         <div className={styles.actions}><button type="button" aria-pressed={history?.id===c.id} onClick={()=>openHistory(c)}>{history?.id===c.id?"กำลังดูประวัติ":"ดูประวัติ"}</button>
           {!c.deleted_at&&<><button type="button" disabled={busy} onClick={()=>edit(c)}>แก้ไข</button>

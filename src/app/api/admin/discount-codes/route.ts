@@ -26,10 +26,15 @@ export async function POST(req: NextRequest) {
     !/(Z|[+-]\d{2}:\d{2})$/.test(b.starts_at)||!/(Z|[+-]\d{2}:\d{2})$/.test(b.expires_at)||
     !Number.isFinite(Date.parse(b.starts_at))||!Number.isFinite(Date.parse(b.expires_at))||Date.parse(b.expires_at)<=Date.parse(b.starts_at)))
     return NextResponse.json({error:"กรุณาตรวจสอบจำนวนส่วนลดและวันเวลา"},{status:400});
+  // null = ไม่จำกัดสิทธิ์รวม
+  const maxUses=b.max_uses??null;
+  if(edit&&maxUses!==null&&(!Number.isInteger(maxUses)||maxUses<1||maxUses>1000000))
+    return NextResponse.json({error:"จำนวนสิทธิ์รวมต้องเป็นจำนวนเต็ม 1–1,000,000 หรือเว้นว่างเพื่อไม่จำกัด"},{status:400});
   const {data,error}=await ctx.supabase.rpc("admin_save_discount_code",{p_admin_id:ctx.adminId,p_action:b.action,
     p_id:b.action==="create"?null:b.id,p_code:edit?normalizeDiscountCode(b.code):null,
     p_name:edit?b.name.trim():null,p_amount:edit?b.amount:null,
     p_starts_at:edit?new Date(b.starts_at).toISOString():null,
-    p_expires_at:edit?new Date(b.expires_at).toISOString():null,p_active:b.action==="delete"?null:b.active});
+    p_expires_at:edit?new Date(b.expires_at).toISOString():null,p_active:b.action==="delete"?null:b.active,
+    p_max_uses:edit?maxUses:null});
   return error?discountDatabaseError(error):discountRpcError(data)??NextResponse.json(data,{headers:{"Cache-Control":"no-store"}});
 }

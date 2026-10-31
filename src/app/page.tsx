@@ -734,6 +734,12 @@ export default function PhoneRentalHome() {
             setStep(2);
             return;
           }
+          // โค้ดใช้ไม่ได้แล้วระหว่างกรอกข้อมูล (สิทธิ์เต็ม/หมดอายุ/ถูกพัก) — เอาโค้ดออกให้ เพื่อกดต่อด้วยราคาปกติได้ทันที
+          if (["DISCOUNT_QUOTA_FULL", "DISCOUNT_EXPIRED", "DISCOUNT_UNAVAILABLE"].includes(out?.code)) {
+            setDiscountDraft(""); setDiscountQuote(null);
+            setPageError(`${out.error} นำโค้ดออกแล้ว กดต่อไปเพื่อจองราคาปกติ หรือใส่โค้ดอื่น`);
+            return;
+          }
           throw new Error(out?.error || "กันเครื่องไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
         }
 

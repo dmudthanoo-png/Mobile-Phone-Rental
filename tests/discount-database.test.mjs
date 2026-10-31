@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {PGlite} from '@electric-sql/pglite';
 const migration=readFileSync(new URL('../supabase/migrations/20261031121133_booking_discount_codes.sql',import.meta.url),'utf8');
 const hardening=readFileSync(new URL('../supabase/migrations/20261031124225_harden_discount_checkout.sql',import.meta.url),'utf8');
+const quota=readFileSync(new URL('../supabase/migrations/20261031160000_discount_code_quota.sql',import.meta.url),'utf8');
 const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const admin=id(1),user=id(2),phone=id(3),lens=id(4),session=id(5),concert=id(6);
 let db;
@@ -47,6 +48,7 @@ before(async()=>{
     await db.exec(readFileSync(new URL('../scripts/'+file,import.meta.url),'utf8'));
   await db.exec(migration);
   await db.exec(hardening);
+  await db.exec(quota);
 });
 beforeEach(async()=>{
   await db.exec('truncate discount_uses,bookings,discount_codes,booking_cancellations,admin_users,admin_audit_log,phones,lenses,concerts,concert_sessions,phone_lenses,session_phone_inventory,session_lens_inventory cascade');
@@ -64,7 +66,7 @@ after(async()=>{await db?.close();});
 
 test('discount migration is rerunnable and leaves old bookings untouched',async()=>{
   const normal=await result(`select create_booking_hold($1,$2,$3,1,null,0,'Old','000',500,100,420) r`,[user,session,phone]);
-  const old=await getBooking(normal);await db.exec(migration);await db.exec(hardening);assert.deepEqual(await getBooking(normal),old);
+  const old=await getBooking(normal);await db.exec(migration);await db.exec(hardening);await db.exec(quota);assert.deepEqual(await getBooking(normal),old);
 });
 test('fixed overall discount applies once per booking, not once per phone; deposit stays unchanged',async()=>{
   const q=await quote(' save50 ',user,2,2);
@@ -294,4 +296,56 @@ test('normal holds still finalize and expired normal slips can recover only when
   await db.query("update bookings set pending_expires_at=now()-interval '1 second' where id=$1",[expired.booking_id]);
   assert.equal((await result("select update_booking_slip($1,$2,'recovered-slip',0) r",[expired.booking_id,id(55)])).ok,true);
   assert.equal((await getBooking(expired)).pending_expires_at,null);
+});
+
+const setQuota=async(n)=>{const c=await one('select id from discount_codes');
+  return result("select admin_save_discount_code($1,'update',$2,'SAVE50','Test offer',50,now()-interval '1 day',now()+interval '1 day',true,$3) r",[admin,c.id,n]);};
+
+test("a total quota counts consumed uses and other accounts' live holds, never the caller's own hold",async()=>{
+  assert.equal((await setQuota(2)).ok,true);
+  const a=await hold();assert.equal(a.ok,true);
+  assert.equal((await hold()).booking_id,a.booking_id,'retrying my own hold is not blocked by my own slot');
+  assert.equal((await quote()).ok,true,'my own reservation does not count against me');
+  assert.equal((await finalize(a)).ok,true);
+  assert.equal((await hold('SAVE50',id(40))).ok,true);
+  assert.equal((await quote('SAVE50',id(41))).error,'DISCOUNT_QUOTA_FULL');
+  assert.equal((await hold('SAVE50',id(41))).error,'DISCOUNT_QUOTA_FULL');
+  assert.equal(Number((await one('select count(*) n from bookings where user_id=$1',[id(41)])).n),0,'a full quota creates no stock hold');
+});
+
+test('an expired or released hold returns its quota slot; a consumed use keeps it even after cancellation',async()=>{
+  await setQuota(1);
+  await hold();
+  assert.equal((await hold('SAVE50',id(40))).error,'DISCOUNT_QUOTA_FULL');
+  await db.query('select release_booking_hold($1)',[user]);
+  assert.equal((await hold('SAVE50',id(40))).ok,true,'a released hold frees the slot');
+  await db.exec("update bookings set pending_expires_at=now()-interval '1 second';update discount_uses set reserved_until=now()-interval '1 second'");
+  const c=await hold();assert.equal(c.ok,true,'an expired hold frees the slot without a cleanup job');
+  assert.equal((await finalize(c)).ok,true);
+  await db.query("update bookings set status='confirmed' where id=$1",[c.booking_id]);
+  assert.equal((await result("select admin_cancel_booking($1,$2,'Customer cancelled',null,'no_refund') r",[c.booking_id,admin])).ok,true);
+  assert.equal((await hold('SAVE50',id(40))).error,'DISCOUNT_QUOTA_FULL');
+});
+
+test('lowering the quota stops new uses but keeps an accepted hold payable',async()=>{
+  await setQuota(5);const a=await hold();await hold('SAVE50',id(40));
+  await setQuota(1);
+  assert.equal((await hold('SAVE50',id(41))).error,'DISCOUNT_QUOTA_FULL');
+  assert.equal((await finalize(a)).ok,true);
+});
+
+test('admin can set, clear and validate the quota; listing shows holds; older 9-argument saves keep it',async()=>{
+  const c=await one('select id from discount_codes');
+  for(const bad of [0,-1,1000001])assert.equal((await setQuota(bad)).error,'INVALID_DISCOUNT');
+  assert.equal((await setQuota(5)).ok,true);assert.equal((await one('select max_uses from discount_codes')).max_uses,5);
+  assert.equal((await result("select admin_save_discount_code($1,'update',$2,'SAVE50','Old admin page',60,now()-interval '1 day',now()+interval '1 day',true) r",[admin,c.id])).ok,true);
+  assert.equal((await one('select max_uses from discount_codes')).max_uses,5,'a stale admin page cannot silently remove the quota');
+  assert.equal((await result("select admin_save_discount_code($1,'set_active',$2,null,null,null,null,null,false,null) r",[admin,c.id])).ok,true);
+  assert.equal((await one('select max_uses from discount_codes')).max_uses,5,'pausing keeps the quota');
+  assert(Number((await one(`select count(*) n from admin_audit_log where detail like '%"max_uses": 5%'`)).n)>0);
+  assert.equal((await setQuota(null)).ok,true);assert.equal((await one('select max_uses from discount_codes')).max_uses,null);
+  await setQuota(3);await hold();
+  const row=(await result('select admin_discount_code_list(0,false) r')).codes[0];
+  assert.equal(row.max_uses,3);assert.equal(row.reserved_count,1);assert.equal(row.used_count,0);
+  assert.equal((await one("select has_function_privilege('authenticated','discount_code_taken(uuid,uuid)','EXECUTE') allowed")).allowed,false);
 });

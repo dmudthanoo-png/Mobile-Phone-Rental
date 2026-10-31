@@ -10,6 +10,7 @@ import Footer from "./Footer";
 import PrivacyPolicyContent from "./privacy-policy/PrivacyPolicyContent";
 import DiscountCodeInput from "./DiscountCodeInput";
 import { validDiscountQuote, type DiscountQuote, type DiscountHold } from "@/lib/discounts";
+import { shouldExpireBooking } from "@/lib/bookingFlow";
 
 type MeUser = {
   line_sub: string;
@@ -249,6 +250,7 @@ export default function PhoneRentalHome() {
   const [discountQuote, setDiscountQuote] = useState<(DiscountQuote & { cartKey:string }) | null>(null);
   const [discountHold, setDiscountHold] = useState<(DiscountHold & { cartKey:string }) | null>(null);
   const holdReleaseRef = useRef<Promise<unknown> | null>(null);
+  const bookingRequestInFlight = useRef(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -311,6 +313,7 @@ export default function PhoneRentalHome() {
   const balanceDue     = Math.max(0, totalAmount - transferAmount);
 
   const handleSignOut = async () => {
+    if (bookingRequestInFlight.current) return;
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
   };
@@ -492,6 +495,7 @@ export default function PhoneRentalHome() {
   };
 
   const goToStep1 = () => {
+    if (bookingRequestInFlight.current) return;
     setDiscountDraft(""); setDiscountQuote(null); setDiscountHold(null);
     releaseHold();
     setSelectedConcertId(null);
@@ -578,13 +582,12 @@ export default function PhoneRentalHome() {
 
   // ── เช็คว่าหมดเวลาหรือยัง (ดูจาก timeLeft ที่คำนวณจาก timestamp ด้านบน) ──
   useEffect(() => {
-    if (timerExpiresAt === null || timeLeft === null || (step !== 3 && step !== 4)) return;
-    if (timeLeft <= 0) {
+    if (shouldExpireBooking({ step, timerStep:timerStepKey, remainingSeconds:timeLeft, requestPending:bookingRequestInFlight.current })) {
       setPageError("หมดเวลาทำรายการ กรุณาเริ่มทำรายการใหม่อีกครั้งครับ", "expired");
       goToStep1();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft, step, timerExpiresAt]);
+  }, [timeLeft, step, timerStepKey, submitting, acknowledgingPrivacyNotice]);
 
   // ── ถึงหน้าจองสำเร็จ (step 5) แล้วเช็คทันทีว่าเพิ่มเพื่อน LINE OA ไว้แล้วหรือยัง ──
   useEffect(() => {
@@ -643,6 +646,7 @@ export default function PhoneRentalHome() {
   };
 
   const handleBack = () => {
+    if (bookingRequestInFlight.current) return;
     setPageError("");
     // 4 → 3: ย้อนไปแก้ข้อมูลตัวเอง (ชื่อ/เบอร์/เลนส์) แต่ยังเอาเครื่องรุ่นเดิมอยู่ → "คง" การกันเครื่องไว้
     //        ไม่งั้นแค่ย้อนไปแก้เบอร์แป๊บเดียวก็เสียสิทธิ์ให้คนอื่นแย่งไป ซึ่งขัดกับเจตนาของการกันเครื่อง
@@ -654,7 +658,7 @@ export default function PhoneRentalHome() {
 
   const handleNext = async () => {
     setPageError("");
-    if (acknowledgingPrivacyNotice) return;
+    if (bookingRequestInFlight.current) return;
 
     if (step === 3) {
       if (discountDraft.trim() && !appliedDiscount) {
@@ -674,6 +678,7 @@ export default function PhoneRentalHome() {
         return;
       }
 
+      bookingRequestInFlight.current = true;
       setAcknowledgingPrivacyNotice(true);
       try {
         const acknowledgementRes = await fetch("/api/privacy-notice/acknowledge", {
@@ -744,6 +749,7 @@ export default function PhoneRentalHome() {
       } catch (e: unknown) {
         setPageError(e instanceof Error ? e.message : "ไม่สามารถดำเนินการต่อได้ กรุณาลองใหม่อีกครั้ง");
       } finally {
+        bookingRequestInFlight.current = false;
         setAcknowledgingPrivacyNotice(false);
       }
       return;
@@ -751,6 +757,7 @@ export default function PhoneRentalHome() {
 
     if (step === 4) {
       if (submitted) return;
+      bookingRequestInFlight.current = true;
       setSubmitted(true);
       setSubmitting(true);
 
@@ -847,6 +854,7 @@ export default function PhoneRentalHome() {
         setPageError(e instanceof Error ? e.message : "upload error");
         setSubmitted(false);
       } finally {
+        bookingRequestInFlight.current = false;
         setSubmitting(false);
       }
       return;
@@ -1229,7 +1237,7 @@ export default function PhoneRentalHome() {
 
           {/* STEP 3 */}
           {step === 3 && (
-            <div>
+            <div inert={acknowledgingPrivacyNotice}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ width: 26, height: 26, borderRadius: 8, background: accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>👤</span>
@@ -1457,7 +1465,7 @@ export default function PhoneRentalHome() {
 
           {/* STEP 4 */}
           {step === 4 && (
-            <div>
+            <div inert={submitting}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ width: 26, height: 26, borderRadius: 8, background: violetSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>💳</span>
@@ -1708,7 +1716,7 @@ export default function PhoneRentalHome() {
           <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 20, display: "flex", justifyContent: "center", padding: "16px 32px calc(24px + env(safe-area-inset-bottom, 0px))", background: glassStrong, backdropFilter: "blur(24px) saturate(160%)", WebkitBackdropFilter: "blur(24px) saturate(160%)", borderTop: `1px solid ${glassBorder}` }}>
             <div style={{ width: "100%", maxWidth: 760, display: "flex", gap: 12 }}>
               {step > 1 && (
-                <button onClick={handleBack} style={{ ...doodle.btn, flex: "0 0 90px", padding: "13px 0", background: "#fff", color: ink, fontSize: 14 }}>
+                <button onClick={handleBack} disabled={submitting || acknowledgingPrivacyNotice} style={{ ...doodle.btn, flex: "0 0 90px", padding: "13px 0", background: "#fff", color: ink, fontSize: 14, opacity: submitting || acknowledgingPrivacyNotice ? 0.5 : 1 }}>
                   ← กลับ
                 </button>
               )}

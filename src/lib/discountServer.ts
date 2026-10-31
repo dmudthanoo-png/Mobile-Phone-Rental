@@ -13,6 +13,9 @@ export function discountOriginError(req: NextRequest) {
 }
 export function discountDatabaseError(error: {message:string;code?:string}) {
   logServerError("discounts",error.message);
+  if(error.code==="P0001" && Object.hasOwn(discountErrors,error.message)) {
+    return NextResponse.json({error:discountErrors[error.message],code:error.message},{status:409});
+  }
   return NextResponse.json({error:["42P01","42703","42883","PGRST202","PGRST204","PGRST205"].includes(error.code??"")
     ? "ยังไม่ได้ติดตั้งระบบส่วนลด กรุณารัน migration booking_discount_codes ก่อนใช้งาน"
     : "ยังยืนยันผลไม่ได้ กรุณาโหลดรายการล่าสุดก่อนทำซ้ำ"},{status:503});

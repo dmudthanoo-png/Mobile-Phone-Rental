@@ -92,7 +92,7 @@ export default function DiscountCodesPanel(){
         </div>
       </article>;
     })}{codes.length===0&&<p>ไม่มีโค้ดในรายการนี้</p>}</div>}
-    <div className={styles.actions}><button type="button" disabled={loading||page===0} onClick={()=>setPage(page-1)}>ก่อนหน้า</button><span>หน้า {page+1} · {amount(total)} โค้ด</span><button type="button" disabled={loading||(page+1)*50>=total} onClick={()=>setPage(page+1)}>ถัดไป</button></div>
+    <div className={styles.actions}><button type="button" disabled={busy||loading||page===0} onClick={()=>setPage(page-1)}>ก่อนหน้า</button><span>หน้า {page+1} · {amount(total)} โค้ด</span><button type="button" disabled={busy||loading||(page+1)*50>=total} onClick={()=>setPage(page+1)}>ถัดไป</button></div>
     {history&&<section className={styles.card} aria-label={`ประวัติ ${history.code}`}><div className={styles.heading}><h3>ประวัติใช้ {history.code}</h3><button type="button" onClick={()=>setHistory(null)}>ปิดประวัติ</button></div>
       {usageError&&<p role="alert" className={styles.error}>{usageError}</p>}
       {usageLoading?<p role="status">กำลังโหลดประวัติ…</p>:uses.map(u=><article className={styles.usage} key={u.ref_number}><strong>{u.ref_number}</strong><span>{u.renter_name??"รายการถูกลบแล้ว"} · {statusText[u.status??""]??"ไม่มีรายการจองแล้ว"}</span><span>ส่วนลด {amount(u.amount)} บาท · {date(u.consumed_at)}</span></article>)}

@@ -26,7 +26,7 @@ export default function DiscountCodeInput({value,quote,disabled,cart,onChange,on
     <label htmlFor="booking-discount-code" className={styles.label}>โค้ดส่วนลด <span>(ถ้ามี)</span></label>
     <div className={styles.row}>
       <input id="booking-discount-code" value={value} maxLength={32} autoComplete="off" autoCapitalize="characters" spellCheck={false}
-        placeholder="เช่น CRABBY50" disabled={busy||disabled} onChange={e=>{onChange(e.target.value);setError("");}}
+        disabled={busy||disabled} onChange={e=>{onChange(e.target.value);setError("");}}
         aria-describedby="discount-feedback" onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();void apply();}}}/>
       <button type="button" disabled={busy||disabled||!value.trim()} onClick={()=>void apply()}>{busy?"กำลังตรวจ…":"ใช้โค้ด"}</button>
     </div>
@@ -34,7 +34,7 @@ export default function DiscountCodeInput({value,quote,disabled,cart,onChange,on
       {quote ? <p className={styles.success}>ใช้ {quote.code} ลด {quote.discount_amount.toLocaleString("th-TH")} บาท
         <button type="button" className={styles.remove} disabled={disabled||busy} onClick={()=>{onChange("");setError("");}}>นำออก</button></p>
         :error?<p role="alert" className={styles.error}>{error}</p>
-          :<p className={styles.hint}>{value.trim()?"กดใช้โค้ดให้สำเร็จก่อน หรือเอาโค้ดออกเพื่อจองราคาปกติ":"ลดจากยอดรวมเครื่องและเลนส์ · ไม่ลดมัดจำ · บัญชีละ 1 ครั้งต่อโค้ด"}</p>}
+          :value.trim()?<p className={styles.hint}>กดใช้โค้ดให้สำเร็จก่อน หรือเอาโค้ดออกเพื่อจองราคาปกติ</p>:null}
     </div>
   </section>;
 }

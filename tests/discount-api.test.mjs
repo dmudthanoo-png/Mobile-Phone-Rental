@@ -192,3 +192,24 @@ test('existing approval message displays original total, discount, net and uncha
   for(const expected of ['ยอดก่อนลด','฿600','ส่วนลด SAVE50','−฿50','ยอดสุทธิ','฿550','฿100','฿450'])assert(text.includes(expected));
   assert(!JSON.stringify(build({totalAmount:600,depositPaid:100,qty:1})).includes('ยอดก่อนลด'));
 });
+
+test('expiry cannot reset payment details while uploading or after moving from an expired details timer to payment',()=>{
+  const {shouldExpireBooking}=loadTs('src/lib/bookingFlow.ts');
+  const timer={step:4,timerStep:4,remainingSeconds:0,requestPending:false};
+  assert.equal(shouldExpireBooking({...timer,requestPending:true}),false,'an in-flight upload retains payment details');
+  assert.equal(shouldExpireBooking({...timer,timerStep:3}),false,'a stale details timer must not delete the newly accepted hold');
+  assert.equal(shouldExpireBooking({...timer,step:5}),false,'success is never reset by the previous payment timer');
+  assert.equal(shouldExpireBooking({...timer,remainingSeconds:null}),false);
+  assert.equal(shouldExpireBooking({...timer,remainingSeconds:1}),false);
+  assert.equal(shouldExpireBooking(timer),true,'an idle expired payment page still releases its hold');
+  assert.equal(shouldExpireBooking({...timer,step:3,timerStep:3}),true);
+});
+
+test('database expiry and stock conflicts return actionable errors and remove only the rejected upload',async()=>{
+  for(const message of ['DISCOUNT_HOLD_EXPIRED','SOLD_OUT_PHONE','SOLD_OUT_LENS']){
+    const h=harness({rpcData:null,rpcError:{code:'P0001',message}});
+    const r=await h.upload.POST(request(slipForm()));
+    assert.equal(r.status,409);assert.equal(r.body.code,message);assert.match(r.body.error,/ห้ามโอนซ้ำ/);
+    assert.equal(h.storage.filter(s=>s[0]==='remove').length,1);assert.equal(h.background.length,0);
+  }
+});

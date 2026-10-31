@@ -29,6 +29,8 @@ export const discountErrors: Record<string,string> = {
   INVALID_DISCOUNT: "กรุณาตรวจสอบโค้ด จำนวนส่วนลด และช่วงเวลาให้ถูกต้อง",
   INVALID_QUANTITY: "จำนวนเครื่องหรือเลนส์ไม่ถูกต้อง",
   TOO_MANY_PENDING: "มีการจองที่รอยืนยันอยู่แล้ว กรุณารอให้แอดมินตรวจสอบก่อน",
+  SOLD_OUT_PHONE: "สต็อกมือถือเปลี่ยนแปลง กรุณาติดต่อร้านหากโอนแล้ว ห้ามโอนซ้ำ",
+  SOLD_OUT_LENS: "สต็อกเลนส์เปลี่ยนแปลง กรุณาติดต่อร้านหากโอนแล้ว ห้ามโอนซ้ำ",
   SESSION_UNAVAILABLE: "รอบนี้ไม่เปิดให้จองแล้ว", PHONE_UNAVAILABLE: "มือถือรุ่นนี้ไม่พร้อมให้จอง",
   LENS_UNAVAILABLE: "เลนส์นี้ไม่พร้อมให้จอง", NOT_FOUND: "ไม่พบรายการ",
   UNAUTHORIZED: "ไม่มีสิทธิ์ดำเนินการ", INVALID_ACTION: "คำสั่งไม่ถูกต้อง",

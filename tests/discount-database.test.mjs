@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {PGlite} from '@electric-sql/pglite';
 const migration=readFileSync(new URL('../supabase/migrations/20261031121133_booking_discount_codes.sql',import.meta.url),'utf8');
+const hardening=readFileSync(new URL('../supabase/migrations/20261031124225_harden_discount_checkout.sql',import.meta.url),'utf8');
 const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const admin=id(1),user=id(2),phone=id(3),lens=id(4),session=id(5),concert=id(6);
 let db;
@@ -20,6 +21,8 @@ before(async()=>{
     create schema storage;
     create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
     create table storage.objects(bucket_id text,name text,primary key(bucket_id,name));
+    -- Hosted Supabase enables RLS when it creates its managed Storage tables.
+    alter table storage.objects enable row level security;
     create table admin_users(id uuid primary key,username text);
     create table admin_audit_log(id uuid default gen_random_uuid(),admin_username text,action text,detail text);
     create table phones(id uuid primary key,qty integer,price numeric,deposit numeric,active boolean,model_name text);
@@ -37,11 +40,13 @@ before(async()=>{
       last_slip_update_at timestamptz,delivered_at timestamptz,returned_at timestamptz,files_sent_at timestamptz);
     grant usage on schema public,storage to service_role;
     grant select,insert,update,delete on all tables in schema public to service_role;
+    grant select,insert,update,delete on bookings to anon,authenticated;
     grant select on storage.objects to service_role;
   `);
   for(const file of ['add_booking_hold.sql','add_admin_set_booking_lens_rpc.sql','add_booking_cancellation.sql','add_update_slip_rpc.sql'])
     await db.exec(readFileSync(new URL('../scripts/'+file,import.meta.url),'utf8'));
   await db.exec(migration);
+  await db.exec(hardening);
 });
 beforeEach(async()=>{
   await db.exec('truncate discount_uses,bookings,discount_codes,booking_cancellations,admin_users,admin_audit_log,phones,lenses,concerts,concert_sessions,phone_lenses,session_phone_inventory,session_lens_inventory cascade');
@@ -59,7 +64,7 @@ after(async()=>{await db?.close();});
 
 test('discount migration is rerunnable and leaves old bookings untouched',async()=>{
   const normal=await result(`select create_booking_hold($1,$2,$3,1,null,0,'Old','000',500,100,420) r`,[user,session,phone]);
-  const old=await getBooking(normal);await db.exec(migration);assert.deepEqual(await getBooking(normal),old);
+  const old=await getBooking(normal);await db.exec(migration);await db.exec(hardening);assert.deepEqual(await getBooking(normal),old);
 });
 test('fixed overall discount applies once per booking, not once per phone; deposit stays unchanged',async()=>{
   const q=await quote(' save50 ',user,2,2);
@@ -218,4 +223,75 @@ test('pausing a code changes only its active state and keeps a prior-state audit
   assert.equal(after.expires_at.getTime(),c.expires_at.getTime());
   const audit=JSON.parse((await one("select detail from admin_audit_log where action='discount_set_active'")).detail);
   assert.equal(audit.before.active,true);assert.equal(audit.active,false);
+});
+
+test('coupon finalization holds both inventory locks until commit, including through the legacy RPC',async()=>{
+  for(const legacy of [false,true]){
+    const who=legacy?id(75):user;
+    const h=await hold('SAVE50',who);
+    await db.exec('begin');
+    try {
+      if(legacy)await db.query("select finalize_booking_with_slip($1,$2,$3,1,$4,1,'Test','000',600,'legacy-slip',100)",[who,session,phone,lens]);
+      else assert.equal((await finalize(h)).ok,true);
+      for(const table of ['session_phone_inventory','session_lens_inventory']){
+        const locked=await one("select exists(select 1 from pg_locks where relation=$1::regclass and mode='RowShareLock' and granted) yes",[table]);
+        assert.equal(locked.yes,true,`${table} must be locked until the slip is committed`);
+      }
+    } finally {await db.exec('rollback');}
+  }
+});
+
+test('changed inventory cannot make a held coupon finalize over capacity',async()=>{
+  const h=await hold();await db.exec('update session_lens_inventory set qty=0');
+  await assert.rejects(finalize(h),/SOLD_OUT_LENS/);
+  assert.equal((await getBooking(h)).slip_url,null);
+  assert.equal((await one('select consumed_at from discount_uses')).consumed_at,null);
+});
+
+test('browser roles cannot bypass the booking API with arbitrary rows or payment updates',async()=>{
+  for(const role of ['anon','authenticated']){
+    assert.equal((await one("select has_table_privilege($1,'public.bookings','INSERT') yes",[role])).yes,false);
+    assert.equal((await one("select has_table_privilege($1,'public.bookings','UPDATE') yes",[role])).yes,false);
+    await db.exec(`set role ${role}`);
+    try {await assert.rejects(db.query("insert into bookings(user_id,status,total_amount,slip_verified) values($1,'confirmed',1,true)",[user]),/permission denied/);}
+    finally {await db.exec('reset role');}
+  }
+  await db.exec('set role service_role');
+  try {
+    const h=await hold();assert.equal(h.ok,true);
+    assert.equal((await finalize(h)).ok,true,'the server role can still complete the booking through the new trigger');
+  }finally{await db.exec('reset role');}
+});
+
+test('hardening fails and rolls back if managed Storage RLS is unexpectedly disabled',async()=>{
+  await db.exec('alter table storage.objects disable row level security;grant insert on public.bookings to authenticated');
+  try{
+    await assert.rejects(db.exec(hardening),/Storage RLS is not enabled on storage.objects/);
+    await db.exec('rollback');
+    assert.equal((await one("select has_table_privilege('authenticated','public.bookings','INSERT') allowed")).allowed,true,'a failed migration must not leave partial privilege changes');
+    assert.equal((await one("select relrowsecurity from pg_class where oid='storage.objects'::regclass")).relrowsecurity,false,'the migration must not alter the managed table');
+  } finally {
+    await db.exec('rollback;alter table storage.objects enable row level security;revoke insert on public.bookings from authenticated');
+  }
+});
+
+test('slip storage remains server-only even with an old broad upload policy, without blocking other buckets',async()=>{
+  await db.exec("grant usage on schema storage to authenticated;grant select,insert,update,delete on storage.objects to authenticated;grant insert on storage.objects to service_role;create policy old_upload_policy on storage.objects for all to authenticated using(true) with check(true)");
+  try{
+    await db.exec('set role authenticated');
+    await assert.rejects(db.exec("insert into storage.objects values('slips','spoofed.png')"),/row-level security/);
+    await db.exec("insert into storage.objects values('other-bucket','allowed.png')");
+    await db.exec('reset role;set role service_role');
+    await db.exec("insert into storage.objects values('slips','server-upload.png')");
+  } finally {await db.exec('reset role;drop policy old_upload_policy on storage.objects;delete from storage.objects');}
+});
+
+test('normal holds still finalize and expired normal slips can recover only when capacity remains',async()=>{
+  const normal=await result("select create_booking_hold($1,$2,$3,1,$4,1,'Normal','000',600,100,420) r",[user,session,phone,lens]);
+  await db.query("select finalize_booking_with_slip($1,$2,$3,1,$4,1,'Normal','000',600,'normal-slip',100)",[user,session,phone,lens]);
+  assert.equal((await getBooking(normal)).total_amount,600);
+  const expired=await result("select create_booking_hold($1,$2,$3,1,$4,1,'Normal','000',600,100,420) r",[id(55),session,phone,lens]);
+  await db.query("update bookings set pending_expires_at=now()-interval '1 second' where id=$1",[expired.booking_id]);
+  assert.equal((await result("select update_booking_slip($1,$2,'recovered-slip',0) r",[expired.booking_id,id(55)])).ok,true);
+  assert.equal((await getBooking(expired)).pending_expires_at,null);
 });
